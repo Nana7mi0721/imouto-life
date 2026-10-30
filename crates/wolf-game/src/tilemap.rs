@@ -154,12 +154,7 @@ impl TileMap {
                             };
                             out.push(SpriteQuad {
                                 number,
-                                rect: [
-                                    dst_x as f32,
-                                    dst_y as f32,
-                                    TILE_PX as f32,
-                                    TILE_PX as f32,
-                                ],
+                                rect: [dst_x as f32, dst_y as f32, TILE_PX as f32, TILE_PX as f32],
                                 uv: rect.sub_uv(atlas_w, atlas_h, src),
                                 alpha: 1.0,
                                 tint: [1.0, 1.0, 1.0],

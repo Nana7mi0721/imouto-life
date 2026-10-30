@@ -135,7 +135,12 @@ fn day2_evening_game() -> Option<Game> {
     click_at(&mut game, 512, 230);
     for _ in 0..1500 {
         game.frame();
-        if game.vm.instances().iter().all(|instance| instance.event != 251) {
+        if game
+            .vm
+            .instances()
+            .iter()
+            .all(|instance| instance.event != 251)
+        {
             break;
         }
     }
@@ -181,7 +186,9 @@ fn menu_picture_numbers(game: &Game) -> Vec<i32> {
 
 #[test]
 fn hovering_the_sister_and_pressing_decide_opens_the_night_command_menu() {
-    let Some(mut game) = day2_evening_game() else { return };
+    let Some(mut game) = day2_evening_game() else {
+        return;
+    };
 
     // The bedroom is day 2, 19:30, warning-free, with no menu up and no var64 injected.
     assert_eq!(game.vm.vars.get(160), 2, "the day counter is day 2");
@@ -202,13 +209,21 @@ fn hovering_the_sister_and_pressing_decide_opens_the_night_command_menu() {
         .iter()
         .find(|picture| picture.number == 120)
         .expect("the sister sprite is picture 120");
-    assert_eq!((sister.x, sister.y), (240, 340), "the sprite sits at (240,340)");
+    assert_eq!(
+        (sister.x, sister.y),
+        (240, 340),
+        "the sprite sits at (240,340)"
+    );
     assert!(!sister.hidden, "the sprite is visible to hover");
 
     open_night_menu(&mut game);
 
     // The hover+Decide set var68, which lets autorun ev4 page0 reach its CE245 call.
-    assert_eq!(game.vm.vars.get(68), 1, "the sister-click flag var68 is set");
+    assert_eq!(
+        game.vm.vars.get(68),
+        1,
+        "the sister-click flag var68 is set"
+    );
     assert_eq!(game.stats.warnings, 0, "opening the menu is warning-free");
     assert!(
         game.vm
@@ -226,7 +241,11 @@ fn hovering_the_sister_and_pressing_decide_opens_the_night_command_menu() {
             "menu picture {expected} is drawn; got {numbers:?}"
         );
     }
-    let texts: Vec<&str> = game.screen.iter().map(|picture| picture.text.as_str()).collect();
+    let texts: Vec<&str> = game
+        .screen
+        .iter()
+        .map(|picture| picture.text.as_str())
+        .collect();
     for label in ["身体接触", "沟通", "洗澡", "泡茶", "今天先休息吧"] {
         assert!(
             texts.iter().any(|text| text.contains(label)),
@@ -238,7 +257,9 @@ fn hovering_the_sister_and_pressing_decide_opens_the_night_command_menu() {
 
 #[test]
 fn clicking_rest_in_the_night_menu_raises_the_confirm_choice() {
-    let Some(mut game) = day2_evening_game() else { return };
+    let Some(mut game) = day2_evening_game() else {
+        return;
+    };
     open_night_menu(&mut game);
     assert!(
         game.vm

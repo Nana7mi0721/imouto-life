@@ -48,7 +48,10 @@ fn audio_silent_until_enabled_and_the_recorder_still_sees_sound_commands() {
         game.stats.sounds > 0,
         "the recorder still sees opcode 140 with audio off"
     );
-    assert!(recorded_a_sound, "some frame kept its SoundCmds in game.sounds");
+    assert!(
+        recorded_a_sound,
+        "some frame kept its SoundCmds in game.sounds"
+    );
 
     // Turning audio on must not panic on a device-less box: the engine falls back to a
     // null backend. After this the same commands also reach the mixer.

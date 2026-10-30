@@ -58,8 +58,7 @@ fn rejects_version_seven() {
 
 /// Retail install of "Imouto! Life ~Monochrome~" whose `Data.wolf` is a VER6
 /// archive. Used when neither WOLF_DATA_WOLF nor WOLF_GAME_DIR points at one.
-const DEFAULT_VER6_DATA_WOLF: &str =
-    r"E:\EROGAME\Imouto! Life ~Monochrome~ zh-CN Ver\Data.wolf";
+const DEFAULT_VER6_DATA_WOLF: &str = r"E:\EROGAME\Imouto! Life ~Monochrome~ zh-CN Ver\Data.wolf";
 
 /// Resolve the VER6 `Data.wolf`, preferring the environment over the default.
 ///
@@ -117,8 +116,8 @@ fn ver6_data_wolf_extracts_every_entry() {
     };
     let bytes =
         std::fs::read(&path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
-    let archive = DxArchive::open(&bytes)
-        .unwrap_or_else(|error| panic!("{} opens: {error}", path.display()));
+    let archive =
+        DxArchive::open(&bytes).unwrap_or_else(|error| panic!("{} opens: {error}", path.display()));
 
     assert_eq!(archive.version(), 6, "Data.wolf version");
     assert_eq!(archive.char_code_format(), 932, "Data.wolf CharCodeFormat");

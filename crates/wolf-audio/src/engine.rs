@@ -240,7 +240,9 @@ impl Engine {
     // --- internals ----------------------------------------------------------
 
     fn lock(&self) -> MutexGuard<'_, Mixer> {
-        self.mixer.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.mixer
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     fn warn_once(&mut self, file: &str, err: &AudioError) {
@@ -314,7 +316,9 @@ where
                     return;
                 }
                 let frames = data.len() / channels;
-                let mut guard = mixer.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                let mut guard = mixer
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
                 let rendered = guard.render(frames);
                 for (dst, src) in data.iter_mut().zip(rendered.into_iter()) {
                     *dst = T::from_sample(src);

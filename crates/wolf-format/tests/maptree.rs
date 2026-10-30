@@ -97,9 +97,7 @@ fn the_shipped_tree_decodes_to_fifty_entries_and_three_hook_children() {
 
 #[test]
 fn the_shipped_open_status_is_fifty_flags_with_only_the_title_map_open() {
-    let path = data_root()
-        .join("BasicData")
-        .join("MapTreeOpenStatus.dat");
+    let path = data_root().join("BasicData").join("MapTreeOpenStatus.dat");
     let bytes = match std::fs::read(&path) {
         Ok(bytes) => bytes,
         Err(_) => {

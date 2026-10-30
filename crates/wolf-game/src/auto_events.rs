@@ -26,8 +26,8 @@
 use std::collections::BTreeMap;
 
 use wolf_format::commonevent::CommonEventData;
-use wolf_vm::magic::VAR_BASE;
 use wolf_vm::exec::InstanceId;
+use wolf_vm::magic::VAR_BASE;
 use wolf_vm::Vm;
 
 /// Event id -> condition operator / variable / value, taken from the event header.
@@ -101,8 +101,7 @@ impl AutoEvents {
             .filter(|event| {
                 !SKIPPED.contains(&event.id)
                     && (event.run_condition() == 2
-                        || (event.run_condition() == 0
-                            && GATED_CALL_ONLY.contains(&event.id)))
+                        || (event.run_condition() == 0 && GATED_CALL_ONLY.contains(&event.id)))
             })
             .map(|event| AutoEvent {
                 id: event.id,
@@ -175,8 +174,9 @@ impl AutoEvents {
             return report;
         }
         for event in &self.events {
-            let now = condition_value(vm, event.variable)
-                .map_or(false, |left| condition_met(event.operator, left, event.value));
+            let now = condition_value(vm, event.variable).map_or(false, |left| {
+                condition_met(event.operator, left, event.value)
+            });
             let before = self.latched.get(&event.id).copied().unwrap_or(false);
             if now && !before {
                 if let Some(instance) = vm.start_event(event.id) {
@@ -258,7 +258,10 @@ mod tests {
             eprintln!("skipping: no game data at {}", file.display());
             return None;
         };
-        Some((CommonEventData::parse(&bytes).expect("CommonEvent.dat"), root))
+        Some((
+            CommonEventData::parse(&bytes).expect("CommonEvent.dat"),
+            root,
+        ))
     }
 
     #[test]
@@ -266,7 +269,10 @@ mod tests {
         let Some((data, _)) = have_data() else { return };
         let auto = AutoEvents::from_common_events(&data);
         assert_eq!(auto.len(), 98, "96 run=2 events plus gated 242/243");
-        assert!(auto.events().iter().all(|event| matches!(event.operator, 1..=3)));
+        assert!(auto
+            .events()
+            .iter()
+            .all(|event| matches!(event.operator, 1..=3)));
         assert!(auto.events().iter().any(|event| event.id == 38));
         assert!(!auto.events().iter().any(|event| event.id == 43));
         assert!(auto.events().iter().any(|event| event.id == 242));
@@ -318,7 +324,10 @@ mod tests {
         let mut vm = Vm::new(programs);
         let mut auto = AutoEvents::from_common_events(&data);
         let report = auto.sync(&mut vm);
-        assert_eq!(report.started, 1, "only event 38 is true at boot (43 is skipped)");
+        assert_eq!(
+            report.started, 1,
+            "only event 38 is true at boot (43 is skipped)"
+        );
         assert!(vm.instances().iter().any(|instance| instance.event == 38));
         // Normal variable 160 is event 38's condition variable; 3 fails its <= 2 test.
         vm.vars.set(160, 3);

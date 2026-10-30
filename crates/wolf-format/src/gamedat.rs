@@ -60,7 +60,10 @@ impl GameDat {
             return Err(Error::field(
                 "Game.dat string_count",
                 r.pos() - 4,
-                format!("{string_count} entries do not fit in {} bytes", r.remaining()),
+                format!(
+                    "{string_count} entries do not fit in {} bytes",
+                    r.remaining()
+                ),
             ));
         }
         let mut strings = Vec::with_capacity(string_count);

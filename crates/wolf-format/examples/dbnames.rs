@@ -31,9 +31,16 @@ fn main() -> ExitCode {
         eprintln!("type {ty} missing");
         return ExitCode::FAILURE;
     };
-    println!("type {ty}: {} — {} row(s)", db.type_name(ty).unwrap_or("<unnamed>"), t.rows.len());
+    println!(
+        "type {ty}: {} — {} row(s)",
+        db.type_name(ty).unwrap_or("<unnamed>"),
+        t.rows.len()
+    );
     for row in 0..t.rows.len() {
-        println!("  row {row:>3} name {:?}", db.row_name(ty, row).unwrap_or("<none>"));
+        println!(
+            "  row {row:>3} name {:?}",
+            db.row_name(ty, row).unwrap_or("<none>")
+        );
     }
     ExitCode::SUCCESS
 }

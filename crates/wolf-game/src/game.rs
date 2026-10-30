@@ -49,26 +49,23 @@ pub const BOOT_MAP: &str = "MapData/TitleMap.mps";
 pub const BOOT_EVENT: u32 = 2;
 
 /// Events the engine starts unconditionally, because their header says
-/// `parallel_process_always(3)` (docs/ENGINE_EVENTS.md section 7).
+/// `parallel_process_always(3)`.
 ///
-/// The condition byte they also carry is an editor artefact: e.g. `270` names variable
-/// `2700020`, which never appears anywhere in the 550 common events or the 9 map
-/// resources, so the original cannot be gating on it.
+/// Measured on this game's 350 common events: run_condition histogram
+/// `{0: 312, 2: 31, 3: 7}`, and the seven `== 3` events are exactly the ids
+/// below (the sibling game had ten, so this list is not copied from it).
 ///
 /// Order matters: 48 fills the system variables; 261 must precede 270 (270 reads
 /// `2700000..2700005`); 269 must precede 270 (270 tests the flag `1600099` that 269
-/// sets); 225 publishes Sys71/72, which 224 and 213 consume.
+/// sets).
 pub const ENGINE_ALWAYS: &[u32] = &[
-    48,  // X[共]基本システム自動初期化 - system variables first
+    48,  // X[共]基本ｼｽﾃﾑ自動初期化 - system variables first
     261, // ×◆座標変数初期化      - writes 2700000..2700005 for 270
-    269, // ×┣[メッセ—ジ]初期化·設定 - sets self 1600099 for 270
-    270, // ×┣[メッセ—ジ]表示処理
-    271, // ×┗[メッセ—ジ]オートスキップ - writes sysstr 26/27
-    224, // ウィンドウ処理         - needs 225's Sys71/72 and other events' picture numbers
-    225, // フィールド上処理         - publishes Sys71/72, draws the picture cursor
-    213, // クリックエフェクト        - needs 225's Sys71/72
-    214, // 健康監視
-    41,  // マウス感知コモン
+    269, // ×┣[ﾒｯｾｰｼﾞ]初期化・設定 - sets self 1600099 for 270
+    270, // ×┣[ﾒｯｾｰｼﾞ]表示処理
+    271, // ×┗[ﾒｯｾｰｼﾞ]オートスキップ - writes sysstr 26/27
+    214, // 応援会話リコ
+    216, // 性興味監視
 ];
 // 271 is the balloon-message library's initiator: it calls event 98, which registers 19
 // window pictures (10225..10248). It used to be left out, because starting it alone

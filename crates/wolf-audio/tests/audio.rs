@@ -32,8 +32,8 @@ fn find_sample(ext: &str) -> Option<PathBuf> {
 
 fn decode_first(ext: &str) -> Option<DecodedAudio> {
     let path = find_sample(ext)?;
-    let audio = decode_file(&path)
-        .unwrap_or_else(|e| panic!("failed to decode {}: {e}", path.display()));
+    let audio =
+        decode_file(&path).unwrap_or_else(|e| panic!("failed to decode {}: {e}", path.display()));
     println!(
         "{ext}: {} rate={} ch={} frames={} dur={:.3}s loop={:?}..{:?}",
         path.file_name().unwrap().to_string_lossy(),

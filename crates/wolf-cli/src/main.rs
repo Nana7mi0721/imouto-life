@@ -11,8 +11,7 @@ mod play;
 /// It is one process-wide flag rather than a new parameter on every runner, so `capture`,
 /// `capture --map`, `dump` and `play` all honour it without threading an argument through
 /// each signature.
-pub(crate) static AUDIO: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
+pub(crate) static AUDIO: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -645,7 +644,11 @@ fn run_verify(root: &Path, wolf_path: Option<&Path>) -> ExitCode {
                 19,
                 game.u16_settings.len() as u64,
             ));
-            checks.push(Check::text("game.font_main", "Microsoft Yahei UI Bold", game.font_main()));
+            checks.push(Check::text(
+                "game.font_main",
+                "Microsoft Yahei UI Bold",
+                game.font_main(),
+            ));
             checks.push(Check::num("game.random_a", 22507, u64::from(game.random_a)));
             checks.push(Check::num("game.random_b", 23301, u64::from(game.random_b)));
             checks.push(Check::num("game.footer", 0xC2, u64::from(game.footer)));
@@ -663,16 +666,8 @@ fn run_verify(root: &Path, wolf_path: Option<&Path>) -> ExitCode {
     // half of the "new game start map" question (see docs/FORMAT_SPEC.md §2.6).
     match read(&basic.join("MapTree.dat")).map(|bytes| wf::maptree::MapTree::parse(&bytes)) {
         Some(Ok(tree)) => {
-            checks.push(Check::num(
-                "maptree.entries",
-                50,
-                tree.entries.len() as u64,
-            ));
-            checks.push(Check::num(
-                "maptree.version",
-                0x90,
-                u64::from(tree.version),
-            ));
+            checks.push(Check::num("maptree.entries", 50, tree.entries.len() as u64));
+            checks.push(Check::num("maptree.version", 0x90, u64::from(tree.version)));
             checks.push(Check::num("maptree.footer", 0xBC, u64::from(tree.footer)));
             checks.push(Check::num("maptree.roots", 47, tree.roots().len() as u64));
             checks.push(Check::text(
@@ -687,7 +682,11 @@ fn run_verify(root: &Path, wolf_path: Option<&Path>) -> ExitCode {
             ));
         }
         Some(Err(err)) => {
-            checks.push(Check::text("maptree.parse", "ok", &format!("FAILED: {err}")));
+            checks.push(Check::text(
+                "maptree.parse",
+                "ok",
+                &format!("FAILED: {err}"),
+            ));
         }
         None => checks.push(Check::text("maptree.parse", "ok", "FILE MISSING")),
     }
@@ -978,56 +977,54 @@ fn run_verify(root: &Path, wolf_path: Option<&Path>) -> ExitCode {
     match wolf_path {
         Some(path) => verify_wolf(root, path, &mut checks),
         None => match read(&game_dir().join("Data").join("BasicData.wolf"))
-        .map(|bytes| wf::dxarchive::DxArchive::open(&bytes))
-    {
-        Some(Ok(archive)) => {
-            checks.push(Check::num(
-                "dxarchive.version",
-                8,
-                u64::from(archive.version()),
-            ));
-            checks.push(Check::num(
-                "dxarchive.charcode",
-                932,
-                u64::from(archive.char_code_format()),
-            ));
-            checks.push(Check::num(
-                "dxarchive.flags",
-                20_578_304,
-                u64::from(archive.flags()),
-            ));
-            checks.push(Check::num(
-                "dxarchive.huffman_kb",
-                12,
-                u64::from(archive.huffman_encode_kb()),
-            ));
-            checks.push(Check::num(
-                "dxarchive.entries",
-                149,
-                archive.entries().len() as u64,
-            ));
-            let extracted = archive
-                .entry("Game.dat")
-                .and_then(|entry| archive.read(entry).ok());
-            let verdict = match extracted {
-                Some(bytes) => match GameDat::parse(&bytes) {
-                    Ok(game) if game.title() == "Imouto! Life ~Monochrome~ zh-CN Ver." => {
-                        "ok"
-                    }
-                    Ok(_) => "wrong title",
-                    Err(_) => "parse failed",
-                },
-                None => "extract failed",
-            };
-            checks.push(Check::text("dxarchive.game_dat", "ok", verdict));
-        }
-        Some(Err(err)) => checks.push(Check::text(
-            "dxarchive.open",
-            "ok",
-            &format!("FAILED: {err}"),
-        )),
-        None => checks.push(Check::skip("dxarchive.header")),
-    }
+            .map(|bytes| wf::dxarchive::DxArchive::open(&bytes))
+        {
+            Some(Ok(archive)) => {
+                checks.push(Check::num(
+                    "dxarchive.version",
+                    8,
+                    u64::from(archive.version()),
+                ));
+                checks.push(Check::num(
+                    "dxarchive.charcode",
+                    932,
+                    u64::from(archive.char_code_format()),
+                ));
+                checks.push(Check::num(
+                    "dxarchive.flags",
+                    20_578_304,
+                    u64::from(archive.flags()),
+                ));
+                checks.push(Check::num(
+                    "dxarchive.huffman_kb",
+                    12,
+                    u64::from(archive.huffman_encode_kb()),
+                ));
+                checks.push(Check::num(
+                    "dxarchive.entries",
+                    149,
+                    archive.entries().len() as u64,
+                ));
+                let extracted = archive
+                    .entry("Game.dat")
+                    .and_then(|entry| archive.read(entry).ok());
+                let verdict = match extracted {
+                    Some(bytes) => match GameDat::parse(&bytes) {
+                        Ok(game) if game.title() == "Imouto! Life ~Monochrome~ zh-CN Ver." => "ok",
+                        Ok(_) => "wrong title",
+                        Err(_) => "parse failed",
+                    },
+                    None => "extract failed",
+                };
+                checks.push(Check::text("dxarchive.game_dat", "ok", verdict));
+            }
+            Some(Err(err)) => checks.push(Check::text(
+                "dxarchive.open",
+                "ok",
+                &format!("FAILED: {err}"),
+            )),
+            None => checks.push(Check::skip("dxarchive.header")),
+        },
     }
 
     report(&checks)
@@ -1109,10 +1106,7 @@ fn verify_wolf(root: &Path, wolf: &Path, checks: &mut Vec<Check>) {
                     }
                     Err(err) => {
                         if mismatches.len() < 10 {
-                            mismatches.push(format!(
-                                "{} (disk read failed: {err})",
-                                entry.path()
-                            ));
+                            mismatches.push(format!("{} (disk read failed: {err})", entry.path()));
                         }
                     }
                 }
@@ -1156,8 +1150,6 @@ fn verify_wolf(root: &Path, wolf: &Path, checks: &mut Vec<Check>) {
         ));
     }
 }
-
-
 
 /// Compile all 350 common events and diff the precompiler's invariants against
 /// the counts measured in docs/OPCODE_SPEC.md.
@@ -1783,7 +1775,8 @@ fn run_dump(
     let mut total_steps = 0usize;
     let mut peak = 1usize;
     let mut frames_run = 0usize;
-    let mut watch_pc: std::collections::BTreeMap<InstanceId, usize> = std::collections::BTreeMap::new();
+    let mut watch_pc: std::collections::BTreeMap<InstanceId, usize> =
+        std::collections::BTreeMap::new();
     // Lifecycle state for --watch-start: store the instance id currently alive per
     // watched event (None = not running). A fresh id means a new start; None after an
     // id means it stopped, so both edges are reported without relying on --watch pc moves.
@@ -1796,7 +1789,13 @@ fn run_dump(
         let outcome = game.frame();
         frames_run += 1;
         for (i, wanted) in watch_start.iter().enumerate() {
-            let live = game.vm.instances().iter().rev().find(|inst| inst.event == *wanted).map(|inst| inst.id);
+            let live = game
+                .vm
+                .instances()
+                .iter()
+                .rev()
+                .find(|inst| inst.event == *wanted)
+                .map(|inst| inst.id);
             match (watch_start_live[i], live) {
                 (None, Some(new_id)) => {
                     println!("  start frame {frame}: id {new_id} event {wanted} (started)");
@@ -1821,7 +1820,10 @@ fn run_dump(
                 }
                 if watch_pc.get(&inst.id).copied() != Some(inst.pc) {
                     if watch_pc.len() < 400 {
-                        println!("  watch frame {frame}: id {} event {} pc {} wait {:?}", inst.id, inst.event, inst.pc, inst.wait);
+                        println!(
+                            "  watch frame {frame}: id {} event {} pc {} wait {:?}",
+                            inst.id, inst.event, inst.pc, inst.wait
+                        );
                     }
                     watch_pc.insert(inst.id, inst.pc);
                 }
@@ -1851,7 +1853,10 @@ fn run_dump(
     println!("  peak coroutines {peak}");
     println!("  instance alive  {}", game.vm.instance(instance).is_some());
     for addr in print_vars {
-        println!("  var {addr} = {}", game.vm.vars.get(normalise_var_addr(*addr)));
+        println!(
+            "  var {addr} = {}",
+            game.vm.vars.get(normalise_var_addr(*addr))
+        );
     }
     for (i, slot) in print_selfs.iter().enumerate() {
         match last_self[i] {
@@ -1885,7 +1890,10 @@ fn run_dump(
         .iter()
         .filter(|(msg, _)| msg.contains("unanswered"))
         .count();
-    println!("  diagnostics     {} distinct, {unanswered} unanswered", game.diagnostics.len());
+    println!(
+        "  diagnostics     {} distinct, {unanswered} unanswered",
+        game.diagnostics.len()
+    );
     for (msg, count) in game.diagnostics.iter().take(30) {
         println!("    {count}x {msg}");
     }
@@ -2181,8 +2189,12 @@ fn drive_capture_frames(game: &mut Game, frames: usize, answers: &Answers) -> us
         // One frame of a held button is a click: the host compares against the previous
         // frame, so the press edge survives exactly one step.
         game.mouse_buttons = u32::from(answers.press_frame == Some(frame));
-        game.key_bits =
-            key_bits_for_frame(frame, &answers.key_frames, &answers.press_every, answers.auto_input);
+        game.key_bits = key_bits_for_frame(
+            frame,
+            &answers.key_frames,
+            &answers.press_every,
+            answers.auto_input,
+        );
         let outcome = game.frame();
         peak = peak.max(outcome.report.running);
     }
@@ -2488,7 +2500,13 @@ fn run_capture(
         Entry::CommonEvent(id) => {
             game.start_engine_events();
             let started = if game.start_event(id) {
-                entry_instance = game.vm.instances().iter().rev().find(|i| i.event == id).map(|i| i.id);
+                entry_instance = game
+                    .vm
+                    .instances()
+                    .iter()
+                    .rev()
+                    .find(|i| i.event == id)
+                    .map(|i| i.id);
                 Ok(())
             } else {
                 Err(format!("no common event with id {id}"))

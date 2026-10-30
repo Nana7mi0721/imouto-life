@@ -182,14 +182,16 @@ impl<'a> Reader<'a> {
         Ok(&raw[..end])
     }
 
-    /// Read a `t_str` as a `String`, replacing invalid UTF-8.
+    /// Read a `t_str` as a `String`.
     ///
-    /// Lossy on purpose: a few strings in this game's data are genuinely
-    /// corrupt on disk (see `docs/FORMAT_SPEC.md` §1.4). Round-tripping such a
-    /// string is never required, so a lossy decode is the right trade.
+    /// Three encodings appear in WOLF data: the 2.10 generation (sibling game)
+    /// stores UTF-8; the 2.00 generation (this game) stores CP932; and this
+    /// game's Chinese fan translation overwrote many display strings with GBK
+    /// while leaving system/template text in CP932. Decode by trying UTF-8
+    /// strictly first, then scoring CP932 against GBK.
     pub fn t_str(&mut self) -> Result<String> {
         let raw = self.t_str_bytes()?;
-        Ok(String::from_utf8_lossy(raw).into_owned())
+        Ok(decode_wolf_str(raw))
     }
 
     /// Read a `t_str_array`.
@@ -233,4 +235,99 @@ impl<'a> Reader<'a> {
             Err(Error::trailing(self.pos, self.remaining()))
         }
     }
+}
+
+/// Decode a WOLF string payload, which may be UTF-8, CP932 (Shift-JIS) or GBK.
+///
+/// UTF-8 is tried first (2.10 generation). Otherwise both CP932 and GBK are
+/// decoded and scored: the Chinese translation's GBK bytes decode to plausible
+/// hanzi under GBK but to halfwidth katakana under CP932, while untranslated
+/// Japanese decodes to kana/hanzi under CP932 and to junk under GBK.
+#[must_use]
+pub fn decode_wolf_str(raw: &[u8]) -> String {
+    if let Ok(text) = std::str::from_utf8(raw) {
+        return text.to_owned();
+    }
+    let cp = crate::dxarchive::decode_cp932(raw);
+    let (gb, gb_bad) = crate::gbk::decode(raw);
+    let cp_bad = cp.contains('\u{FFFD}');
+    if gb_bad && !cp_bad {
+        return cp;
+    }
+    if cp_bad && !gb_bad {
+        return gb;
+    }
+    let cp_total = score_cp932_bytes(raw) + score_chars(&cp);
+    let gb_total = score_gbk_bytes(raw) + score_chars(&gb);
+    if gb_total > cp_total + 2 {
+        gb
+    } else {
+        cp
+    }
+}
+
+/// Score how much a byte payload looks like GB2312/GBK hanzi: lead 0xB0..=0xF7
+/// with trail 0xA1..=0xFE is the common-hanzi band.
+fn score_gbk_bytes(raw: &[u8]) -> i32 {
+    let mut score = 0;
+    let mut i = 0;
+    while i + 1 < raw.len() {
+        let (b, t) = (raw[i], raw[i + 1]);
+        if b < 0x80 {
+            i += 1;
+            continue;
+        }
+        if (0xB0..=0xF7).contains(&b) && (0xA1..=0xFE).contains(&t) {
+            score += 3;
+        } else if (0x81..=0xAF).contains(&b) {
+            score += 1;
+        }
+        i += 2;
+    }
+    score
+}
+
+/// Score how much a byte payload looks like CP932: kanji/kana two-byte pairs
+/// use lead 0x81..=0x9F or 0xE0..=0xEA; bytes 0xA1..=0xDF read as single-byte
+/// halfwidth katakana, which is what GBK hanzi turn into under CP932.
+fn score_cp932_bytes(raw: &[u8]) -> i32 {
+    let mut score = 0;
+    let mut i = 0;
+    while i + 1 < raw.len() {
+        let (b, t) = (raw[i], raw[i + 1]);
+        if b < 0x80 {
+            i += 1;
+            continue;
+        }
+        if ((0x81..=0x9F).contains(&b) || (0xE0..=0xEA).contains(&b))
+            && ((0x40..=0x7E).contains(&t) || (0x80..=0xFC).contains(&t))
+        {
+            score += 3;
+        } else if (0xA1..=0xDF).contains(&b) {
+            score -= 2;
+        } else {
+            score -= 1;
+        }
+        i += 2;
+    }
+    score
+}
+
+/// Character-level plausibility: CJK ideographs and fullwidth kana are real
+/// text; Greek/Cyrillic letters are the signature of GBK bytes read as CP932.
+fn score_chars(text: &str) -> i32 {
+    let mut score = 0;
+    for ch in text.chars() {
+        let c = u32::from(ch);
+        if ch == '\u{FFFD}' {
+            score -= 30;
+        } else if (0x3040..=0x30FF).contains(&c) {
+            score += 3;
+        } else if (0x4E00..=0x9FFF).contains(&c) {
+            score += 2;
+        } else if (0x0370..=0x04FF).contains(&c) {
+            score -= 4;
+        }
+    }
+    score
 }

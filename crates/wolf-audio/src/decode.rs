@@ -77,8 +77,8 @@ impl DecodedAudio {
 /// Decode an audio file from disk.
 pub fn decode_file(path: impl AsRef<Path>) -> Result<DecodedAudio, AudioError> {
     let path = path.as_ref();
-    let file = File::open(path)
-        .map_err(|e| AudioError::Io(format!("open {}: {e}", path.display())))?;
+    let file =
+        File::open(path).map_err(|e| AudioError::Io(format!("open {}: {e}", path.display())))?;
     let mut hint = Hint::new();
     if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
         hint.with_extension(ext);
@@ -91,10 +91,7 @@ pub fn decode_bytes(bytes: Vec<u8>) -> Result<DecodedAudio, AudioError> {
     decode_source(Box::new(std::io::Cursor::new(bytes)), &Hint::new())
 }
 
-fn decode_source(
-    source: Box<dyn MediaSource>,
-    hint: &Hint,
-) -> Result<DecodedAudio, AudioError> {
+fn decode_source(source: Box<dyn MediaSource>, hint: &Hint) -> Result<DecodedAudio, AudioError> {
     let mss = MediaSourceStream::new(source, Default::default());
 
     let mut format: Box<dyn FormatReader> = symphonia::default::get_probe()

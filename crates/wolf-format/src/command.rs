@@ -372,7 +372,10 @@ impl SlotStats {
     /// Distinct opcodes seen, excluding the NOP opcode.
     #[must_use]
     pub fn distinct_opcodes(&self) -> usize {
-        self.opcodes.keys().filter(|&&op| op != OPCODE_BLANK).count()
+        self.opcodes
+            .keys()
+            .filter(|&&op| op != OPCODE_BLANK)
+            .count()
     }
 
     /// Merge another set of counts into this one.

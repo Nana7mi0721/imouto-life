@@ -37,7 +37,8 @@ pub struct LoadedSave {
 
 /// Reads and decrypts one save file.
 pub fn read_save(path: &Path) -> Result<SaveFile, String> {
-    let bytes = std::fs::read(path).map_err(|err| format!("cannot read {}: {err}", path.display()))?;
+    let bytes =
+        std::fs::read(path).map_err(|err| format!("cannot read {}: {err}", path.display()))?;
     SaveFile::parse(&bytes).map_err(|err| format!("cannot parse {}: {err}", path.display()))
 }
 
@@ -68,8 +69,10 @@ pub enum SaveRequest {
 
 /// Parses \`path\` and applies it to \`game\`.
 pub fn load_into(game: &mut Game, path: &Path) -> Result<LoadedSave, String> {
-    let bytes = std::fs::read(path).map_err(|err| format!("cannot read {}: {err}", path.display()))?;
-    let save = SaveFile::parse(&bytes).map_err(|err| format!("cannot parse {}: {err}", path.display()))?;
+    let bytes =
+        std::fs::read(path).map_err(|err| format!("cannot read {}: {err}", path.display()))?;
+    let save =
+        SaveFile::parse(&bytes).map_err(|err| format!("cannot parse {}: {err}", path.display()))?;
     Ok(apply(game, &save))
 }
 
@@ -275,7 +278,11 @@ fn encode_escape(chars: &[char]) -> Option<(usize, Vec<u8>)> {
         if end == 3 || chars.get(end) != Some(&']') {
             return None;
         }
-        let code = if kind == 'c' && value == 0 { 0x0f } else { value + 14 };
+        let code = if kind == 'c' && value == 0 {
+            0x0f
+        } else {
+            value + 14
+        };
         if !(1..=255).contains(&code) {
             return None;
         }
@@ -457,7 +464,12 @@ mod tests {
             let reencoded = encode_picture_text(&text);
             // Escape 04 is a font-plus-letter-spacing variant; it decodes to the same
             // [n] text and re-encodes as the plain 05 font, so compare decoded text.
-            assert_eq!(decode_picture_text(&reencoded), text, "picture {}", record.var1);
+            assert_eq!(
+                decode_picture_text(&reencoded),
+                text,
+                "picture {}",
+                record.var1
+            );
             checked += 1;
         }
         assert!(checked > 20, "checked {checked} text records");
@@ -472,14 +484,31 @@ mod tests {
             var4: 0,
             var5: 0,
             var6: 1,
-            vars7_18: [492, 57, 215, 6, 1, 128, 0, u32::MAX, 1, (-100i32) as u32, 100, 0],
+            vars7_18: [
+                492,
+                57,
+                215,
+                6,
+                1,
+                128,
+                0,
+                u32::MAX,
+                1,
+                (-100i32) as u32,
+                100,
+                0,
+            ],
             md1: b"<SQUARE>\0".to_vec(),
             ..SavePart5_1::default()
         };
         let picture = picture_from_record(&record).expect("a window picture");
         assert_eq!(picture.scale, -100);
         let written = picture_to_record(&picture);
-        assert_eq!(written.vars7_18[9], (-100i32) as u32, "negative scale must be kept");
+        assert_eq!(
+            written.vars7_18[9],
+            (-100i32) as u32,
+            "negative scale must be kept"
+        );
     }
 
     #[test]

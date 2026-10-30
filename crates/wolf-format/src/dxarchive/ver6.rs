@@ -175,14 +175,10 @@ impl Ver6 {
         }
         let offset = super::size_of(entry.data_offset)?;
         if entry.press_size != NO_COMPRESSION {
-            let mut coded = super::slice_of(data, offset, super::size_of(entry.press_size)?, WHAT)?.to_vec();
+            let mut coded =
+                super::slice_of(data, offset, super::size_of(entry.press_size)?, WHAT)?.to_vec();
             key_conv(&mut coded, &self.key, entry.size);
-            return super::expect_size(
-                lz::decode(&coded, WHAT)?,
-                dest,
-                WHAT,
-                entry.data_offset,
-            );
+            return super::expect_size(lz::decode(&coded, WHAT)?, dest, WHAT, entry.data_offset);
         }
         let mut raw = super::slice_of(data, offset, dest, WHAT)?.to_vec();
         key_conv(&mut raw, &self.key, entry.size);
@@ -223,7 +219,11 @@ impl<'a> Tables<'a> {
             .directory_table
             .checked_add(super::size_of(offset)?)
             .ok_or_else(|| {
-                Error::field(WHAT, self.directory_table, "directory offset overflows usize")
+                Error::field(
+                    WHAT,
+                    self.directory_table,
+                    "directory offset overflows usize",
+                )
             })?;
         let mut reader = Reader::new(super::slice_of(self.head, at, DIRECTORY_SIZE_VER6, WHAT)?);
         let _directory_address = reader.u64()?;
@@ -242,7 +242,9 @@ impl<'a> Tables<'a> {
         let at = self
             .file_table
             .checked_add(super::size_of(offset)?)
-            .ok_or_else(|| Error::field(WHAT, self.file_table, "file head offset overflows usize"))?;
+            .ok_or_else(|| {
+                Error::field(WHAT, self.file_table, "file head offset overflows usize")
+            })?;
         let mut reader = Reader::new(super::slice_of(self.head, at, FILE_HEAD_SIZE_VER6, WHAT)?);
         let name_address = reader.u64()?;
         let attributes = reader.u64()?;
@@ -263,12 +265,7 @@ impl<'a> Tables<'a> {
     fn name(&self, address: u64) -> Result<String> {
         const WHAT: &str = "DXArchive v6 name table";
         let at = super::size_of(address)?;
-        let rest = super::slice_of(
-            self.head,
-            at,
-            self.head.len().saturating_sub(at),
-            WHAT,
-        )?;
+        let rest = super::slice_of(self.head, at, self.head.len().saturating_sub(at), WHAT)?;
         let mut reader = Reader::new(rest);
         let pack = reader.u16()?;
         let _parity = reader.u16()?;
@@ -314,7 +311,9 @@ impl<'a> Tables<'a> {
             let slot = index
                 .checked_mul(FILE_HEAD_SIZE_VER6 as u64)
                 .and_then(|step| directory.file_head_address.checked_add(step))
-                .ok_or_else(|| Error::field(WHAT, self.file_table, "file head index overflows u64"))?;
+                .ok_or_else(|| {
+                    Error::field(WHAT, self.file_table, "file head index overflows u64")
+                })?;
             let file = self.file_head(slot)?;
             let name = self.name(file.name_address)?;
 

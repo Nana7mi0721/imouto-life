@@ -94,7 +94,12 @@ fn the_opening_script_runs_and_draws_its_pictures() {
     let prompt = game.choices.as_ref().expect("the opening prompt is open");
     assert_eq!(
         prompt.options,
-        ["广阔的战场", "广袤的森林", "微风吹拂而过的麦田", "有人在等我的家"],
+        [
+            "广阔的战场",
+            "广袤的森林",
+            "微风吹拂而过的麦田",
+            "有人在等我的家"
+        ],
         "the opening prompt changed"
     );
     // The prompt is mouse-first, so the hit test and the drawn geometry have to agree: a
@@ -149,7 +154,10 @@ fn the_opening_script_runs_and_draws_its_pictures() {
         "{} message(s) stayed on screen after the prompt opened",
         game.messages.len()
     );
-    assert!(game.stats.messages > 0, "the opening narration never arrived");
+    assert!(
+        game.stats.messages > 0,
+        "the opening narration never arrived"
+    );
 }
 
 /// The new-game processing map (Map003 event 1) is the path the title menu takes:
@@ -184,10 +192,18 @@ fn the_new_game_processing_map_teleports_into_the_opening() {
     let prompt = game.choices.as_ref().expect("the opening prompt is open");
     assert_eq!(
         prompt.options,
-        ["广阔的战场", "广袤的森林", "微风吹拂而过的麦田", "有人在等我的家"],
+        [
+            "广阔的战场",
+            "广袤的森林",
+            "微风吹拂而过的麦田",
+            "有人在等我的家"
+        ],
         "the teleport did not reach the opening prompt"
     );
-    assert_eq!(game.stats.warnings, 0, "the new-game path produced warnings");
+    assert_eq!(
+        game.stats.warnings, 0,
+        "the new-game path produced warnings"
+    );
 }
 
 /// The retail entry chain: boot to the title art, confirm opens the title menu,
@@ -254,12 +270,16 @@ fn the_title_menu_starts_a_new_game() {
     let prompt = game.choices.as_ref().expect("the opening prompt is open");
     assert_eq!(
         prompt.options,
-        ["广阔的战场", "广袤的森林", "微风吹拂而过的麦田", "有人在等我的家"],
+        [
+            "广阔的战场",
+            "广袤的森林",
+            "微风吹拂而过的麦田",
+            "有人在等我的家"
+        ],
         "the title menu did not reach the opening prompt"
     );
     assert_eq!(game.stats.warnings, 0, "the title path produced warnings");
 }
-
 
 /// The M2 everyday chain: start a new game, answer the opening prompts, reach the
 /// story HUD, write a save and load it back into a fresh Game. Everything the
@@ -294,7 +314,9 @@ fn a_title_new_game_can_be_saved_and_reloaded_after_the_opening() {
         game.frame();
     }
     assert!(
-        game.screen.iter().any(|picture| picture.file.contains("title01")),
+        game.screen
+            .iter()
+            .any(|picture| picture.file.contains("title01")),
         "the boot chain did not reach the title art"
     );
     game.key_bits = key::OK;
@@ -325,14 +347,29 @@ fn a_title_new_game_can_be_saved_and_reloaded_after_the_opening() {
     );
     assert_eq!(game.stats.warnings, 0, "the new-game run produced warnings");
 
-    fn visible_pictures(screen: &wolf_game::picture::Screen) -> Vec<(i32, String, i32, i32, u8, i32, (u32, u32), u32)> {
+    fn visible_pictures(
+        screen: &wolf_game::picture::Screen,
+    ) -> Vec<(i32, String, i32, i32, u8, i32, (u32, u32), u32)> {
         screen
             .iter()
             .filter(|p| p.x < 1024 && p.y < 576 && p.x + 1 > 0 && p.y + 1 > 0)
             .filter(|p| !p.file.is_empty() || !p.text.is_empty())
             .map(|p| {
-                let content = if p.kind.is_text() { format!("text:{}", p.text) } else { p.file.clone() };
-                (p.number, content, p.x, p.y, p.anchor, p.scale, p.split, p.pattern_index)
+                let content = if p.kind.is_text() {
+                    format!("text:{}", p.text)
+                } else {
+                    p.file.clone()
+                };
+                (
+                    p.number,
+                    content,
+                    p.x,
+                    p.y,
+                    p.anchor,
+                    p.scale,
+                    p.split,
+                    p.pattern_index,
+                )
             })
             .collect()
     }
@@ -353,8 +390,15 @@ fn a_title_new_game_can_be_saved_and_reloaded_after_the_opening() {
     let mut reloaded = Game::new(&root).expect("fresh game");
     reloaded.load_save(&path).expect("load the new game");
     let after_screen = visible_pictures(&reloaded.screen);
-    assert_eq!(before_screen, after_screen, "the visible picture layer changed");
-    assert_eq!(reloaded.playtime_frames(), before_playtime, "play time changed");
+    assert_eq!(
+        before_screen, after_screen,
+        "the visible picture layer changed"
+    );
+    assert_eq!(
+        reloaded.playtime_frames(),
+        before_playtime,
+        "play time changed"
+    );
     for index in 0..800 {
         assert_eq!(
             reloaded.vm.vars.get(index),

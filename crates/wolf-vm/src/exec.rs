@@ -1791,7 +1791,13 @@ fn execute(
             }
             130 => {
                 // Raw layout is target, x, y, map, options - not map-first.
-                host.teleport(arg(cmd, 0), arg(cmd, 3), arg(cmd, 1), arg(cmd, 2), arg(cmd, 4));
+                host.teleport(
+                    arg(cmd, 0),
+                    arg(cmd, 3),
+                    arg(cmd, 1),
+                    arg(cmd, 2),
+                    arg(cmd, 4),
+                );
                 // The map load is instant in the original; one frame of slack
                 // keeps the host from having to re-enter the interpreter.
                 inst.wait = WaitState::Frames(1);
@@ -1820,7 +1826,11 @@ fn execute(
                     // For BGM this is the fade-in length; SE treats the same slot as a
                     // start delay. The mixer currently only uses frames when stopping,
                     // but keeping it here preserves the field instead of dropping it.
-                    let frames = if argc(cmd) >= 6 { arg(cmd, 1).max(0) } else { 0 };
+                    let frames = if argc(cmd) >= 6 {
+                        arg(cmd, 1).max(0)
+                    } else {
+                        0
+                    };
                     (SoundAction::Play, file, volume, frames)
                 } else {
                     let frames = if argc(cmd) <= 5 { arg(cmd, 1) } else { 0 };
@@ -2204,7 +2214,12 @@ fn enter_block(
             let mut matched = None;
             for i in 0..count {
                 let var = arg(cmd, 1 + 3 * i);
-                let value = arg(cmd, 2 + 3 * i);
+                // The right-hand side is a magic operand too: this title's
+                // condition blocks compare a counter against a value held in a
+                // self variable (CE79 pc85 compares self621 with self616), and
+                // reading it raw turned a six-iteration loop into a 1.6-million
+                // iteration one that never returned.
+                let value = eval_num(arg(cmd, 2 + 3 * i), inst, vars);
                 let operator = arg(cmd, 3 + 3 * i);
                 let lhs = eval_num(var, inst, vars);
                 if compare(lhs, value, operator) {

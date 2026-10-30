@@ -40,7 +40,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let project = root.join("BasicData").join(format!("{file}.project"));
     if let Ok(bytes) = std::fs::read(&project) {
         let aligned = db.apply_project_names(&bytes);
-        println!("project : {} ({} record(s) aligned)", project.display(), aligned);
+        println!(
+            "project : {} ({} record(s) aligned)",
+            project.display(),
+            aligned
+        );
     }
     if list_names {
         for index in 0..db.types.len() {

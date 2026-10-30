@@ -100,7 +100,10 @@ impl MapTree {
     /// The roots of the tree, in display order.
     #[must_use]
     pub fn roots(&self) -> Vec<&MapTreeEntry> {
-        self.entries.iter().filter(|entry| entry.is_root()).collect()
+        self.entries
+            .iter()
+            .filter(|entry| entry.is_root())
+            .collect()
     }
 
     /// Direct children of `map_id`, in display order.
@@ -153,7 +156,10 @@ impl MapTreeOpenStatus {
             return Err(Error::field(
                 "MapTreeOpenStatus count",
                 reader.pos(),
-                format!("declared {count} flags but only {} remain", reader.remaining()),
+                format!(
+                    "declared {count} flags but only {} remain",
+                    reader.remaining()
+                ),
             ));
         }
         let mut open = Vec::with_capacity(count);

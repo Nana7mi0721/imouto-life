@@ -210,9 +210,7 @@ mod tests {
 
         fn lookup_str(&self, bank: EscapeBank, index: usize) -> String {
             match bank {
-                EscapeBank::SelfVar => {
-                    self.self_strs.get(index).cloned().unwrap_or_default()
-                }
+                EscapeBank::SelfVar => self.self_strs.get(index).cloned().unwrap_or_default(),
                 _ => self.strs.get(index).cloned().unwrap_or_default(),
             }
         }

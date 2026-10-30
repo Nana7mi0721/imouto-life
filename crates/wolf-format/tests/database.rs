@@ -136,13 +136,16 @@ fn data_base_type_zero_has_the_documented_field_table() {
     assert_eq!(
         row.numbers,
         vec![
-            10, 0, 0, 0, 2, -1, 0, 0, 100, 0, 20, 0, 0, -1, -1, -3, 0, -1, -1, -1, -1, -1, -1,
-            -1, -1, -1, 1, 0, 1, 100, 0, 0
+            10, 0, 0, 0, 2, -1, 0, 0, 100, 0, 20, 0, 0, -1, -1, -3, 0, -1, -1, -1, -1, -1, -1, -1,
+            -1, -1, 1, 0, 1, 100, 0, 0
         ],
         "type 0 row 0 numeric columns"
     );
     assert_eq!(row.strings.len(), 5, "type 0 row 0 string columns");
-    assert!(row.strings[0].contains('\u{FFFD}'), "string 0 is a lossy name");
+    assert!(
+        row.strings[0].contains('\u{FFFD}'),
+        "string 0 is a lossy name"
+    );
     assert_eq!(row.strings[1], "", "string 1 empty");
     assert_eq!(row.strings[2], "", "string 2 empty");
     assert_eq!(row.strings[4], "", "string 4 empty");

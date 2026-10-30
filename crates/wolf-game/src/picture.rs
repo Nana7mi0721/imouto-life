@@ -2673,9 +2673,8 @@ mod effect_tests {
         picture.split = (6, 2);
         picture.pattern_index = 2;
         screen.insert(picture);
-        let quads = screen.quads(|name| {
-            (name == "Picture/stand_imouto_paja2.png").then_some((2400, 1300))
-        });
+        let quads =
+            screen.quads(|name| (name == "Picture/stand_imouto_paja2.png").then_some((2400, 1300)));
         assert_eq!(quads.len(), 1);
         assert_eq!(quads[0].src, [400, 0, 400, 650]);
         assert_eq!(quads[0].dst, [0.0, 0.0, 400.0, 650.0]);
@@ -2687,10 +2686,12 @@ mod effect_tests {
         picture.split = (6, 2);
         picture.pattern_index = 99;
         screen.insert(picture);
-        let quads = screen.quads(|name| {
-            (name == "Picture/stand_imouto_paja2.png").then_some((2400, 1300))
-        });
-        let cell = quads.iter().find(|quad| quad.number == 91).expect("picture 91");
+        let quads =
+            screen.quads(|name| (name == "Picture/stand_imouto_paja2.png").then_some((2400, 1300)));
+        let cell = quads
+            .iter()
+            .find(|quad| quad.number == 91)
+            .expect("picture 91");
         assert_eq!(cell.src, [0, 0, 400, 650]);
     }
 
@@ -2712,9 +2713,8 @@ mod effect_tests {
         assert_eq!(picture.split, (6, 2));
         assert_eq!(picture.pattern_index, 2);
         assert_eq!(picture.window, None, "a file picture has no window box");
-        let quads = screen.quads(|name| {
-            (name == "Picture/stand_imouto_paja2.png").then_some((2400, 1300))
-        });
+        let quads =
+            screen.quads(|name| (name == "Picture/stand_imouto_paja2.png").then_some((2400, 1300)));
         assert_eq!(quads[0].src, [400, 0, 400, 650]);
     }
 
@@ -2728,17 +2728,23 @@ mod effect_tests {
         picture.pattern_index = 1;
         picture.pattern = Some(PatternFx::new(EFFECT_PATTERN_LOOP, 2, 3, 4, 1));
         screen.insert(picture);
-        let quads = screen.quads(|name| {
-            (name == "Picture/stand_imouto_paja2.png").then_some((2400, 1300))
-        });
-        assert_eq!(quads[0].src, [400, 0, 400, 650], "pattern 2 is the second cell");
+        let quads =
+            screen.quads(|name| (name == "Picture/stand_imouto_paja2.png").then_some((2400, 1300)));
+        assert_eq!(
+            quads[0].src,
+            [400, 0, 400, 650],
+            "pattern 2 is the second cell"
+        );
         for _ in 0..4 {
             screen.tick();
         }
-        let quads = screen.quads(|name| {
-            (name == "Picture/stand_imouto_paja2.png").then_some((2400, 1300))
-        });
-        assert_eq!(quads[0].src, [800, 0, 400, 650], "the loop reaches pattern 3 next");
+        let quads =
+            screen.quads(|name| (name == "Picture/stand_imouto_paja2.png").then_some((2400, 1300)));
+        assert_eq!(
+            quads[0].src,
+            [800, 0, 400, 650],
+            "the loop reaches pattern 3 next"
+        );
     }
 
     /// The zoom percentage ramps over the action time instead of popping.

@@ -89,8 +89,14 @@ mod tests {
 
     #[test]
     fn selects_by_version_header() {
-        assert_eq!(WolfGeneration::from_version_header(0x00), Some(WolfGeneration::V200));
-        assert_eq!(WolfGeneration::from_version_header(0x55), Some(WolfGeneration::V210));
+        assert_eq!(
+            WolfGeneration::from_version_header(0x00),
+            Some(WolfGeneration::V200)
+        );
+        assert_eq!(
+            WolfGeneration::from_version_header(0x55),
+            Some(WolfGeneration::V210)
+        );
         assert_eq!(WolfGeneration::from_version_header(0x01), None);
     }
 

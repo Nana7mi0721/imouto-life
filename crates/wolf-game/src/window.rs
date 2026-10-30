@@ -133,10 +133,7 @@ mod tests {
     fn a_full_skin_uses_every_texel_exactly_once() {
         let pieces = nine_slice([0.0, 0.0, 30.0, 20.0], 18, 18);
         assert_eq!(pieces.len(), 9);
-        let area: u32 = pieces
-            .iter()
-            .map(|piece| piece.src[2] * piece.src[3])
-            .sum();
+        let area: u32 = pieces.iter().map(|piece| piece.src[2] * piece.src[3]).sum();
         assert_eq!(area, 18 * 18);
         // The centre piece keeps the skin centre and stretches in the destination.
         let centre = pieces

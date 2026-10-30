@@ -52,7 +52,13 @@ fn samplemapa_selects_one_page_per_event() {
     // number of events the map has.
     assert!(runtime.len() <= map.events.len());
     for slot in runtime.slots() {
-        println!("  event {:2} page {} trigger {:?} slots {}", slot.event, slot.page, slot.trigger, slot.program.len());
+        println!(
+            "  event {:2} page {} trigger {:?} slots {}",
+            slot.event,
+            slot.page,
+            slot.trigger,
+            slot.program.len()
+        );
     }
     assert!(!runtime.is_empty(), "no active event at all");
     let automatic = runtime
@@ -60,7 +66,10 @@ fn samplemapa_selects_one_page_per_event() {
         .iter()
         .filter(|slot| slot.trigger.is_automatic())
         .count();
-    assert_eq!(started, automatic, "every automatic active page started once");
+    assert_eq!(
+        started, automatic,
+        "every automatic active page started once"
+    );
     for slot in runtime.slots() {
         // Action-key and player-touch pages stay dormant until an input layer
         // exists; every collected page must still carry a real program.
@@ -105,7 +114,10 @@ fn a_variable_write_switches_the_active_page() {
         .into_iter()
         .find(|(id, _)| *id == 15)
         .and_then(|(_, page)| page);
-    println!("global 100 = 99 -> event 15 page {page:?} switches {}", runtime.switches);
+    println!(
+        "global 100 = 99 -> event 15 page {page:?} switches {}",
+        runtime.switches
+    );
     assert_eq!(page, None, "no page of event 15 asks for 99");
 }
 

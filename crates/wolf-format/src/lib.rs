@@ -18,6 +18,7 @@ pub mod database;
 pub mod dxarchive;
 pub mod error;
 pub mod gamedat;
+pub mod gbk;
 pub mod generation;
 pub mod maptree;
 pub mod messagetext;

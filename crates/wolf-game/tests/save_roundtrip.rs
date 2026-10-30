@@ -44,10 +44,7 @@ fn retail_save_dir() -> Option<PathBuf> {
         let dir = PathBuf::from(dir);
         return dir.is_dir().then_some(dir);
     }
-    let dir = repo_root()
-        .join("work")
-        .join("retail_backup")
-        .join("Save");
+    let dir = repo_root().join("work").join("retail_backup").join("Save");
     dir.is_dir().then_some(dir)
 }
 
@@ -76,7 +73,11 @@ fn normal_vars(game: &Game) -> Vec<i32> {
 }
 
 fn round_trip_one(full: &Path, out_dir: &Path, save_path: &Path) {
-    let name = save_path.file_name().unwrap().to_string_lossy().into_owned();
+    let name = save_path
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
 
     let mut game = Game::new(full).expect("game");
     let loaded = savegame::load_into(&mut game, save_path).expect("load retail save");

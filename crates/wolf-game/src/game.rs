@@ -1437,6 +1437,14 @@ impl GameHost<'_> {
             inside_screen && px >= left && px < left + size.0 && py >= top && py < top + size.1;
         i32::from(over)
     }
+
+    /// Mouse buttons as fresh key bits for this frame.
+    ///
+    /// Only a press edge counts (see crate::key::mouse_bits); a held button looks
+    /// like nothing so a menu polled every frame fires exactly once.
+    fn mouse_key_bits(&self) -> u32 {
+        crate::key::mouse_bits(self.mouse_buttons, self.previous_mouse_buttons)
+    }
 }
 
 /// WOLF reports a mouse button as 0 released, 1 held, 2 pressed this frame.
@@ -1871,17 +1879,19 @@ impl Host for GameHost<'_> {
 
     fn key_code(&mut self, mask: u32) -> i32 {
         // The mask is deliberately unused: one mask can yield six different codes,
-        // see crates/wolf-game/src/key.rs.
+        // see crates/wolf-game/src/key.rs. A mouse click joins the held keyboard
+        // bits as an edge, so the command menus (opcode 123) react to the mouse.
         let _ = mask;
-        crate::key::code(self.key_bits)
+        crate::key::code(self.key_bits | self.mouse_key_bits())
     }
 
     fn key_code_auto(&mut self, mask: u32, auto: u32) -> i32 {
         // Opcode 125 exists exactly for script-driven input: the key bits it names
         // are pressed even when the player is not touching the keyboard. The mask is
-        // still irrelevant for the code mapping, as above.
+        // still irrelevant for the code mapping, as above. The mouse joins in too, so
+        // a scripted menu and a real click follow the same path.
         let _ = mask;
-        crate::key::code(self.key_bits | auto)
+        crate::key::code(self.key_bits | auto | self.mouse_key_bits())
     }
 
     fn picture_state(&mut self, number: i32, field: i32) -> Option<i32> {
@@ -2389,6 +2399,48 @@ mod tests {
             save_requests: &mut game.save_requests,
             map_requests: &mut game.map_requests,
         }
+    }
+
+    #[test]
+    fn a_mouse_press_reaches_both_key_polls() {
+        let Some(root) = have_data() else { return };
+        let mut game = Game::new(&root).expect("game");
+        game.mouse = [300, 240];
+
+        // opcode 123 (key_code): a left press edge is the decide code.
+        game.mouse_buttons = 1;
+        game.previous_mouse_buttons = 0;
+        assert_eq!(host(&mut game).key_code(17), crate::key::CODE_OK);
+
+        // Holding the button is not a fresh press, so the poll reads nothing.
+        game.previous_mouse_buttons = 1;
+        assert_eq!(host(&mut game).key_code(17), crate::key::CODE_NONE);
+
+        // opcode 125 (key_code_auto): the scripted bits and the mouse both apply,
+        // and the decide action still wins over an injected cancel.
+        game.mouse_buttons = 1;
+        game.previous_mouse_buttons = 0;
+        assert_eq!(
+            host(&mut game).key_code_auto(17, crate::key::CANCEL),
+            crate::key::CODE_OK
+        );
+
+        // With no mouse button, the injected bits are all the poll sees.
+        game.mouse_buttons = 0;
+        game.previous_mouse_buttons = 0;
+        assert_eq!(
+            host(&mut game).key_code_auto(17, crate::key::CANCEL),
+            crate::key::CODE_CANCEL
+        );
+
+        // A right press edge is the cancel code on both polls.
+        game.mouse_buttons = 2;
+        game.previous_mouse_buttons = 0;
+        assert_eq!(host(&mut game).key_code(17), crate::key::CODE_CANCEL);
+        assert_eq!(
+            host(&mut game).key_code_auto(17, 0),
+            crate::key::CODE_CANCEL
+        );
     }
 
     /// One `250` access, through the same host the interpreter uses.

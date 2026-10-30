@@ -148,6 +148,29 @@ pub fn code(held: u32) -> i32 {
     }
 }
 
+/// The host key bits a change in the mouse buttons represents.
+///
+/// The command menus poll their key state with opcode 123 every frame while a
+/// picture is hovered, so a click has to look like a fresh key press and only on
+/// the frame the button goes down. Holding the button must not repeat, which is
+/// why this compares the current state against the previous frame's state instead
+/// of reporting whatever is held.
+///
+/// Left press -> [`OK`] (the decide code 10), right press -> [`CANCEL`] (code 11).
+/// The middle button is left out: nothing in this game's menus reads it as a key,
+/// and opcode 124-style reads still see it through the engine state.
+#[must_use]
+pub fn mouse_bits(buttons: u32, previous: u32) -> u32 {
+    let mut bits = 0;
+    if buttons & 1 != 0 && previous & 1 == 0 {
+        bits |= OK;
+    }
+    if buttons & 2 != 0 && previous & 2 == 0 {
+        bits |= CANCEL;
+    }
+    bits
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -219,5 +242,29 @@ mod tests {
         // decide code is the one a keyboard can produce.
         let decide = code(OK);
         assert!(decide == 10 || decide == 11 || decide == 20);
+    }
+
+    #[test]
+    fn a_left_press_is_the_decide_code_and_holding_it_does_not_repeat() {
+        assert_eq!(mouse_bits(1, 0), OK);
+        assert_eq!(code(mouse_bits(1, 0)), CODE_OK);
+        // Held on the next frame: no fresh bit, so the menu does not re-fire.
+        assert_eq!(mouse_bits(1, 1), 0);
+        // Released.
+        assert_eq!(mouse_bits(0, 1), 0);
+    }
+
+    #[test]
+    fn a_right_press_is_the_cancel_code() {
+        assert_eq!(mouse_bits(2, 0), CANCEL);
+        assert_eq!(code(mouse_bits(2, 0)), CODE_CANCEL);
+        assert_eq!(mouse_bits(2, 2), 0);
+    }
+
+    #[test]
+    fn the_middle_button_is_not_a_menu_key() {
+        assert_eq!(mouse_bits(4, 0), 0);
+        // Left+middle press still only maps the left button.
+        assert_eq!(mouse_bits(5, 0), OK);
     }
 }

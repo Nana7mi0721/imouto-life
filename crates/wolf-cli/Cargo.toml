@@ -1,0 +1,25 @@
+[package]
+name = "wolf-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Command-line tools for the imoto-life WOLF RPG Editor reimplementation"
+
+[[bin]]
+name = "wolf-cli"
+path = "src/main.rs"
+
+[dependencies]
+wolf-format = { workspace = true }
+wolf-vm = { workspace = true }
+wolf-game = { workspace = true }
+wolf-render = { workspace = true }
+wolf-save = { workspace = true }
+# PNG only: captures are the artifact compared against the original game, and every
+# other codec would be dead weight inside a diagnostic binary.
+image = { version = "0.25", default-features = false, features = ["png"] }
+# Same winit line wolf-render pins; the front end owns the window so the renderer can
+# stay a pure "draw these quads into this surface" library.
+winit = "0.30.13"

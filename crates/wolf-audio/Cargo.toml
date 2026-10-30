@@ -1,0 +1,30 @@
+[package]
+name = "wolf-audio"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Audio backend (BGM/SE) for WOLF asset formats"
+
+[dependencies]
+# Decoding. The WOLF asset set ships ogg-vorbis (most BGM), mp3 (most SE plus a
+# handful of BGM) and wav/PCM. `default-features = false` is deliberate: the
+# default set pulls `symphonia-format-mkv`, `symphonia-codec-adpcm` and (under
+# opt-simd) `rustfft`, none of which are in this machine's offline registry
+# cache. The explicit list below is exactly what is cached and what the game
+# needs.
+symphonia = { version = "0.6.1", default-features = false, features = [
+    "flac",
+    "mp3",
+    "pcm",
+    "vorbis",
+    "ogg",
+    "wav",
+] }
+# Output. cpal gives one portable audio-device API (WASAPI on Windows). On a
+# machine without an output device the engine silently falls back to a null
+# backend instead of failing.
+cpal = "0.18.2"
+# Only for the `SoundCmd` -> play/stop adapter (`Engine::apply_sound_cmd`).
+wolf-vm = { workspace = true }

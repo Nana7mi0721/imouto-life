@@ -1,0 +1,11 @@
+[package]
+name = "wolf-save"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "WOLF RPG Editor save file (.sav) decoding"
+
+[dependencies]
+wolf-format = { workspace = true }

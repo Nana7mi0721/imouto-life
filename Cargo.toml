@@ -1,0 +1,39 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/wolf-format",
+    "crates/wolf-save",
+    "crates/wolf-vm",
+    "crates/wolf-render",
+    "crates/wolf-audio",
+    "crates/wolf-game",
+    "crates/wolf-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.87"
+license = "MIT OR Apache-2.0"
+authors = ["imoto-life contributors"]
+publish = false
+
+[workspace.dependencies]
+wolf-format = { path = "crates/wolf-format" }
+wolf-save = { path = "crates/wolf-save" }
+wolf-vm = { path = "crates/wolf-vm" }
+wolf-render = { path = "crates/wolf-render" }
+wolf-audio = { path = "crates/wolf-audio" }
+wolf-game = { path = "crates/wolf-game" }
+
+[profile.dev]
+opt-level = 1
+debug = 1
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1

@@ -1,0 +1,31 @@
+[package]
+name = "wolf-render"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "wgpu renderer for the 1024x576 framebuffer"
+
+# Literal versions, deliberately *not* `workspace = true`. The GPU stack (wgpu /
+# winit / glyphon) breaks API on nearly every minor bump, so the renderer pins the
+# exact set that was verified to compile and run together on this machine instead of
+# inheriting whatever the workspace resolves to for the other crates.
+[dependencies]
+wgpu = "30.0.1"
+winit = "0.30.13"
+pollster = "1.0.1"
+bytemuck = { version = "1.25.2", features = ["derive"] }
+glam = "0.34.1"
+# Text pass. glyphon 0.12.0 pulls cosmic-text 0.19 + swash + fontdb and depends on
+# wgpu 30.0.0, i.e. the same wgpu minor this crate already pins, so the graph keeps
+# exactly one copy of wgpu instead of two incompatible ones.
+glyphon = "0.12.0"
+
+# Examples/tests only: the library itself never decodes an image (assets are
+# uploaded as raw RGBA by the caller). Keeping `image` out of [dependencies] means
+# the ~20 omitted codecs never reach a downstream build of the renderer.
+# Only the two codecs the WOLF asset set actually uses are enabled; the default
+# feature set roughly triples the cold build of this crate.
+[dev-dependencies]
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }

@@ -1,0 +1,11 @@
+[package]
+name = "wolf-vm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "WOLF RPG Editor event interpreter"
+
+[dependencies]
+wolf-format = { workspace = true }

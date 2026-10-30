@@ -1,0 +1,278 @@
+# Imouto! Life ～単色～ Rust 重写 — 新会话交接
+
+本文件写给**下一个接手的会话**（agent 或人）。读完这一份就能继续，不需要翻聊天记录。
+仓库：`E:/Study/github program/Imouto Life`（**尚无 .git、无 Cargo.toml、无代码，只有 docs/**）。
+撰写时状态：2025-10-30；上一作（续作）仓库 `E:/Study/github program/imoto life` HEAD `c6d8ea7`，`wolf-cli verify` = PASS 70 checks。
+
+---
+
+## 0. 直接复制给新会话的提示词
+
+```text
+接手一个进行中的项目：用 Rust 数据级重写《妹！生活 ～単色～》（いぬすく 2019，WOLF RPG Editor 制作，手上是 zh-CN 汉化 2.03）。
+仓库：E:/Study/github program/Imouto Life（目前只有 docs/，没有 .git、没有代码）。
+姊妹项目（已完成的续作重写，代码在这里复用）：E:/Study/github program/imoto life，HEAD c6d8ea7，wolf-cli verify PASS 70/70。
+
+第一步，按顺序读这些文件（都在 Imouto Life/docs/ 下）：
+1. HANDOFF_M0.md ← 本文件，全部结论与陷阱都在里面
+2. GPT_RESEARCH_GROUPS.md（附 B 有里程碑表与数据勘察结论）
+3. deep-research-report*.md 共 6 份（GPT 调研报告，其中若干条已被数据实测推翻，HANDOFF_M0.md §7 有采信/推翻清单）
+
+然后：
+- 在 Imouto Life 建 git 仓库 + Cargo workspace（7 个 crate 从 imoto life 复制），按 HANDOFF_M0.md §5 的 M0 清单逐条做；
+- 数据根用 work/Data（HANDOFF_M0.md §5 有复制命令；原始 Data.wolf 的解包方式已验证，§3.2）；
+- 每完成一项就跑 `./target/debug/wolf-cli.exe verify` 和 `cargo test -q --workspace`，并以本作自己的 docs/BASELINE.json 为准。
+
+硬性要求：
+- 不要重做已完成的工作（数据勘察、格式解密、6 份调研报告都已完成）；
+- 不要照抄上一作的 docs/BASELINE.json（那是第一部游戏的期望值）；
+- 不要为 Sys 变量 104/105 建 player/camera/滚动模型（本作 5 张注册地图都是定屏，§3.7）；
+- 不要用 PowerShell 抢前台/模拟按键截图；截图只能让用户按游戏内 PrintScreen；
+- 环境初始化：先 `source tools/env.sh`（从上一作复制并改两处绝对路径，§8）；
+- 每推进一步就更新 HANDOFF_M0.md 的「进度」段，方便下一次交接。
+```
+
+---
+
+## 1. 一句话现状
+
+**数据层已经全部勘完、引擎层几乎不用写新东西**：本作有 350 个公共事件（其中 212..303 是本作自有 92 个，0..211 是 WOLF 自带「基本システム Ver2.20」模板）、8 张地图（注册 5 张）、46+35 个 opcode **全部**已在续作的解释器里实现过；真正要做的是「把续作的 7 个 crate 搬过来 + 加一张 WOLF 2.00 世代常量表 + 修 CP932 的 .project 读取 + 补一个 DXArchive VER6 解包分支」，然后才是内容/演出（日常循环、妹妹状态、H 场景、相册）。
+
+**本作没有战斗、没有公会/任务/探索。** 这是内容与演出项目，不是代码量项目。
+
+---
+
+## 2. 两个仓库
+
+| 仓库 | 路径 | 状态 |
+| --- | --- | --- |
+| 本作（第二作，Imouto! Life ～単色～） | `E:/Study/github program/Imouto Life` | 只有 docs/（7 个 md + docs/vendor/uberwolf-ref/），**未 git init、无代码** |
+| 姊妹作（续作 Living With Sister: Monochrome Fantasy，已完成到 M6） | `E:/Study/github program/imoto life` | HEAD `c6d8ea7`；`verify` PASS 70/70；507 个 #[test]；7 个 crate 共 47,417 行 |
+
+上一作的未跟踪 scratch（**不要提交**）：`crates/wolf-format/examples/opscan.rs`、`crates/wolf-format/tests/_scratch_cdata.rs`、`crates/wolf-format/tests/_scratch_event.rs`。
+
+本作安装目录：`E:/EROGAME/Imouto! Life ~Monochrome~ zh-CN Ver`（12 个文件：Config.exe 299,008 B / **Data.wolf 176,347,260 B** / Game.exe 6,365,184 B / Game.ini 156 B / GuruguruSMF4.dll 147,456 B / manual01..06.jpg 1000x1415 / readme.txt 1,142 B）。
+
+`readme.txt`（UTF-16LE）要点：(C) いぬすく《妹！生活 ～単色～》2019/8/11；inusuku@inusuku.dojin.com；<https://ci-en.jp/creator/64>；「本作品使用 SmokingWOLF 的 WOLF RPG Editor 制作」<http://www.silversecond.net/>；**需要鼠标**；Z/ENTER/左键=决定，X/BS/右键=取消；禁止二次发布与商业利用。
+`Game.ini`：`Start=0 SoftModeFlag=0 WindowModeFlag=1 SEandBGM=3 FrameSkip=0 Proxy= ProxyPort= ScreenShotFlag=1 F12_Reset=1 Display_Number=0 Old_DirectX_Use=0`（`ScreenShotFlag=1` ⇒ 游戏内 PrintScreen 会往安装目录写 1024x576 原生帧，这是唯一允许的截图取证方式）。
+`manual01..06.jpg` 是官方说明书（一手 UI 资料）；读具体术语前必须重开图看，不要凭记忆引用。
+
+---
+
+## 3. 已实测确认的硬事实
+
+### 3.1 Data.wolf 已解开（头号成果，可复现）
+
+* 文件 176,347,260 B，首 8 字节 `83 5D CC 7D 49 D4 DC F1` —— **不是明文 `DX`**，因为整包（含 64/48 字节头）被 key 循环 XOR。
+* 本作是**老世代 DXArchive VER6** 归档（不是现代 VER8，也不是 WolfCrypt/WolfProt，不需要 Game.exe 里的任何材料；Game.exe 只被 UberWolfCli 用来定位游戏目录，内容无关，已用 1000 字节随机文件复验）。
+* 固定 key（UberWolf `DEFAULT_CRYPT_MODES` 里 "Wolf RPG v2.20" 那条，12 字节）：`38 50 40 28 72 4f 21 70 3b 73 35 38`，经 `KeyCreate` 变换后得实际 XOR 流 **`c7 05 ca 7d 8d e3 de f1 d9 0c 85 f4`**（12 字节循环）。
+* 解出的头（48 字节 `<HHIQQQQQ`）：`Head 0x5844 Version 6 HeadSize 145348 DataStart 48 NameStart 176201912 FileStart 56708 DirStart 144836 CodePage 932`。
+* 结构：`DARC_HEAD_VER6` 48 B / `DARC_FILEHEAD_VER6` 64 B / `DARC_DIRECTORY_VER6` 32 B；**文件数据地址相对 DataStart，子目录地址相对 DirectoryTableStart，文件表与目录表相对 NameP**；文件名 = `NameP + NameAddress` 处 `u16 n` 然后 `+ n*4 + 4` 取到 NUL 的 CP932（名字表里同名并列 UPPERCASE 与原始大小写两份，n 就是跳过多少个 4 字节组）；数据 XOR 的 position 基准是 **DataSize**（不是数据偏移）。
+* 解压分支（22 个条目用到）：`u32 destsize / u32 srcsize(=字段值-9) / u8 keycode`，之后 `keycode` 为转义、`code>keycode` 要 `-1`、`conbo=(code>>3)+(code&4? *sp<<5 : 0)+4`、`index` 1..3 字节可变宽 +1、复制走「倍增 memcpy」逻辑；权威实现 `docs/vendor/uberwolf-ref/DXLib/DXArchiveVer6.cpp:1343`。
+* **验证：1,361 个条目 / 179,877,496 B，逐字节比对 100% 相同（verified 1361 / bad 0）**，其中 1,339 个未压缩、22 个压缩（全部是 `BasicData/*.dat|.project`、8 张 `.mps`、`BasicData/EncodedIconList.xxxxx` 和一个 2,355,728 B 的 TTF）。
+* 复现脚本（在上一作仓库 `work/` 下，已 gitignore）：`_dw8.py`（全量校验，**已复制到本仓库 docs/vendor/uberwolf-ref/dw8_verify.py**）、`_dw2.py`（头+目录树）、`_dw5.py`/`_dw6.py`/`_dw7.py`（未压缩/压缩清单与解压）。
+* 参考实现：`docs/vendor/uberwolf-ref/`（`DXLib/DXArchive.h, DXArchiveVer6.h, DXArchiveVer6.cpp, Huffman.h, Huffman.cpp` + `UberWolfLib/WolfDec.cpp, WolfDec.h` + LICENSE）。完整 UberWolf 源码在上一作 `work/uw/UberWolf-main/`（gitignore）。下载方式：`curl -sSL 'https://codeload.github.com/Sinflower/UberWolf/tar.gz/refs/heads/main' -o uw.tgz`（codeload 可用；api.github.com/contents 必须带 `?ref=main`）。
+
+**⇒ 结论：Rust 侧自举解包是明确可移植的工作，不是研究课题。** 顺序：VER6 头 → 12 字节 KeyCreate/KeyConv → 目录表遍历 → VER6 的 Huffman/LZ。
+
+### 3.2 已解包的数据树（直接开工用）
+
+**已复制进本仓库：`work/Data`（1,361 文件 / 179,877,496 B = 171.5 MiB，已核对与解包树一致）**；原件在上一作仓库 `work/imouto/Data`，与 UberWolfCli 全新解包 `diff -rq` 完全一致。
+资产分布：BGM 69.2 MB、cg 47.9 MB、BattleEffect 15.4 MB、根目录 13.3 MB（两份 TTF）、SE 10.6 MB、Picture 9.5 MB（330 个 `album_000..` 相册图）、BasicData 2.9 MB、MapChip 0.7 MB（102 个 pipo 系列）、SystemFile 0.6 MB（22）、MapData 0.6 MB、SystemGraphic 0.5 MB（21，含 `WindowBase.png`/`CursorBase.png`/`TitleGraphic.png`）、Fog_BackGround/BalloonBase_CafeLatte/CharaChip（11）/FIcon 各 ~0.1 MB；cg 393 文件（`bg_NNN_MM.jpg` / `bg_NNN_sNN.png`）。
+字型：Data 根下有 `07やさしさゴシックボールド.ttf`（2,355,728 B）与 `◆GenJyuuGothicX-P-Bold.ttf`（11,575,152 B）；但 Game.dat 用的是系统字体 `Microsoft Yahei UI Bold`（`C:/Windows/Fonts/msyhbd.ttc` 16,883,552 B 存在）。
+
+### 3.3 Game.dat（29,172 B，版本 2.00）
+
+`version_header 0x00`；`u8_len 22`，`u8_settings [16,8,8,1,60,0,1,3,0,0,0,6,14,0,0,4,9,4,0,1,1,1]`；9 个字符串：`Imouto! Life ~Monochrome~ zh-CN Ver.` / `0000-0000` / 第 3 个是敏感字段（占位遮蔽，勿复述、勿猜测） / `Microsoft Yahei UI Bold` / 5 个空串 / `Ver2.03`；recorded_size 29,171 = filesize-1 ✓；`unknown_size 11`（续作为 0，**新字段，解析要容忍**）；`u16_len 19`，`u16_settings [38218,2,1,4,2,8,4,16,8,32,16,64,32,128,64,10000,1024,576,222]`（续作前 15 项相同，第 16 项 325、后段 `(1024,576,0,0,0,21569)`）；随机种子 **22507 / 23301**；static random 28,942 B，最大值 **251**（续作 28,936 / 127）；footer **0xC2**。分辨率同为 1024x576、tile 16、60 fps。
+
+### 3.4 CommonEvent.dat（2,227,358 B，**格式与续作完全一致，只有版本/脚注不同**）
+
+magic 7 B + `version_header 0x00` + 类型后缀 `FC\0` + `version 0x8F` + u32 事件数 **350** + 事件记录 + footer **0x8F**。
+350 事件全部按续作的字段顺序（unknown4 → memo → SEP_1 0x8F → arg_names → arg pages → value pages → defaults → SEP_2 0x90 + colour + 100 self names → SEP_3 0x91 → SEP_4 0x92 + return_name + return_id）走完，零结构意外。
+规模：**63,506 槽，空行 9,890，实体 53,616**；regular opcode 直方图（46 种，含 0）：
+`0:9890, 99:62, 101:2113, 102:163, 103:7050, 105:4, 106:75, 107:1, 111:4271, 112:101, 121:8442, 122:448, 123:93, 124:197, 125:70, 126:6, 130:1, 140:168, 150:5433, 160:1, 170:194, 171:94, 172:445, 174:9, 175:1, 176:54, 179:687, 180:1426, 201:55, 210:2869, 211:4, 212:267, 213:612, 220:2, 221:8, 222:1, 250:2699, 270:5, 281:3, 290:249, 300:1158, 401:7562, 420:1012, 421:85, 498:881, 499:4535`。
+**没有 opcode 104**（续作才有）。`raw_condition` 只有 32/34/35/18/99 五种 ⇒ `run_condition = raw & 0x0F` 得 0/2/3。
+事件分区（`work/imouto/ce_titles.txt` 有全文）：
+* **0..211 = WOLF「基本システム Ver2.20」模板**（前缀 ○ / ▲ / ◆ / X[共] / X[移] / X[戦]，208 号就叫「【基本ｼｽﾃﾑVer2.20説明書】」）——续作已实现过同类，可复用。
+* **212..303 = 本作自有 92 个**（含槽数）：212 フキダシ会話文表示 169、213 アイコン表示長い 61、214 応援会話リコ 166、216 性興味監視 16、219 ■事後処理中断 784、220 ■事後処理 783、221 ぴぽや感情・状態ｱｲｺﾝ表示 61、222 画面拡大 22、223 ウィンドウ処理 666、224 フィールド上処理 262、225/226 深夜1吐息A/B 30、227 深夜1表示 392、228 深夜1衣服 842、229 深夜1アニメ 54、230 深夜1 157、231 文字エフェクトみぎ 959、232 文字エフェクトひだり 1285、233 文字エフェクトセリフ 385、234 文字エフェクト挿入 385、235 文字エフェクト例外 169、237 Hステータス 112、238 ステータス 78、239 アイテムリスト 55、240 立ち絵表示 257、241 ┗立ち絵瞬き 54、242 ステータス表示 44、243 時刻表示 68、244 行動力変動 28、245 夜コマンド 1016、246 ┣コミュニケーション 288、247 ┣ＴＶ視聴 1210、248 ┣ゲーム 450、**249 ┣お風呂 3912（全库最大）**、250 ┣ネットショップ 594、251 ┗就寝 1250、252..255 日中処理 学生/フリーター/社会人/ダメ人間 15/13/33/20、256 日中メニュー 977、257 帰宅メニュー 325、258 晩ごはん処理 1726、259 休日メニュー 2670、260 ┗休日ゲーム 441、261 ×◆座標変数初期化 52、262 ▲先頭空白削除 48、263 ▲文字列数値判定 57、**270 ┣[ﾒｯｾｰｼﾞ]表示処理 2744**、271 オートスキップ 157、273 お風呂タイマー2 668、274 お風呂タイマー1 1993、275 カットイン呼び出しお風呂 192、276 カットイン顔表示 107、**277 ┣警戒度メータ 237**、279 実行バー表記 96、280 カットイン呼び出し 27、281 カットインタイマー右 1119、282 カットインタイマー左 690、283 カットイン呼び出し夜 880、284 射精 358、285..288 文字エフェクト ローター/電マ/バイブ/アナルバイブ 82/46/58/46、290 コマンドカットイン 127、293 カットイン呼び出しトイレ 107、294 トイレタイマー1 666、295 トイレ処理 816、296 ■プレイ傾向 263、297 スタッフロール 36、298 素股処理 192、299 素股タイマー 378、300 カットイン呼び出し素股 73、301 アルバム表示 471、302 クレジット 249、303 アルバム画面呼び出し 905。
+* **304..349 全是 1 槽空占位。**
+
+### 3.5 数据库三件套 + .project 编码（**第 5 处世代差异**）
+
+| 文件 | 大小 | version | footer | 类数 / 行数 |
+| --- | --- | --- | --- | --- |
+| DataBase.dat | 102,901 | 0xC1 | 0xC1 | 40 / 756 |
+| CDataBase.dat | 84,203 | 0xC1 | 0xC1 | 30 / 649 |
+| SysDatabase.dat | 11,614 | 0xC1 | 0xC1 | 28 / 1,074（**type 6 系統変数名只有 135 行**，续作 150） |
+| SysDataBaseBasic.dat | 438 | 0xC0 | 0xC0 | 与续作**逐字节相同** |
+| TileSetData.dat | 59,770 | **0xD1 (209)** | 0xCF | 续作是 0xD2，我们的 loader 两个都收 |
+| MapTree.dat | 416 | 0x90 | 0xBC | 与续作同形（子节点顺序不同） |
+| MapTreeOpenStatus.dat | 75 | — | 0x26 | 同形 |
+
+`.project` 伴生文件：**本作是 CP932，续作是 UTF-8**。`SysDatabase.project` 21,025 B 首字节 `1C 00 00 00 0B 00 00 00 83 7D 83 62 83 76 90 DD 92 E8 00`（= cp932「マップ設定」）；续作同名文件 35,972 B 是 `E3 83 9E…`（UTF-8）。
+上一作 `crates/wolf-format/src/database.rs:533-545 fn name_at` 只试 UTF-8，会在第一个名字上失败 ⇒ **整份名字表返回 0 条**。修法：UTF-8 失败后回退 CP932（`dxarchive/sjis.rs` / `cp932.rs` 已有解码器）。
+`.project` 记录格式（两代都逐字节走到末尾，imoto SysDatabase 35,972/35,972、imouto 21,025/21,025）：`u32 type_count` → 每类：t_str 类名 / u32 字段数 + t_str×n / u32 行数 + t_str×n / t_str 描述 / u32 byte_len + byte_len 字节（字段类型码）/ 块1 u32 n + n×t_str（字段注释）/ 块2 u32 n + n×(u32 k + k×t_str)（字符串参数）/ 块3 u32 n + n×(u32 k + 4k 字节)（数值参数）/ 块4 u32 n + 4n 字节（默认值）。
+
+### 3.6 地图：磁盘 8 张，**注册 5 张**
+
+`SysDatabase` type 0（マップ設定，field positions `[2000,1000,1001,1002,1003,2001,2002,2003]`）注册：
+row 0 `MapData/TitleMap.mps` 53x30（タイトル）、row 1 `MapData/SampleMapA.mps` 64x36（自宅1）、row 3 `MapData/Map003.mps` 70x170（ニューゲーム処理）、row 24 `MapData/Map024.mps` 53x30（ロード処理）、row 31 `MapData/Map031.mps` 53x30（セーブ）。
+未注册的是引擎示例：Dungeon 40x30、Map002 100x30、SampleMapB 30x30。
+所有 `.mps` 都是 `version 0x65` / footer 0x66 / `version_header 0x00` —— **续作的 mps loader 原样兼容**（`crates/wolf-format/src/mps.rs:76 VERSIONS [0x65,0x66]`）。
+地图事件总计 **56 事件 / 102 页 / 12,266 槽 / 空行 2,188 / 实体 10,078 / 35 种 opcode**：
+`{0:2188, 101:767, 102:31, 103:351, 111:1033, 112:4, 121:2522, 122:6, 123:61, 124:76, 125:3, 126:17, 130:8, 140:79, 150:622, 151:7, 161:1, 162:1, 172:56, 174:1, 179:2, 180:127, 201:73, 210:855, 212:18, 213:46, 221:2, 250:80, 270:3, 290:72, 401:1849, 420:222, 421:13, 498:2, 499:1068}`。
+逐图：Dungeon 5/6/79、Map002 5/13/416、Map003 2/15/47、Map024 1/16/3、Map031 1/17/63、**SampleMapA 35/95/11,558**、SampleMapB 6/101/36、TitleMap 1/102/64。
+SampleMapA 重点事件（M2 目标）：ev0 ニューゲーム処理 @(30,0) trigger1 367 槽；ev1 妹寝そべる 6 页；ev9 日中メニュー 2 页；ev15 コマンドリスト表示 9 页（槽 116/68/70/139/62/66/56/70/42）；ev16 コマンド選択判定 458；**ev17 コマンド実行 7 页（4980 槽为主）**；ev18 カーソル切り替え 1567；ev19 当たり判定描画 209；ev20 例外処理監視 101；ev23 深夜表情自動変更 654；ev26 アイテムクリック監視 352；ev30 スタッツ 323；ev31 パンツ詳細 302；ev35 アルバム起動判定 2 页。
+
+### 3.7 全局变量表 = 状态模型的权威命名（SysDatabase type 14，302 行）
+
+`14 妹位置、20 妹信頼度、21 妹性興味、22 妹感度、23 妹機嫌、24 妹快感、25 妹不愉快、26 媚薬効果、4 時、5 分、6 曜日、7 所持金、8 就寝時間、18/19 睡眠深さ/最大、32 日中メニュー、33..41 物品、42 スタミナ消費、50 ダンベル、51 トレーニングマシン、52 コンドーム、56 深夜終了、59 嫌悪感割合値、60 基礎行動力、61 ボーナス行動力、62 精力、63 嫌悪感最大値、64 嫌悪感、65 テンション、66 射精感、70 深夜パート、74/75 スタミナ量/MAX、77 安眠茶、78 アフターピル、97 休日メニュー、99 経過日数、100 深夜1、115 拡大率X、119 就寝兄、122 中出し、127 妊娠、129 妹欲求不満度、138 リビングに居る、143/144/145 電マ/バイブ/アナルバイブ、150 アナル開発度、`**154 警戒度**`、155 お風呂タイマー1、160 お風呂タイマー2、163 はじめから、170 トイレタイマー、175 立ち絵表示位置、176 スタッツ表示中、177 フリー乱数、178 素股タイマー、180 射精回数、187 イカせた回数、189 総射精量、199 クリア、200 妊娠エンド、201 100日到達、202 パンツコンプリート、203 エンディング、205 処女、209 安全日、210..229 パンツ1..20、230 祭り、231 旅行、232 クリスマス、234 正月、235 バレンタイン、237 アルバムアイコン表示、238 アルバム表示中、244/245/246 各开放、247 アルバム回想実行中、248 クレジット中、249/250 お花見、260 コマンド実行中、299 サークルロゴ`。
+Sys 变量（type 6，135 行）中 row 104 = `Ｘスクロール値`、row 105 = `Ｙスクロール値`（与续作逐字相同），row 1/2 = メッセージウィンドウ X/Y、3/4 = 選択肢ウィンドウ X/Y、110 = 乱数シード、111 = [読]画面アクティブ状態、115 = [Read]Game.exe version(x100)、116/117/118 = Screen size X/Y + Tile size。
+**⇒ M3 的结论可直接沿用：104/105 是引擎维护的相机滚动输出，没有脚本读写；本作 5 张注册地图都是定屏（无行走图事件页），不要建 player/camera 跟随模型。**
+完整名字表已落盘：上一作 `work/out/imouto_var_names.txt`（10,189 B），含 SysDatabase type 4/5/6/14、type 0/7/8/13 的全部行名。
+
+### 3.8 数据库类型清单（判断「模板残留」用）
+
+`DataBase` 40 类（0 技能 37 字段/44 行、2 アイテム 21/25、3 武器 35/40、4 防具 40/40、6 戦闘コマンド 4/19、8 状態設定 46/24、9 敵個体 26/42、10 敵行動AI 48/40、11/12 属性/状態耐性 100、13 敵グループ 12/41、15 用語設定 32/1、17 システム設定 35/1、20 吹き出しアイコン 4/11、21 EXスキル 4/40、22 吹き出し会話 20/10、23 サポートキャラ 4/10、24 立ち絵設定用 5/10、25 ランダム肩書 20/21、26 メッセージウィンドウ種類 35/9、30 アニメ設定 1/100、31 統計テキスト 4/4）。
+`CDataBase` 30 类（0 主人公ステータス 60/17、3 属性耐性 100/40、6 パーティー情報 7/1、7/8/9 所持個数 1/10、18 基本ｼｽﾃﾑ用変数 2/100、19 万能ｳｨﾝﾄﾞｳ一時DB 11/200、25/26/27 キーコンフィグ系）。
+**战斗相关表（DataBase 9/10/11/12/13/21）与 `BattleEffect/` 15.4 MB 资产都是 WOLF 模板残留**，本作无战斗玩法（地图事件里也没有战斗事件）——M0 资产审计可标死资产。
+
+---
+
+## 4. 世代表：需要改的常量（**只此 4 处 + 1 处编码**）
+
+上一作硬编码的是续作（2.10）的常量。**不要改成「两代都接受」的硬编码**：改用「按容器头 `version_header` / version 字节选一套常量表」的 `WolfGeneration`（2.00 → `version_header 0x00`；2.10 → `0x55`），保证两作的 verify 基线互不污染。
+
+| 位置（上一作路径） | 现值（2.10） | 本作（2.00） | 说明 |
+| --- | --- | --- | --- |
+| `crates/wolf-format/src/gamedat.rs:41` | `FOOTER = 0xC3` | **0xC2** | 校验点在 `:93` |
+| `crates/wolf-format/src/commonevent.rs:102` | `FOOTER = 0x90` | **0x8F** | `version 0x8F` **不校验**（`parse` 只读不判，见 `:123`），`version_header 0x00` 也不校验；只需放宽 footer |
+| `crates/wolf-format/src/database.rs:40,42` | `VERSION = FOOTER = 0xC2` | **0xC1 / 0xC1** | 闸门在 `:65`，三个 .dat 一致 |
+| `crates/wolf-format/src/tileset.rs:44-48` | `VERSION_210 0xD2 / VERSION_209 0xD1 / FOOTER 0xCF` | **0xD1 已在白名单** | 无需改 |
+| `crates/wolf-format/src/mps.rs:76,95` | `VERSIONS [0x65,0x66] / FOOTER 0x66` | **0x65 已支持** | 无需改 |
+| `crates/wolf-format/src/maptree.rs:63,65,145` | `0x90 / 0xBC / 0x26` | 完全相同 | 无需改 |
+| `crates/wolf-format/src/database.rs:533-545` `fn name_at` | 只试 UTF-8 | **需 CP932 回退** | 否则 `.project` 名字表全丢 |
+| `crates/wolf-format/src/dxarchive/mod.rs:29,32` | `HEADER_SIZE 64 / VERSION 8` | **VER6 分支**（48 B 头 / u64 地址 / 12 字节 key） | 新增，勿改现有 VER8 路径 |
+
+`wolf-cli verify` 对 `work/imouto/Data` 的现状（放宽前）：15 项 FAIL = game.parse footer 0xC2、ce.parse footer 0x8F、database.parse ×3（`unsupported database version 0xC1`，`database.rs:65`）、maptree.children_of_0 顺序（3,24,31 vs 3,31,24，只是顺序）、mps 七项（全是按续作算的期望值：maps 8 vs 9、events 56 vs 73、pages 102 vs 134、slots 12,266 vs 37,610、blank 2,188 vs 7,052、real 10,078 vs 30,558、opcodes 34 vs 40、empty_maps 0 vs 2；`mps.parse 0 parse errors`）、tileset.version（210 vs 209）。`save.*`/`dxarchive.*` 全 ok（save 读的是续作存档）。
+
+---
+
+## 5. M0 开工清单（按顺序，每步可验证）
+
+1. **建仓库**：`cd 'E:/Study/github program/Imouto Life' && git init`；复制上一作的 `.gitignore`（含 `/target`、`/work/`、`*.exe`、`/tools/{bin,cmake,ffmpeg}/`）、`rust-toolchain.toml`（channel stable + rustfmt + clippy）、`tools/env.sh`（改 `T` 与 `IMO` 两处绝对路径）、`tools/env.ps1`/`setpath.ps1`。
+2. **搬 crate**：`cp -r '/e/Study/github program/imoto life/crates' .` + 复制根 `Cargo.toml`（7 成员、resolver 2、`workspace.package` version 0.1.0 / edition 2021 / rust-version 1.87 / license MIT OR Apache-2.0 / publish false、profile.dev opt-level 1 debug 1、dev.package."*" opt-level 2、release opt-level 3 + lto thin + codegen-units 1）。`cargo build -q` 必须绿。
+3. **数据已就位**：`work/Data` 已含 1,361 文件 / 179,877,496 B（无需再复制；若要重来：`cp -r '/e/Study/github program/imoto life/work/imouto/Data' work/Data`）。`work/` 要进 `.gitignore`。`wolf-cli` 的 `WOLF_DATA_ROOT` 默认指向 `./work/full`（`crates/wolf-cli/src/main.rs:580`，默认值在 `:517`），本作要改成 `./work/Data`。
+4. **WolfGeneration**：按上表加两代常量表 + 用 `version_header`/`version` 选表；`gamedat`/`commonevent`/`database`/`tileset` 的解析都改成「读表拿常量」。
+5. **.project CP932**：`name_at` 加 CP932 回退，然后确认 `SysDatabase.project` 能出 28 个类名、`DataBase.project` 40 个、`CDataBase.project` 30 个。
+6. **本作基线**：写 `docs/BASELINE.json`（**不要照抄上一作**），先落这些键：`game_dat`（25 个游戏参数、种子 22507/23301、分辨率 1024x576）、`common_events`（350 / 63,506 / 9,890 / 53,616 / 46 opcodes）、`map_events`（56 / 102 / 12,266 / 10,078 / 35 opcodes）、`precompile`、`tileset_data`（版本 209）、`file_versions`（各 .dat 的 version+footer）、`wolf_archives`（1,361 条目 / 179,877,496 B；若实现 VER6 解包，再加 `dxarchive_ver6` 键：key、1,339 未压缩 + 22 压缩、逐字节校验计数）。
+7. **wolf-cli 子命令**：`verify / precompile / list / capture / play / run` 沿用；`capture` 的 `--map` / `--map-run` / `--boot` 要改成本作注册地图名（TitleMap / SampleMapA / Map003 / Map024 / Map031）。
+8. **（可选但推荐先做）VER6 解包分支**：把 `work/_dw8.py` 的逻辑移植到 `crates/wolf-format/src/dxarchive/ver6.rs`，让 `wolf-cli verify --wolf` 直接读 `Data.wolf` 并与磁盘树逐字节比对 —— **验收标准就是 1,361/1,361 全等**，这是整条数据链的自证。
+9. 跑 `cargo test -q --workspace` + `verify` 全绿后提交（`git -c user.name=... -c user.email=... commit -F work/_commit.txt`）。
+
+---
+
+## 6. 上一作代码地图（复用时的定位表）
+
+| 关注点 | 位置 |
+| --- | --- |
+| wolf-cli 子命令分发 | `crates/wolf-cli/src/main.rs:311-412`；`play.rs` 为交互播放 |
+| 数据根 `WOLF_DATA_ROOT` | `crates/wolf-cli/src/main.rs:580`（默认 `./work/full`，见 `:517`） |
+| 游戏安装目录探测 | `crates/wolf-cli/src/main.rs:1874 fn game_dir` |
+| Game.dat 解析 | `crates/wolf-format/src/gamedat.rs`（`FOOTER` `:41`，校验 `:93`） |
+| CommonEvent 解析 | `crates/wolf-format/src/commonevent.rs`（字段序列 `parse_event`，footer `:102`） |
+| 数据库 + .project | `crates/wolf-format/src/database.rs`（`ProjectNames::parse` `:415`，`name_at` `:533`，`project_type_at` `:554`） |
+| mps / tileset / maptree | `crates/wolf-format/src/{mps,tileset,maptree}.rs` |
+| DXArchive VER8 | `crates/wolf-format/src/dxarchive/{mod,key,huffman,lz,crc32,sjis,cp932}.rs`（VER6 新分支加在这里） |
+| VM 解释器 | `crates/wolf-vm/src/{exec,program,magic,rng}.rs`；`exec.rs` 的 match 臂覆盖 0/99/101../121/150/210/250/270/290/300/401/420/498/499 等，**本作 46+35 种全部在内** |
+| 渲染 | `crates/wolf-render/src/{lib,text,diff}.rs`（wgpu 30 + glyphon 0.12）与 `examples/imgdiff.rs` |
+| 游戏层 | `crates/wolf-game/src/{game,map_runtime,picture,tilemap,choice,window,assets,db,key}.rs` |
+| 像素对照工具 | `cargo run -p wolf-render --example imgdiff -- A.png B.png [--out diff.png]` |
+
+---
+
+## 7. 6 份 GPT 调研报告 vs 数据实测（采信 / 推翻）
+
+报告在 `docs/deep-research-report.md`..` (5).md`（7,485 / 10,513 / 7,360 / 6,822 / 9,865 / 10,418 B）。**总体质量参差：多为二手攻略，凡与数据冲突一律以数据为准。**
+
+| 结论 | 判定 |
+| --- | --- |
+| 正式日文名 `妹！せいかつ ～モノクローム～`，作者 いぬすく，2019 年 8 月（readme 写 08-11，报告写 08-22） | 采信（日期取 readme） |
+| 本作**无官方中/英文版、无 Steam 版**；我们这份 zh-CN 是民间汉化（改了标题串与字体为 Microsoft Yahei UI Bold） | 采信，且被 Game.dat 的两个字符串直接证实 |
+| 四种身份基础值：学生 行動力 60 / 金钱 3000–6000 / 就寝 24:00；フリーター 40 / 8000–12000 / 23:00；社会人 30 / 30000–50000 / 23:00；ダメ人間 25 / 1000 / 24:00；行動力上限 99（ダンベル +5、筋トレ机 +15） | **高价值，待与事件 252..255、244、251 交叉核对后入基线** |
+| 道具：お茶 +10、玉露 +20、紅茶 +5 且就寝 +1h、コーヒー 就寝 +2h（至凌晨 2 点）、精力剤 精力上限 +1（上限 9）+2 精力 +20 行動力、媚薬 感度最大 + 快感 50%、安眠茶 浅眠→熟睡、アフターピル 3 天内清怀孕 | 待核对（事件 250 ネットショップ / 33..41 物品变量） |
+| 妹妹四项 = 信頼（数）/ 興味（数）/ 感度（%）/ キゲン（五档：爆発寸前 / 不機嫌 / 普通 / 上機嫌 / 兄Love），興味 每日自动下降 | 采信（对应全局 20/21/22/23） |
+| 阈值：信頼≥150 且上機嫌 ⇒ 共浴；≥200 ⇒ 新选项；≥250 ⇒ 帮洗身；興味≥150 ⇒「我也想做」；≥200 ⇒ 口交取代手交；信頼≥300 ⇒ 额外 H/CG；同居 100 天 ⇒ HappyEnd；所持金≥100000 且「産めばいい」⇒ TrueEnd；共 3 个结局 | 待核对（全局 199/200/201/202/203/127/209） |
+| **报告称「警戒度」在任何资料里都没出现** | **推翻**：全局变量 **154 = 警戒度**，事件 **277 ┣警戒度メータ** 236 槽在实现它 |
+| 报告 3（UI/操作）：方向键移动、Z/Enter 确认、长按加速、F12 退出；Config.exe 选项名与默认值「未找到」 | 低价值，只能靠说明书（manual01..06）与实机截图补 |
+| 报告 1（引擎世代）：2.00≈2011-07-19、2.02a 2012-06-10、2.10 2013-08-09、2.20 2017-03-22（内部又写 2016-11-22，自相矛盾）、3.00 2022-11-22；「Ver2.10 起改了数据加密方式」 | 部分采信；**本作实测是 DXArchive VER6 + WOLF v2.20 固定 key，与「2.10 改加密」的说法不矛盾但也不能据此推世代，一律以容器头字节为准** |
+| 报告 0 称未公开 CG/结局/BGM 数量 | 采信；但数据里可直接数：cg 393 文件、Picture 相册 330 张、BGM 目录 69.2 MB |
+
+**报告没覆盖、但数据已给的**：注册地图只有 5 张；事件分区（0..211 模板 / 212..303 自有）；opcode 全覆盖；Data.wolf 已解；`.project` 是 CP932；SysDatabase type6 只有 135 行。
+
+---
+
+## 8. 环境与协作陷阱（血泪，别重踩）
+
+1. **每条 bash 命令开头**：`cd '/e/Study/github program/Imouto Life' && source tools/env.sh >/dev/null 2>&1`（env.sh 提供 msys PATH + 中科大 rustup 镜像 + `CARGO_NET_GIT_FETCH_WITH_CLI`）。路径必须用 msys 形式（`/e/...`）。
+2. `C:/Users/REISEN/.cargo/config.toml` 必须保留 `[http] proxy = ''`：注册表代理（127.0.0.1:7890）会被 cargo/libcurl 采用而 curl 不采用，症状是「curl 能连镜像、cargo 不能」。
+3. **sccache 会破坏 MSVC 链接**（LNK1104 lnk{GUID}.tmp）——不要开。
+4. **GitHub 直连下载只有 ~2 KB/s**：源码包走 `codeload.github.com`（已验证可用），普通文件用 `ghfast.top` 前缀；`api.github.com` 可读元数据，但读文件内容要带 `?ref=main` 并检查 `.message`（限流）。`cargo-binstall` 不可用（os error 5），用 `cargo install --locked`。
+5. **不要用 PowerShell 抢前台/模拟按键截图**（用户明令：会造成他无法操作电脑）。截图只能由用户按游戏内 PrintScreen（`ScreenShotFlag=1`），产物落在安装目录，1024x576 原生。
+6. **Python 补丁脚本必须写 `newline=''` 且「写 .new 再 `os.replace`」**：曾因 `io.open(newline='\\n')`（C 层先截断文件再报非法 newline）把 `game.rs` 截成 0 字节。引用锚点要先 `assert` 存在。
+7. **临时输出放 `work/out/`**：`/tmp` 在 Windows 上映射到系统临时目录，bash 派生的子进程写它会 `PermissionDenied (os error 5)`；测试临时目录用 `target/test-scratch` + `env!(CARGO_MANIFEST_DIR)`。
+8. 交互式截图/报告都落到 `work/out/`；`work/` 与 `/tools/{bin,cmake,ffmpeg}/` 已 gitignore。
+9. 团队规模上限 8 人（lead + 7）；共享任务板用 `team_task_*`；写作用域按文件/目录切分。
+10. 提交身份按命令传入：`git -c user.name='imoto lead' -c user.email='lead@imoto.local' commit ...`；`git add` 的 CRLF 警告无害。
+
+---
+
+## 9. 不要做的事
+
+* 不要为 Sys 104/105 建玩家坐标/相机跟随/滚动模型（§3.7）。
+* 不要把 opcode 104（本作没有）或战斗模板当成待实现功能。
+* 不要照抄上一作的 `docs/BASELINE.json`（期望值属于第一部游戏）。
+* 不要把 `.wolf` 解密当成「未解难题」——已解开（§3.1），也不要引入 WolfCrypt/WolfProt 的复杂路径（那是 2.225+ 世代）。
+* 不要在没读说明书/实机截图的情况下凭 GPT 报告写 UI 数值。
+* 不要提交 `work/`（175 MB 数据 + 探针脚本）、`tools/bin|cmake|ffmpeg`、`*.exe`。
+
+---
+
+## 10. 恢复后的第一条命令
+
+```bash
+cd '/e/Study/github program/Imouto Life' && source tools/env.sh 2>/dev/null || echo 'run M0 step 1 first (copy tools/env.sh)'
+git status --short 2>/dev/null | head
+cat docs/HANDOFF_M0.md | head -60
+```
+
+若 M0 已开工，接着跑：
+
+```bash
+cargo build -q --workspace && cargo test -q --workspace 2>&1 | tail -20
+WOLF_DATA_ROOT="$PWD/work/Data" ./target/debug/wolf-cli.exe verify | tail -20
+```
+
+---
+
+## 11. 进度
+
+* 2025-10-30：数据勘察完成（Game.dat / CommonEvent / 数据库 / .project / 地图 / 全局变量表 / 资产树全部实测）；`Data.wolf` 解开并 1,361/1,361 逐字节验证；6 份 GPT 报告回收并与数据对账；本文件写就。**代码尚未开始（M0 未动工）。**
+
+* 2025-10-30（M0 进行中）：
+  * M0-1 仓库初始化完成（git init；.gitignore / rust-toolchain.toml 复制；tools/env.sh|env.ps1|setpath.ps1 复制并把两处绝对路径改为 Imouto Life）。
+  * M0-2 复制 7 个 crate + 根 Cargo.toml/Cargo.lock，`cargo build -q` 全绿。
+  * M0-4 `generation.rs` 完成并接入（V200/V210 两代表）：本作 V200 → Game.dat footer 0xC2 / CommonEvent footer 0x8F / Database version+footer 0xC1；build 全绿。
+  * M0-5 `.project` CP932 回退完成（database.rs name_at 先 UTF-8 再 decode_cp932）。
+  * M0-6 verify 字面量全部本作化 + `docs/BASELINE.json`（11 顶层键，本作实测值）。`verify` PASS 64 / 1 SKIP（dxarchive.header），`precompile` PASS 19，`cargo test -p wolf-cli` 8 passed。
+  * M0-8 VER6 解包完成：`dxarchive/ver6.rs` + Backend 自动分派；`verify --wolf` 读到 Data.wolf → PASS 72 checks、dxarchive 条目 1,361/1,361 逐字节相等、total/decoded 179,877,496 B、data_start 48、CodePage 932。
+  * 待办：M0-7（capture 地图名改本作）、M0-9（全量 `cargo test -q --workspace` 全绿 + 提交）。test-adapt 子任务仍在进行中。
+  * 资料：新增 `docs/REFERENCE.md`（日文原版路径、攻略链接、10 张实机截图目录、存档样本）；日文原版目录已还原为规范日文名。
+
+* 2025-10-30（M0 完成）：
+  * M0-3 `wolf-cli` 默认数据根由 `work/full` 改为 `work/Data`（main.rs default_root + help 文本）；`verify` 不带 env 即读本作数据：PASS 64 / 1 SKIP(dxarchive.header)；`verify --wolf <Data.wolf>` PASS 72 / 0 pending（1,361/1,361 byte-equal，179,877,496 B）。
+  * M0-7 `capture` 地图名解析本作化（`--map SampleMapA` / `SampleMapA.mps` → `MapData/`）。headless capture 仍卡在 wgpu 离屏初始化（`Renderer::new_offscreen()`），非 M0 验收项，M1 处理；已有用户 10 张实机截图。
+  * M0-9 全量 `cargo test -q --workspace`（默认、无 WOLF_DATA_ROOT）**exit 0，39 个 test target 全 ok**；`WOLF_DATA_ROOT=work/Data cargo test -p wolf-format` **86 passed / 0 failed**（lib 35 + database 7 + dxarchive 3 + map_audit 11 + messagetext 16 + mps 6 + tileset 4 + maptree 4）。
+  * 测试适配（test-adapt）：wolf-format tests 全部按本作实测值改好（database / dxarchive[删旧 sister-ver8 用例、保留 ver6] / messagetext / mps / tileset / maptree / map_audit）；wolf-game/tests/map_runtime.rs 3/3；audio_wiring.rs 改 `start_event(297)` 避免 engine 挂死。
+  * 从姊妹作 HEAD `f5aca1c` 同步唯一引擎改动 `crates/wolf-game/src/map_runtime.rs`（night-page teardown 修复）；其余引擎 crate 与姊妹作逐字节一致（仅此一文件不同）。
+  * 已知遗留（M1/M3 处理，非 M0）：设置 `WOLF_DATA_ROOT=work/Data` 跑 wolf-game 时，engine 事件 48（`ENGINE_ALWAYS` 首项）在本作数据上 `Game::frame()` 死循环（sibling 注册表按 550 事件配、本作 350 事件）；wolf-game `time_system.rs` 4 条、db 若干为 sister 期望值 / 事件语义差异。默认无 env 时这些用例按设计 skip，故 workspace 测试全绿。

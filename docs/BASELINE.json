@@ -1,0 +1,253 @@
+{
+  "game": {
+    "title": "Imouto! Life ~Monochrome~ zh-CN Ver.",
+    "subtitle": "Ver2.03",
+    "screen": {
+      "w": 1024,
+      "h": 576
+    },
+    "tile_size": 16,
+    "fps": 60
+  },
+  "generation": {
+    "wolf": "V200",
+    "label": "2.00",
+    "version_header": "0x00",
+    "game_dat_footer": "0xC2",
+    "common_event_footer": "0x8F",
+    "database_version": "0xC1",
+    "database_footer": "0xC1"
+  },
+  "game_dat": {
+    "strings": 9,
+    "u8_settings": 22,
+    "u16_settings": 19,
+    "font_main": "Microsoft Yahei UI Bold",
+    "random_a": 22507,
+    "random_b": 23301,
+    "footer": 194,
+    "footer_hex": "0xC2",
+    "version_header": "0x00"
+  },
+  "maptree": {
+    "entries": 50,
+    "version": 144,
+    "version_hex": "0x90",
+    "footer": 188,
+    "footer_hex": "0xBC",
+    "roots": 47,
+    "children_of_0": [
+      3,
+      24,
+      31
+    ],
+    "open_flags": 50,
+    "open_footer": 38,
+    "open_footer_hex": "0x26"
+  },
+  "common_events": {
+    "events": 350,
+    "version": 143,
+    "version_hex": "0x8F",
+    "footer": 143,
+    "footer_hex": "0x8F",
+    "slots": 63506,
+    "blank": 9890,
+    "real": 53616,
+    "distinct_opcodes": 45,
+    "max_branch_depth": 25,
+    "move_route_tails": 55,
+    "param_layout_mismatches": 0,
+    "run_condition": [
+      312,
+      0,
+      31,
+      7
+    ],
+    "opcode_210": 2869,
+    "opcode_401": 7562
+  },
+  "map_events": {
+    "aggregate": {
+      "maps": 8,
+      "events": 56,
+      "pages": 102,
+      "slots": 12266,
+      "blank": 2188,
+      "real": 10078,
+      "distinct_opcodes": 34,
+      "empty_maps": 0,
+      "parse_errors": 0
+    },
+    "maps": [
+      {
+        "name": "Dungeon.mps",
+        "width": 40,
+        "height": 30,
+        "tileset": 0,
+        "events": 5,
+        "pages": 6,
+        "commands": 79
+      },
+      {
+        "name": "Map002.mps",
+        "width": 100,
+        "height": 30,
+        "tileset": 4,
+        "events": 5,
+        "pages": 7,
+        "commands": 416
+      },
+      {
+        "name": "Map003.mps",
+        "width": 70,
+        "height": 170,
+        "tileset": 4,
+        "events": 2,
+        "pages": 2,
+        "commands": 47
+      },
+      {
+        "name": "Map024.mps",
+        "width": 53,
+        "height": 30,
+        "tileset": 4,
+        "events": 1,
+        "pages": 1,
+        "commands": 3
+      },
+      {
+        "name": "Map031.mps",
+        "width": 53,
+        "height": 30,
+        "tileset": 0,
+        "events": 1,
+        "pages": 1,
+        "commands": 63
+      },
+      {
+        "name": "SampleMapA.mps",
+        "width": 64,
+        "height": 36,
+        "tileset": 4,
+        "events": 35,
+        "pages": 78,
+        "commands": 11558
+      },
+      {
+        "name": "SampleMapB.mps",
+        "width": 30,
+        "height": 30,
+        "tileset": 0,
+        "events": 6,
+        "pages": 6,
+        "commands": 36
+      },
+      {
+        "name": "TitleMap.mps",
+        "width": 53,
+        "height": 30,
+        "tileset": 4,
+        "events": 1,
+        "pages": 1,
+        "commands": 64
+      }
+    ]
+  },
+  "tileset_data": {
+    "version": 209,
+    "version_hex": "0xD1",
+    "count": 6,
+    "footer": 207,
+    "footer_hex": "0xCF",
+    "base.4": "MapChip/kiri_project.png"
+  },
+  "database": {
+    "database": {
+      "types": 40,
+      "rows_0": 44
+    },
+    "cdata": {
+      "types": 30,
+      "rows_0": 17
+    },
+    "sysdata": {
+      "types": 28,
+      "rows_0": 50
+    },
+    "map_settings": {
+      "count": 5,
+      "first": "MapData/TitleMap.mps"
+    }
+  },
+  "file_versions": {
+    "game_dat": {
+      "version_header": "0x00",
+      "footer": "0xC2"
+    },
+    "maptree": {
+      "version": "0x90",
+      "footer": "0xBC"
+    },
+    "maptree_open": {
+      "footer": "0x26"
+    },
+    "common_event": {
+      "version": "0x8F",
+      "footer": "0x8F"
+    },
+    "tileset": {
+      "version": "0xD1",
+      "footer": "0xCF"
+    },
+    "database": {
+      "version": "0xC1",
+      "footer": "0xC1"
+    },
+    "cdata": {
+      "version": "0xC1",
+      "footer": "0xC1"
+    },
+    "sysdata": {
+      "version": "0xC1",
+      "footer": "0xC1"
+    },
+    "save": {
+      "version": "0x80",
+      "end_byte": "0x19"
+    }
+  },
+  "wolf_archives": {
+    "data_wolf": {
+      "file": "Data.wolf",
+      "bytes": 176347260,
+      "entries": 1361,
+      "total_bytes": 179877496,
+      "compressed": 22,
+      "uncompressed": 1339,
+      "char_code": 932,
+      "cipher": "DXArchive VER6 (WOLF RPG v2.20 fixed key; XOR stream c7 05 ca 7d 8d e3 de f1 d9 0c 85 f4)"
+    }
+  },
+  "precompile": {
+    "slots": 63506,
+    "blocks": 5470,
+    "conditions": 4372,
+    "choices": 163,
+    "loops": 935,
+    "labels": 267,
+    "label_jumps": 612,
+    "dynamic_labels": 51,
+    "malformed_conditions": 0,
+    "cases": 7562,
+    "else_cases": 1012,
+    "cancel_cases": 85,
+    "orphan_cases": 0,
+    "orphan_ends": 0,
+    "implicit_closes": 54,
+    "unclosed_blocks": 0,
+    "max_depth": 25,
+    "programs": 350,
+    "titles_indexed": 295
+  }
+}

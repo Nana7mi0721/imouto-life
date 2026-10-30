@@ -1,0 +1,10 @@
+[package]
+name = "wolf-format"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "WOLF RPG Editor binary format loaders (DXArchive, Game.dat, CommonEvent.dat, databases, .mps, TileSetData)"
+
+[dependencies]

@@ -369,3 +369,9 @@ WOLF_DATA_ROOT="$PWD/work/Data" ./target/debug/wolf-cli.exe verify | tail -20
   * **下一次接手的入口**：从 `07ab89b` 继续；M4 优先级见 `docs/M4_PARITY.md` /
     `docs/M4_PERF.md`（设置 UI、tile quad 缓存、SoundCmd.frames 语义、
     ActionKey 命中框细化、v8 命名审计、100 日长链与打包）。
+
+* 2026-10-31（M3 推送 + Lead 复验）：
+  * 模型额度恢复后重读交接；检查 `07ab89b`/`7c79d77` 两条本地提交：无 Claude/Anthropic 尾注，作者为 imoto lead，按用户授权可推送。
+  * Lead 复验：默认与 `WOLF_DATA_ROOT=work/Data` 的 `cargo test -q --workspace` 均 exit 0（各 **75 target**，0 failed）；`verify` **PASS 64 / 1 SKIP**；`verify --wolf` **PASS 72 / 0 pending**（1,361/1,361）。
+  * 已推送 `origin/master`：`c167c85..7c79d77`，工作树干净。
+  * **下一步**：按 `docs/M4_PARITY.md` / `docs/M4_PERF.md` 推进 M4（设置 UI、tile quad 缓存、SoundCmd.frames、ActionKey 命中框、v8 命名审计、100 日长链与打包）。

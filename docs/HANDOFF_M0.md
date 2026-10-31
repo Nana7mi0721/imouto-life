@@ -353,3 +353,19 @@ WOLF_DATA_ROOT="$PWD/work/Data" ./target/debug/wolf-cli.exe verify | tail -20
   * **字体/截图**：system Microsoft YaHei（msyhbd.ttc）优先，`capture` 已重新出图。
   * **其他后续**：`capture --map` 的负层 z-order 观察（-1 blackscreen 在 -10 背景之上，
     属预期淡入层）；tile quad 缓存（性能候选 2）。
+
+* 2026-10-31（M3 收口提交）：
+  * 本地提交 `07ab89b`「M3: complete runtime — retail PRNG, save fidelity, settings,
+    capture」（74 文件，+18,607/−1,112）；**未推送远端**（用户要求本轮不做远程操作）。
+    工作树干净。
+  * 终验（`work/out/final_check.log`）：默认 `cargo test -q --workspace` exit 0；
+    `WOLF_DATA_ROOT=work/Data cargo test -q --workspace --no-fail-fast` **75 个 test
+    target 全 ok**；`verify` **PASS 64 / 1 SKIP(dxarchive.header)**；`verify --wolf`
+    **PASS 72 / 0 pending**（1,361/1,361 字节相等，179,877,496 B）；SaveData01/02、
+    System.sav 与安装目录原件 MD5 一致（测试未污染数据）。
+  * capture 冒烟：1024x576、512,331/589,824 非黑（86.9%）、字体 msyhbd.ttc；仅 1 个
+    缺字形 '׳'（系统字体覆盖问题，非渲染 bug）。
+  * 计数更正：`m3_map_click` 实际 **8** 条（上文「7 条」为准入时的旧数）。
+  * **下一次接手的入口**：从 `07ab89b` 继续；M4 优先级见 `docs/M4_PARITY.md` /
+    `docs/M4_PERF.md`（设置 UI、tile quad 缓存、SoundCmd.frames 语义、
+    ActionKey 命中框细化、v8 命名审计、100 日长链与打包）。

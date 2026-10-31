@@ -175,7 +175,10 @@ fn title_art_switches_on_the_clear_flag() {
             files.contains(&want),
             "v199={flag} should paint {want}, got {files:?}"
         );
-        assert_eq!(game.stats.warnings, 0, "v199={flag} title branch is warning-free");
+        assert_eq!(
+            game.stats.warnings, 0,
+            "v199={flag} title branch is warning-free"
+        );
     }
 }
 
@@ -260,11 +263,12 @@ fn pants_complete_branch_is_wired_for_the_grand_end() {
     assert!(gate_v202, "CE258 pants branch should gate on v202==1");
 
     // 该分支写 v202=1（パンツコンプ）、写 v203=1，并调用 CE297。
-    let writes_v202 = (0..dinner.commands.len())
-        .any(|pc| writes_var(dinner, pc) == Some((202, 1)));
-    let writes_v203 = (0..dinner.commands.len())
-        .any(|pc| writes_var(dinner, pc) == Some((203, 1)));
-    assert!(writes_v202, "CE258 should mark v202=1 after the pants ending");
+    let writes_v202 = (0..dinner.commands.len()).any(|pc| writes_var(dinner, pc) == Some((202, 1)));
+    let writes_v203 = (0..dinner.commands.len()).any(|pc| writes_var(dinner, pc) == Some((203, 1)));
+    assert!(
+        writes_v202,
+        "CE258 should mark v202=1 after the pants ending"
+    );
     assert!(writes_v203, "CE258 should mark v203=1 after the grand end");
     let calls_staff_roll = (0..dinner.commands.len()).any(|pc| match dinner.commands.get(pc) {
         Some(wolf_format::command::Slot::Command(cmd)) if cmd.opcode == 210 => {
@@ -272,7 +276,10 @@ fn pants_complete_branch_is_wired_for_the_grand_end() {
         }
         _ => false,
     });
-    assert!(calls_staff_roll, "CE258 grand end should call CE297 (op210 500297)");
+    assert!(
+        calls_staff_roll,
+        "CE258 grand end should call CE297 (op210 500297)"
+    );
 
     // 结局画面：ending03 / ending03_2 / credit02 / ending04。
     let ending_files: Vec<String> = (0..dinner.commands.len())
@@ -283,7 +290,12 @@ fn pants_complete_branch_is_wired_for_the_grand_end() {
             _ => None,
         })
         .collect();
-    for want in ["cg/ending03.jpg", "cg/ending03_2.jpg", "cg/credit02.png", "cg/ending04.jpg"] {
+    for want in [
+        "cg/ending03.jpg",
+        "cg/ending03_2.jpg",
+        "cg/credit02.png",
+        "cg/ending04.jpg",
+    ] {
         assert!(
             ending_files.iter().any(|file| file == want),
             "CE258 should paint {want}, got {:?}",
@@ -326,7 +338,11 @@ fn album_reveals_one_slot_per_ending_flag() {
         assert!(game.start_event(303), "CE303 album starts");
         let run = run(&mut game, 300);
 
-        for base in ["Picture/album_008.png", "Picture/album_009.png", "Picture/album_010.png"] {
+        for base in [
+            "Picture/album_008.png",
+            "Picture/album_009.png",
+            "Picture/album_010.png",
+        ] {
             assert!(
                 run.files.contains(base),
                 "flags={flags:?}: base album cell {base} missing: {:?}",
@@ -353,7 +369,11 @@ fn album_reveals_one_slot_per_ending_flag() {
                     "flags={flags:?}: {cell} missing, got {unlocked:?}"
                 );
                 if flags.iter().filter(|&&flag| flag == 1).count() == 1 {
-                    assert_eq!(unlocked.len(), 1, "flags={flags:?}: exactly one cell unlocks, got {unlocked:?}");
+                    assert_eq!(
+                        unlocked.len(),
+                        1,
+                        "flags={flags:?}: exactly one cell unlocks, got {unlocked:?}"
+                    );
                 }
             }
         }
@@ -383,7 +403,10 @@ fn staff_roll_runs_headless() {
         run.files
     );
     assert!(
-        game.vm.instances().iter().any(|instance| instance.event == 297),
+        game.vm
+            .instances()
+            .iter()
+            .any(|instance| instance.event == 297),
         "CE297 应在 800 帧内保持运行"
     );
 }
@@ -407,7 +430,10 @@ fn as_var(raw: i32) -> Option<u32> {
     }
 }
 
-fn condition_triples(event: &wolf_format::commonevent::CommonEvent, pc: usize) -> Vec<(u32, i32, i32)> {
+fn condition_triples(
+    event: &wolf_format::commonevent::CommonEvent,
+    pc: usize,
+) -> Vec<(u32, i32, i32)> {
     let Some(wolf_format::command::Slot::Command(cmd)) = event.commands.get(pc) else {
         return Vec::new();
     };
@@ -417,9 +443,7 @@ fn condition_triples(event: &wolf_format::commonevent::CommonEvent, pc: usize) -
     let count = (arg(cmd, 0) & 0x0F) as usize;
     (0..count)
         .filter_map(|i| {
-            as_var(arg(cmd, 1 + 3 * i)).map(|var| {
-                (var, arg(cmd, 2 + 3 * i), arg(cmd, 3 + 3 * i))
-            })
+            as_var(arg(cmd, 1 + 3 * i)).map(|var| (var, arg(cmd, 2 + 3 * i), arg(cmd, 3 + 3 * i)))
         })
         .collect()
 }
@@ -466,9 +490,12 @@ fn ending_scripts_are_statically_wired() {
     assert!(gate_v20, "CE258 pregnancy gate should test v20>=100");
 
     // CE258 也在 100 日阈值处写 v201=1。
-    let writes_clear = (0..dinner.commands.len())
-        .any(|pc| writes_var(dinner, pc) == Some((201, 1)));
-    assert!(writes_clear, "CE258 should write v201=1 at the 100-day threshold");
+    let writes_clear =
+        (0..dinner.commands.len()).any(|pc| writes_var(dinner, pc) == Some((201, 1)));
+    assert!(
+        writes_clear,
+        "CE258 should write v201=1 at the 100-day threshold"
+    );
 
     // CE42 标题分支读 v199 的 0/1。
     let title = data.event(42).expect("CE42 exists");

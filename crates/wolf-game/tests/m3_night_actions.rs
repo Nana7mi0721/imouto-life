@@ -231,7 +231,10 @@ fn ce245_menu_options() {
         ],
         "CE245 draws the five night actions plus a trailing debug option"
     );
-    assert_eq!(game.stats.warnings, 0, "no unmodelled opcodes while drawing CE245");
+    assert_eq!(
+        game.stats.warnings, 0,
+        "no unmodelled opcodes while drawing CE245"
+    );
 }
 
 #[test]
@@ -274,7 +277,10 @@ fn ce245_action_tea() {
         }
     }
     assert!(opened, "泡茶 opens a drink-selection submenu");
-    assert!(seen.contains(&"喘口气吧。".to_owned()), "tea action message");
+    assert!(
+        seen.contains(&"喘口气吧。".to_owned()),
+        "tea action message"
+    );
 
     let items = options(&game);
     assert_eq!(items.len(), 8, "tea submenu lists eight drinks: {items:?}");
@@ -309,7 +315,10 @@ fn ce245_action_bath_dispatches_ce249() {
             break;
         }
     }
-    assert!(seen.contains(&"还是去洗澡吧…".to_owned()), "bath action message");
+    assert!(
+        seen.contains(&"还是去洗澡吧…".to_owned()),
+        "bath action message"
+    );
     assert!(events.contains(&249), "泡澡 should launch CE249");
     assert_eq!(game.stats.warnings, 0);
 }
@@ -334,7 +343,10 @@ fn ce245_action_shop_dispatches_ce250() {
             break;
         }
     }
-    assert!(seen.contains(&"看一眼网上商店吧。".to_owned()), "shop action message");
+    assert!(
+        seen.contains(&"看一眼网上商店吧。".to_owned()),
+        "shop action message"
+    );
     assert!(events.contains(&250), "网上购物 should launch CE250");
     assert_eq!(
         game.vm.vars.get(15),
@@ -439,7 +451,10 @@ fn ce246_dispatch_tv_and_game() {
         absorb(&mut seen, &mut game);
         events.extend(live_events(&game));
     }
-    assert!(seen.contains(&"一起看电视吧。".to_owned()), "TV dispatch message");
+    assert!(
+        seen.contains(&"一起看电视吧。".to_owned()),
+        "TV dispatch message"
+    );
     assert!(events.contains(&247), "看看电视吧 should launch CE247");
     assert_eq!(game.stats.warnings, 0);
 
@@ -457,7 +472,10 @@ fn ce246_dispatch_tv_and_game() {
         absorb(&mut seen, &mut game);
         events.extend(live_events(&game));
     }
-    assert!(seen.contains(&"那么，去玩游戏吧。".to_owned()), "game dispatch message");
+    assert!(
+        seen.contains(&"那么，去玩游戏吧。".to_owned()),
+        "game dispatch message"
+    );
     assert!(events.contains(&248), "玩游戏吧 should launch CE248");
     assert_eq!(game.stats.warnings, 0);
 }
@@ -594,7 +612,10 @@ fn ce249_bath_menu_and_branches() {
         return;
     };
     let preamble = start_to_top_menu(&mut game, 249, 120);
-    assert!(preamble.contains(&"还是去洗澡吧…".to_owned()), "bath preamble");
+    assert!(
+        preamble.contains(&"还是去洗澡吧…".to_owned()),
+        "bath preamble"
+    );
     assert_eq!(
         options(&game),
         vec!["一个人洗".to_owned(), "两个人洗".to_owned()],
@@ -614,10 +635,7 @@ fn ce249_bath_menu_and_branches() {
         run.messages.contains(&"好，去吧。".to_owned()),
         "single bath message"
     );
-    assert!(
-        run.pictures.contains(&16_000),
-        "bath paints picture 16000"
-    );
+    assert!(run.pictures.contains(&16_000), "bath paints picture 16000");
     assert_eq!(game.stats.warnings, 0);
 
     // 两个人洗.
@@ -629,11 +647,13 @@ fn ce249_bath_menu_and_branches() {
     press(&mut game, key::OK);
     let run = run_to_idle(&mut game, 220);
     assert!(
-        run.messages.contains(&"哎—，不要——\n哥哥真是色狼。".to_owned()),
+        run.messages
+            .contains(&"哎—，不要——\n哥哥真是色狼。".to_owned()),
         "double bath first line"
     );
     assert!(
-        run.messages.contains(&"嘛啊，是会这样呢。\n…进去吧。".to_owned()),
+        run.messages
+            .contains(&"嘛啊，是会这样呢。\n…进去吧。".to_owned()),
         "double bath second line"
     );
     assert_eq!(game.stats.warnings, 0);
@@ -678,7 +698,10 @@ fn ce250_shop_menu_and_purchase() {
         return;
     };
     let preamble = start_to_top_menu(&mut game, 250, 140);
-    assert!(preamble.contains(&"看一眼网上商店吧。".to_owned()), "shop preamble");
+    assert!(
+        preamble.contains(&"看一眼网上商店吧。".to_owned()),
+        "shop preamble"
+    );
 
     let items = options(&game);
     assert_eq!(items.len(), 3, "shop lists three item rows");
@@ -691,7 +714,11 @@ fn ce250_shop_menu_and_purchase() {
         if let Some(yen_at) = text.find('円') {
             let before = &text[..yen_at];
             assert!(
-                before.chars().rev().take_while(|c| *c == ' ' || c.is_ascii_digit()).any(|c| c.is_ascii_digit()),
+                before
+                    .chars()
+                    .rev()
+                    .take_while(|c| *c == ' ' || c.is_ascii_digit())
+                    .any(|c| c.is_ascii_digit()),
                 "row {row} prints its digits before 円: {text:?}"
             );
         }
@@ -719,7 +746,10 @@ fn ce250_shop_menu_and_purchase() {
     // changing money.
     game.set_choice_cursor(unaffordable);
     press(&mut game, key::OK);
-    assert!(run_to_choice(&mut game, 120), "an unaffordable row asks 买 / 不买");
+    assert!(
+        run_to_choice(&mut game, 120),
+        "an unaffordable row asks 买 / 不买"
+    );
     assert_eq!(
         options(&game),
         vec!["买".to_owned(), "不买".to_owned()],
@@ -765,7 +795,10 @@ fn ce250_buying_an_affordable_row_deducts_its_price() {
 
     game.set_choice_cursor(row);
     press(&mut game, key::OK);
-    assert!(run_to_choice(&mut game, 120), "the affordable row asks 买 / 不买");
+    assert!(
+        run_to_choice(&mut game, 120),
+        "the affordable row asks 买 / 不买"
+    );
 
     game.set_choice_cursor(0); // 买
     press(&mut game, key::OK);
@@ -799,7 +832,10 @@ fn ce250_declining_a_purchase_keeps_the_money() {
 
     game.set_choice_cursor(row);
     press(&mut game, key::OK);
-    assert!(run_to_choice(&mut game, 120), "the affordable row asks 买 / 不买");
+    assert!(
+        run_to_choice(&mut game, 120),
+        "the affordable row asks 买 / 不买"
+    );
 
     game.set_choice_cursor(1); // 不买
     press(&mut game, key::OK);
@@ -810,7 +846,11 @@ fn ce250_declining_a_purchase_keeps_the_money() {
         "declining reports the back-out line: {:?}",
         run.messages
     );
-    assert_eq!(game.vm.vars.get(7), money, "declining must not change money");
+    assert_eq!(
+        game.vm.vars.get(7),
+        money,
+        "declining must not change money"
+    );
     assert_eq!(game.vm.vars.get(15), 0, "resolving the shop clears var15");
     assert_eq!(game.stats.warnings, 0);
 }

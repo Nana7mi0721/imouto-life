@@ -148,9 +148,15 @@ fn assert_status_bar(game: &Game) {
         assert!(has_picture(game, n), "status slot picture {n} is missing");
     }
     let (_, good_text, ..) = picture_field(game, 1995).expect("GOOD label");
-    assert!(visible(&good_text).contains("GOOD"), "1995 label = {good_text:?}");
+    assert!(
+        visible(&good_text).contains("GOOD"),
+        "1995 label = {good_text:?}"
+    );
     let (_, bad_text, ..) = picture_field(game, 1999).expect("BAD label");
-    assert!(visible(&bad_text).contains("BAD"), "1999 label = {bad_text:?}");
+    assert!(
+        visible(&bad_text).contains("BAD"),
+        "1999 label = {bad_text:?}"
+    );
     let (file, ..) = picture_field(game, 2000).expect("sleeping status picture");
     assert!(file.contains("sleeping_staus.png"), "2000 file = {file:?}");
 }
@@ -159,7 +165,10 @@ fn assert_body_layers(game: &Game) {
     for &n in BODY_CORE {
         assert!(has_picture(game, n), "body layer picture {n} is missing");
     }
-    let clothing = BODY_CLOTHING.iter().filter(|&&n| has_picture(game, n)).count();
+    let clothing = BODY_CLOTHING
+        .iter()
+        .filter(|&&n| has_picture(game, n))
+        .count();
     assert!(clothing >= 1, "at least one clothing layer expected");
     assert_eq!(pictures_in_range(game, 2300, 2319), 20, "item list slots");
 }
@@ -179,17 +188,26 @@ fn set_branch_prerequisites(game: &mut Game) {
 
 #[test]
 fn night_menu_reaches_the_interaction_interface_when_prerequisites_are_met() {
-    let Some(mut game) = open_loaded() else { return };
+    let Some(mut game) = open_loaded() else {
+        return;
+    };
     set_branch_prerequisites(&mut game);
     game.start_event(245);
 
     let mut order = Vec::new();
     let menu = walk(&mut game, 120, &mut order).expect("night command menu");
-    assert!(menu.iter().any(|o| o == "今天就这样睡吧"), "menu = {menu:?}");
+    assert!(
+        menu.iter().any(|o| o == "今天就这样睡吧"),
+        "menu = {menu:?}"
+    );
 
     choose(&mut game, 4);
     let confirm = walk(&mut game, 120, &mut order).expect("sleep confirm");
-    assert_eq!(confirm, vec!["是".to_owned(), "否".to_owned()], "confirm = {confirm:?}");
+    assert_eq!(
+        confirm,
+        vec!["是".to_owned(), "否".to_owned()],
+        "confirm = {confirm:?}"
+    );
 
     choose(&mut game, 0);
     let deep_confirm = walk(&mut game, 200, &mut order).expect("deep confirm");
@@ -208,7 +226,10 @@ fn night_menu_reaches_the_interaction_interface_when_prerequisites_are_met() {
     assert_body_layers(&game);
 
     for needle in ["……哥、哥哥…", "…做吧？"] {
-        assert!(order.iter().any(|m| m.contains(needle)), "message {needle:?} missing from {order:?}");
+        assert!(
+            order.iter().any(|m| m.contains(needle)),
+            "message {needle:?} missing from {order:?}"
+        );
     }
     assert!(
         order.iter().any(|m| m.contains("深夜模式全部由光标操作")),
@@ -223,12 +244,17 @@ fn night_menu_reaches_the_interaction_interface_when_prerequisites_are_met() {
 
 #[test]
 fn night_menu_falls_back_to_the_sleep_exit_when_prerequisites_are_not_met() {
-    let Some(mut game) = open_loaded() else { return };
+    let Some(mut game) = open_loaded() else {
+        return;
+    };
     game.start_event(245);
 
     let mut order = Vec::new();
     let menu = walk(&mut game, 120, &mut order).expect("night command menu");
-    assert!(menu.iter().any(|o| o == "今天就这样睡吧"), "menu = {menu:?}");
+    assert!(
+        menu.iter().any(|o| o == "今天就这样睡吧"),
+        "menu = {menu:?}"
+    );
 
     choose(&mut game, 4);
     let confirm = walk(&mut game, 120, &mut order).expect("sleep confirm");
@@ -244,9 +270,19 @@ fn night_menu_falls_back_to_the_sleep_exit_when_prerequisites_are_not_met() {
     }
 
     let live = live_events(&game);
-    assert!(live.contains(&251), "sleep event 251 not live, live = {live:?}");
-    assert!(!live.contains(&230), "interface 230 should not run, live = {live:?}");
-    assert_eq!(pictures_in_range(&game, 1992, 2000), 0, "status bar should not be drawn");
+    assert!(
+        live.contains(&251),
+        "sleep event 251 not live, live = {live:?}"
+    );
+    assert!(
+        !live.contains(&230),
+        "interface 230 should not run, live = {live:?}"
+    );
+    assert_eq!(
+        pictures_in_range(&game, 1992, 2000),
+        0,
+        "status bar should not be drawn"
+    );
     assert_eq!(var(&game, 100), 0, "interface flag must stay clear");
     assert!(
         order.iter().any(|m| m.contains("晚安哥哥")),
@@ -257,13 +293,18 @@ fn night_menu_falls_back_to_the_sleep_exit_when_prerequisites_are_not_met() {
 
 #[test]
 fn direct_interface_event_draws_layers_and_writes_parameters() {
-    let Some(mut game) = open_loaded() else { return };
+    let Some(mut game) = open_loaded() else {
+        return;
+    };
     game.start_event(230);
 
     let mut order = Vec::new();
     let _ = walk(&mut game, 400, &mut order);
 
-    assert!(order.iter().any(|m| m.contains("咽口水")), "opening line missing from {order:?}");
+    assert!(
+        order.iter().any(|m| m.contains("咽口水")),
+        "opening line missing from {order:?}"
+    );
     assert!(
         order.iter().any(|m| m.contains("深夜模式全部由光标操作")),
         "interface notice missing from {order:?}"
@@ -285,7 +326,9 @@ fn status_bar_gradient_follows_the_parameter_variable() {
         return;
     }
     for desired in [0i32, 25, 50, 75, 100] {
-        let Some(mut game) = open_loaded() else { return };
+        let Some(mut game) = open_loaded() else {
+            return;
+        };
         game.vm.vars.set(24, desired);
         game.start_event(237);
         for _ in 0..6 {
@@ -293,7 +336,10 @@ fn status_bar_gradient_follows_the_parameter_variable() {
         }
         assert_status_bar(&game);
         let (_, _, _, _, good_scale) = picture_field(&game, 1993).expect("GOOD gradient");
-        assert_eq!(good_scale, desired, "GOOD gradient scale should track var24={desired}");
+        assert_eq!(
+            good_scale, desired,
+            "GOOD gradient scale should track var24={desired}"
+        );
         assert!(has_picture(&game, 1997), "BAD gradient slot 1997 missing");
         assert_eq!(game.stats.warnings, 0, "warnings");
     }
@@ -305,7 +351,9 @@ fn breath_pose_components_draw_their_backgrounds() {
         (225u32, "scene0102_bless02.png"),
         (226, "scene0102_bless01.png"),
     ] {
-        let Some(mut game) = open_loaded() else { return };
+        let Some(mut game) = open_loaded() else {
+            return;
+        };
         game.start_event(event_id);
         for _ in 0..10 {
             game.frame();
@@ -316,14 +364,19 @@ fn breath_pose_components_draw_their_backgrounds() {
             .find(|p| p.file.contains(expected))
             .map(|p| (p.number, p.file.clone()))
             .unwrap_or_else(|| panic!("event {event_id} did not draw {expected}"));
-        assert!(hit.0 >= 1000, "unexpected picture number for {expected}: {hit:?}");
+        assert!(
+            hit.0 >= 1000,
+            "unexpected picture number for {expected}: {hit:?}"
+        );
         assert_eq!(game.stats.warnings, 0, "warnings for event {event_id}");
     }
 }
 
 #[test]
 fn interaction_run_leaves_the_save_file_untouched() {
-    let Some(mut game) = open_loaded() else { return };
+    let Some(mut game) = open_loaded() else {
+        return;
+    };
     let root = data_root();
     let before = std::fs::read(save_path(&root)).expect("read save before");
     set_branch_prerequisites(&mut game);
@@ -350,5 +403,8 @@ fn interaction_run_leaves_the_save_file_untouched() {
         game.frame();
     }
     let after = std::fs::read(save_path(&root)).expect("read save after");
-    assert_eq!(before, after, "SaveData01 must not be modified by an interaction run");
+    assert_eq!(
+        before, after,
+        "SaveData01 must not be modified by an interaction run"
+    );
 }

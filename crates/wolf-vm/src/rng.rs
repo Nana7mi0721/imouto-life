@@ -338,6 +338,9 @@ mod tests {
         let mut b = WolfRng::from_seed(23_301);
         let first: Vec<u16> = (0..32).map(|_| a.next_raw()).collect();
         let second: Vec<u16> = (0..32).map(|_| b.next_raw()).collect();
-        assert_ne!(first, second, "different seeds must produce different streams");
+        assert_ne!(
+            first, second,
+            "different seeds must produce different streams"
+        );
     }
 }

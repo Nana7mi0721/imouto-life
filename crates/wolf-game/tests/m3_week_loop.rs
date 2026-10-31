@@ -83,12 +83,7 @@ fn press_ok(game: &mut Game) {
 
 /// 在当前菜单里选择包含 `needle` 的选项。
 fn choose(game: &mut Game, needle: &str) -> String {
-    let options = game
-        .choices
-        .as_ref()
-        .expect("choices open")
-        .options
-        .clone();
+    let options = game.choices.as_ref().expect("choices open").options.clone();
     let index = options
         .iter()
         .position(|option| option.contains(needle))
@@ -104,7 +99,11 @@ fn choose(game: &mut Game, needle: &str) -> String {
 fn collect(game: &mut Game, frames: usize, seen: &mut Vec<String>) {
     for _ in 0..frames {
         for message in &game.messages {
-            if seen.last().map(|last| last != &message.text).unwrap_or(true) {
+            if seen
+                .last()
+                .map(|last| last != &message.text)
+                .unwrap_or(true)
+            {
                 seen.push(message.text.clone());
             }
         }
@@ -126,7 +125,9 @@ fn drive_daytime(game: &mut Game) -> Vec<Vec<String>> {
                 let events = live_events(game);
                 if game.choices.is_none()
                     && var(game, 4) >= 18
-                    && !events.iter().any(|&e| e == 241 || e == 251 || e == 255 || e == 256)
+                    && !events
+                        .iter()
+                        .any(|&e| e == 241 || e == 251 || e == 255 || e == 256)
                 {
                     break;
                 }
@@ -221,7 +222,12 @@ fn night_menu_lists_daily_actions() {
     assert_eq!(
         options,
         vec![
-            "开始交流 ", "泡茶 ", "泡澡 ", "网上购物 ", "今天就这样睡吧 ", "0"
+            "开始交流 ",
+            "泡茶 ",
+            "泡澡 ",
+            "网上购物 ",
+            "今天就这样睡吧 ",
+            "0"
         ],
         "夜コマンド应恰有六项"
     );
@@ -260,15 +266,22 @@ fn bedtime_advances_weekday_to_midnight() {
         .options
         .clone();
     assert!(
-        options.iter().any(|option| option.contains("是")) && options.iter().any(|option| option.contains("否")),
+        options.iter().any(|option| option.contains("是"))
+            && options.iter().any(|option| option.contains("否")),
         "应弹出 是/否 确认, got {options:?}"
     );
     choose(&mut game, "是");
     collect(&mut game, 800, &mut seen);
 
     let transcript = seen.join("\n");
-    assert!(transcript.contains("差不多该睡了吧"), "应有就寝确认提示, got {transcript}");
-    assert!(transcript.contains("已经要睡了吗"), "应有妹妹回应, got {transcript}");
+    assert!(
+        transcript.contains("差不多该睡了吧"),
+        "应有就寝确认提示, got {transcript}"
+    );
+    assert!(
+        transcript.contains("已经要睡了吗"),
+        "应有妹妹回应, got {transcript}"
+    );
     assert_eq!((var(&game, 4), var(&game, 5)), (0, 0), "时间应快进到 00:00");
     assert_eq!(var(&game, 6), 1, "跨过午夜，星期 周一(0)->周二(1)");
     assert_eq!(var(&game, 99), 1, "就寝本身不增加同居天数");
@@ -298,8 +311,16 @@ fn morning_opens_first_day_menu() {
     collect(&mut game, 400, &mut seen);
 
     assert_eq!(seen.len(), 9, "morning 应产生 9 条消息, got {seen:?}");
-    assert!(seen[0].contains("早上好，哥哥"), "首条应为早晨问候, got {:?}", seen[0]);
-    assert!(seen[0].contains("饭做好了哦"), "首条应含早餐邀请, got {:?}", seen[0]);
+    assert!(
+        seen[0].contains("早上好，哥哥"),
+        "首条应为早晨问候, got {:?}",
+        seen[0]
+    );
+    assert!(
+        seen[0].contains("饭做好了哦"),
+        "首条应含早餐邀请, got {:?}",
+        seen[0]
+    );
     assert!(
         seen.last().unwrap().contains("那么，该怎么做呢"),
         "末条应为行动提示, got {:?}",
@@ -310,15 +331,16 @@ fn morning_opens_first_day_menu() {
     assert_eq!((var(&game, 4), var(&game, 5)), (8, 30), "时间应到 08:30");
     assert_eq!(var(&game, 99), 1, "进入第 1 天");
     assert_eq!(var(&game, 6), 0, "应为周一");
-    let options = game
-        .choices
-        .as_ref()
-        .expect("应弹出日菜单")
-        .options
-        .clone();
+    let options = game.choices.as_ref().expect("应弹出日菜单").options.clone();
     assert_eq!(
         options,
-        vec!["无所事事地度过 ", "在附近散步 ", "做家务 ", "偷内裤 ", "睡觉 "],
+        vec![
+            "无所事事地度过 ",
+            "在附近散步 ",
+            "做家务 ",
+            "偷内裤 ",
+            "睡觉 "
+        ],
         "日菜单应为五项"
     );
     assert_eq!(game.stats.warnings, 0);
@@ -338,7 +360,11 @@ fn three_consecutive_days_advance_day_and_weekday() {
 
     assert!(game.start_event(251), "应能启动就寝事件");
     morning_wait(&mut game);
-    assert_eq!((var(&game, 99), var(&game, 6)), (1, 0), "起始应为第 1 天周一");
+    assert_eq!(
+        (var(&game, 99), var(&game, 6)),
+        (1, 0),
+        "起始应为第 1 天周一"
+    );
 
     for day in 0..3 {
         let before_day = var(&game, 99);
@@ -346,10 +372,16 @@ fn three_consecutive_days_advance_day_and_weekday() {
 
         let menus = drive_daytime(&mut game);
         assert!(
-            menus.iter().any(|menu| menu.iter().any(|option| option.contains("一个人去"))),
+            menus
+                .iter()
+                .any(|menu| menu.iter().any(|option| option.contains("一个人去"))),
             "第 {day} 天白天应出现归宅菜单, menus={menus:?}"
         );
-        assert_eq!((var(&game, 4), var(&game, 5)), (19, 30), "第 {day} 天白天应推进到 19:30");
+        assert_eq!(
+            (var(&game, 4), var(&game, 5)),
+            (19, 30),
+            "第 {day} 天白天应推进到 19:30"
+        );
         assert!(game.choices.is_none(), "19:30 应无待选菜单");
 
         assert!(game.start_event(251), "第 {day} 天应能就寝");
@@ -357,12 +389,19 @@ fn three_consecutive_days_advance_day_and_weekday() {
 
         assert_eq!(var(&game, 99), before_day + 1, "第 {day} 天后同居天数应 +1");
         assert_eq!(var(&game, 6), before_week + 1, "第 {day} 天后星期应 +1");
-        assert_eq!((var(&game, 4), var(&game, 5)), (8, 30), "第 {day} 天翌朝应为 08:30");
+        assert_eq!(
+            (var(&game, 4), var(&game, 5)),
+            (8, 30),
+            "第 {day} 天翌朝应为 08:30"
+        );
         assert_eq!(var(&game, 14), 4, "翌朝妹位置应重置为 4");
         assert!(
             game.choices
                 .as_ref()
-                .map(|choices| choices.options.iter().any(|option| option.contains("无所事事")))
+                .map(|choices| choices
+                    .options
+                    .iter()
+                    .any(|option| option.contains("无所事事")))
                 .unwrap_or(false),
             "第 {day} 天翌朝应回到日菜单, got {:?}",
             game.choices.as_ref().map(|c| c.options.clone())
@@ -370,7 +409,11 @@ fn three_consecutive_days_advance_day_and_weekday() {
         assert_eq!(game.stats.warnings, 0, "第 {day} 天不应产生 warning");
     }
 
-    assert_eq!((var(&game, 99), var(&game, 6)), (4, 3), "三天后应为第 4 天周四");
+    assert_eq!(
+        (var(&game, 99), var(&game, 6)),
+        (4, 3),
+        "三天后应为第 4 天周四"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -393,16 +436,28 @@ fn weekend_switches_to_holiday_menu() {
         assert!(
             game.choices
                 .as_ref()
-                .map(|choices| choices.options.iter().any(|option| option.contains("无所事事")))
+                .map(|choices| choices
+                    .options
+                    .iter()
+                    .any(|option| option.contains("无所事事")))
                 .unwrap_or(false),
             "工作日应处于日菜单, v6={}",
             var(&game, 6)
         );
         let _ = drive_daytime(&mut game);
-        assert_eq!((var(&game, 4), var(&game, 5)), (19, 30), "工作日应推进到 19:30");
+        assert_eq!(
+            (var(&game, 4), var(&game, 5)),
+            (19, 30),
+            "工作日应推进到 19:30"
+        );
         assert!(game.start_event(251), "应能就寝");
         morning_wait(&mut game);
-        assert_eq!(game.stats.warnings, 0, "v6={} 不应产生 warning", var(&game, 6));
+        assert_eq!(
+            game.stats.warnings,
+            0,
+            "v6={} 不应产生 warning",
+            var(&game, 6)
+        );
 
         guard += 1;
         assert!(guard < 10, "推进天数过多，可能循环未按预期前进");
@@ -417,7 +472,13 @@ fn weekend_switches_to_holiday_menu() {
         .clone();
     assert_eq!(
         options,
-        vec!["和妹妹一起玩 ", "做运动 ", "把积攒的家务做完 ", "努力打工 ", "睡觉 "],
+        vec![
+            "和妹妹一起玩 ",
+            "做运动 ",
+            "把积攒的家务做完 ",
+            "努力打工 ",
+            "睡觉 "
+        ],
         "周末白天应切换为休日菜单, v6={}",
         var(&game, 6)
     );

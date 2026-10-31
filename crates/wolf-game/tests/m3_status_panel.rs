@@ -53,7 +53,10 @@ fn open_loaded(slot: u32) -> Option<Game> {
     let mut game = match Game::new(data_root()) {
         Ok(game) => game,
         Err(err) => {
-            eprintln!("skipping: cannot open data root {}: {err}", data_root().display());
+            eprintln!(
+                "skipping: cannot open data root {}: {err}",
+                data_root().display()
+            );
             return None;
         }
     };
@@ -65,7 +68,6 @@ fn open_loaded(slot: u32) -> Option<Game> {
     game.auto_choice = false;
     Some(game)
 }
-
 
 /// 剥离 WOLF 文本转义，只保留可见字符。
 ///
@@ -117,7 +119,11 @@ fn slot_file(game: &Game, number: i32) -> String {
 
 fn quads_text(game: &Game) -> String {
     let quads = game.text_quads();
-    quads.iter().map(|q| q.text.as_str()).collect::<Vec<_>>().join("")
+    quads
+        .iter()
+        .map(|q| q.text.as_str())
+        .collect::<Vec<_>>()
+        .join("")
 }
 
 fn weekday_name(day: i32) -> &'static str {
@@ -135,11 +141,11 @@ fn weekday_name(day: i32) -> &'static str {
 
 /// 同步写入 numeric 单元与其字符串镜像，用于绕过 cdb numeric 渲染缺口。
 fn set_status_cell(game: &mut Game, column: i32, value: i32) {
-    game.databases.set_num(Container::CData, 0, 12, column, value);
+    game.databases
+        .set_num(Container::CData, 0, 12, column, value);
     game.databases
         .set_text(Container::CData, 0, 12, column, &value.to_string());
 }
-
 
 type SaveFingerprint = Vec<(String, u64, u64)>;
 
@@ -172,11 +178,7 @@ fn save_fingerprint() -> SaveFingerprint {
 }
 
 fn assert_save_unchanged(before: &SaveFingerprint) {
-    assert_eq!(
-        before,
-        &save_fingerprint(),
-        "Save 目录不应被写档流程改动"
-    );
+    assert_eq!(before, &save_fingerprint(), "Save 目录不应被写档流程改动");
 }
 
 #[test]
@@ -200,7 +202,10 @@ fn ce243_clock_and_weekday_follow_runtime_vars() {
         for _ in 0..20 {
             game.frame();
         }
-        assert_eq!(game.stats.warnings, 0, "CE243 hour={hour} minute={minute} 不应告警");
+        assert_eq!(
+            game.stats.warnings, 0,
+            "CE243 hour={hour} minute={minute} 不应告警"
+        );
         assert_eq!(
             slot_text(&game, 200),
             expected,
@@ -228,7 +233,6 @@ fn ce243_clock_and_weekday_follow_runtime_vars() {
     assert_save_unchanged(&before);
 }
 
-
 #[test]
 fn ce242_money_and_cohabitation_follow_runtime_vars() {
     let before = save_fingerprint();
@@ -243,7 +247,11 @@ fn ce242_money_and_cohabitation_follow_runtime_vars() {
             game.frame();
         }
         assert_eq!(game.stats.warnings, 0, "CE242 money={money} 不应告警");
-        assert_eq!(slot_text(&game, 250), "持有金钱", "CE242 金钱标签应为固定文案");
+        assert_eq!(
+            slot_text(&game, 250),
+            "持有金钱",
+            "CE242 金钱标签应为固定文案"
+        );
         assert_eq!(
             slot_text(&game, 251),
             format!("{money}円"),
@@ -272,7 +280,6 @@ fn ce242_money_and_cohabitation_follow_runtime_vars() {
     assert_save_unchanged(&before);
 }
 
-
 #[test]
 fn ce242_action_and_energy_follow_cdata_status_cells() {
     let before = save_fingerprint();
@@ -291,8 +298,16 @@ fn ce242_action_and_energy_follow_cdata_status_cells() {
         game.frame();
     }
     assert_eq!(game.stats.warnings, 0, "CE242 基准不应告警");
-    let raw_230 = game.screen.get(230).map(|p| p.text.clone()).unwrap_or_default();
-    let raw_240 = game.screen.get(240).map(|p| p.text.clone()).unwrap_or_default();
+    let raw_230 = game
+        .screen
+        .get(230)
+        .map(|p| p.text.clone())
+        .unwrap_or_default();
+    let raw_240 = game
+        .screen
+        .get(240)
+        .map(|p| p.text.clone())
+        .unwrap_or_default();
     assert!(
         raw_230.contains(r"\cdb[0:12:8]") && raw_230.contains(r"\cdb[0:12:9]"),
         "CE242 行动力面板应引用 CDataBase 0:12:8/9，实际 {raw_230:?}"
@@ -311,9 +326,15 @@ fn ce242_action_and_energy_follow_cdata_status_cells() {
         set_status_cell(&mut game, 6, energy);
         set_status_cell(&mut game, 7, energy_max);
         assert_eq!(game.databases.num(Container::CData, 0, 12, 8), Some(action));
-        assert_eq!(game.databases.num(Container::CData, 0, 12, 9), Some(action_max));
+        assert_eq!(
+            game.databases.num(Container::CData, 0, 12, 9),
+            Some(action_max)
+        );
         assert_eq!(game.databases.num(Container::CData, 0, 12, 6), Some(energy));
-        assert_eq!(game.databases.num(Container::CData, 0, 12, 7), Some(energy_max));
+        assert_eq!(
+            game.databases.num(Container::CData, 0, 12, 7),
+            Some(energy_max)
+        );
 
         assert!(game.start_event(242));
         for _ in 0..20 {
@@ -334,7 +355,6 @@ fn ce242_action_and_energy_follow_cdata_status_cells() {
     assert_save_unchanged(&before);
 }
 
-
 #[test]
 fn ce238_status_panel_shows_trust_and_interest() {
     let before = save_fingerprint();
@@ -349,7 +369,10 @@ fn ce238_status_panel_shows_trust_and_interest() {
         for _ in 0..20 {
             game.frame();
         }
-        assert_eq!(game.stats.warnings, 0, "CE238 trust={trust} interest={interest} 不应告警");
+        assert_eq!(
+            game.stats.warnings, 0,
+            "CE238 trust={trust} interest={interest} 不应告警"
+        );
         assert_eq!(
             slot_text(&game, 321),
             trust.to_string(),
@@ -388,10 +411,7 @@ fn ce237_status_panel_draws_good_bad_and_sleep_icon() {
     assert_eq!(game.stats.warnings, 0, "CE237 不应告警");
 
     for number in 1992..=2000 {
-        assert!(
-            game.screen.get(number).is_some(),
-            "CE237 应绘制槽 {number}"
-        );
+        assert!(game.screen.get(number).is_some(), "CE237 应绘制槽 {number}");
     }
     assert_eq!(slot_text(&game, 1995), "GOOD", "CE237 槽 1995 应为 GOOD");
     assert_eq!(slot_text(&game, 1999), "BAD", "CE237 槽 1999 应为 BAD");
@@ -403,4 +423,3 @@ fn ce237_status_panel_draws_good_bad_and_sleep_icon() {
 
     assert_save_unchanged(&before);
 }
-

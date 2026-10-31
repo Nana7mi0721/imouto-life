@@ -68,7 +68,6 @@ fn visible(raw: &str) -> String {
     out
 }
 
-
 fn is_hh_mm(s: &str) -> bool {
     let b = s.as_bytes();
     b.len() == 5
@@ -145,7 +144,6 @@ struct Shot {
     warnings: u64,
     frames: u32,
 }
-
 
 /// Clears the screen, starts one common event, and runs it for a fixed number of frames.
 fn run_event(game: &mut Game, id: u32, frames: u32) -> Shot {
@@ -240,7 +238,6 @@ fn click_at(game: &mut Game, x: i32, y: i32) {
         game.frame();
     }
 }
-
 
 #[test]
 fn ce237_status_window() {
@@ -352,7 +349,6 @@ fn ce241_blink_keeps_layers() {
     assert_eq!(game.stats.warnings, 0, "CE241 warnings");
 }
 
-
 #[test]
 fn ce242_status_readout() {
     let Some(mut game) = open_loaded_bedroom() else {
@@ -398,7 +394,10 @@ fn ce243_clock() {
     let slots: Vec<i32> = shot.pictures.keys().copied().collect();
     assert_eq!(slots, vec![200, 210], "CE243 slot set");
     let clock = &shot.pictures[&200].text;
-    assert!(is_hh_mm(clock), "CE243 clock should be HH:MM, got {clock:?}");
+    assert!(
+        is_hh_mm(clock),
+        "CE243 clock should be HH:MM, got {clock:?}"
+    );
     assert!(
         shot.pictures[&210].text.contains('周'),
         "CE243 weekday: {:?}",
@@ -453,15 +452,22 @@ fn ce296_play_tendency() {
     assert_eq!(shot.warnings, 0, "CE296 warnings");
 }
 
-
 #[test]
 fn ce297_staff_roll() {
     let Some(mut game) = open_loaded_bedroom() else {
         return;
     };
     let roll = run_until_end(&mut game, 297, 8000);
-    assert!(roll.ended, "CE297 should finish within {cap} frames", cap = 8000);
-    assert!(roll.frames > 1000, "CE297 is a long roll, ran {} frames", roll.frames);
+    assert!(
+        roll.ended,
+        "CE297 should finish within {cap} frames",
+        cap = 8000
+    );
+    assert!(
+        roll.frames > 1000,
+        "CE297 is a long roll, ran {} frames",
+        roll.frames
+    );
     assert!(roll.saw_credit, "CE297 scrolls the credit CG strip");
     assert_eq!(roll.warnings, 0, "CE297 warnings");
 }
@@ -472,8 +478,16 @@ fn ce302_credits() {
         return;
     };
     let roll = run_until_end(&mut game, 302, 8000);
-    assert!(roll.ended, "CE302 should finish within {cap} frames", cap = 8000);
-    assert!(roll.frames > 1000, "CE302 is a long roll, ran {} frames", roll.frames);
+    assert!(
+        roll.ended,
+        "CE302 should finish within {cap} frames",
+        cap = 8000
+    );
+    assert!(
+        roll.frames > 1000,
+        "CE302 is a long roll, ran {} frames",
+        roll.frames
+    );
     assert!(roll.saw_credit, "CE302 scrolls the credit CG strip");
     assert_eq!(roll.warnings, 0, "CE302 warnings");
 }
@@ -490,7 +504,10 @@ fn ce301_album_draw_is_context_only() {
         game.frame();
     }
     let painted = game.screen.iter().filter(|p| p.number > 0).count();
-    assert_eq!(painted, 0, "CE301 paints nothing without a caller selection");
+    assert_eq!(
+        painted, 0,
+        "CE301 paints nothing without a caller selection"
+    );
     assert!(
         !running(&game, 301),
         "CE301 is a draw subroutine, not a running event"
@@ -553,7 +570,11 @@ fn ce303_album_screen() {
             .filter(|p| p.number > 0 && p.file.contains("album_"))
             .map(|p| p.number)
             .collect();
-        assert_eq!(grid, vec![10, 114, 115, 116], "CE303 grid survives click ({x},{y})");
+        assert_eq!(
+            grid,
+            vec![10, 114, 115, 116],
+            "CE303 grid survives click ({x},{y})"
+        );
         // The standing preview must stay layered over the grid.
         for slot in [900, 901, 902, 903] {
             assert!(
@@ -571,8 +592,10 @@ fn ce303_album_screen() {
         .filter(|p| p.number > 0 && p.file.contains("album_"))
         .map(|p| p.number)
         .collect();
-    assert!(album_left.is_empty(), "CE303 closes the album grid: {album_left:?}");
+    assert!(
+        album_left.is_empty(),
+        "CE303 closes the album grid: {album_left:?}"
+    );
     assert_eq!(game.vm.vars.get(238), 0, "CE303 lowers album-display flag");
     assert_eq!(game.stats.warnings, 0, "CE303 warnings");
 }
-

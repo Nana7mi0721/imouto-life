@@ -107,12 +107,17 @@ fn loaded_bedroom_hud_shows_the_evening_clock_and_stats() {
         texts.iter().any(|text| text.contains('円')),
         "the restored HUD shows a money amount: {texts:?}"
     );
-    assert!(game.choices.is_none(), "the loaded bedroom has no open prompt");
+    assert!(
+        game.choices.is_none(),
+        "the loaded bedroom has no open prompt"
+    );
 }
 
 #[test]
 fn night_command_menu_ce245_offers_the_six_actions() {
-    let Some(mut game) = loaded_game() else { return };
+    let Some(mut game) = loaded_game() else {
+        return;
+    };
     // 关掉自动选择，让菜单真的停住等我们按。
     game.auto_choice = false;
 
@@ -135,18 +140,27 @@ fn night_command_menu_ce245_offers_the_six_actions() {
         ),
         "the night command menu shows its six options"
     );
-    assert_eq!(game.choice_cursor(), 0, "the menu opens with the cursor on row 0");
+    assert_eq!(
+        game.choice_cursor(),
+        0,
+        "the menu opens with the cursor on row 0"
+    );
     assert_eq!(
         game.choice_anchor(),
         (512, 230),
         "the menu window is painted at (512,230)"
     );
-    assert_eq!(game.stats.warnings, 0, "opening the night menu is warning-free");
+    assert_eq!(
+        game.stats.warnings, 0,
+        "opening the night menu is warning-free"
+    );
 }
 
 #[test]
 fn rest_option_raises_a_sleep_confirmation() {
-    let Some(mut game) = loaded_game() else { return };
+    let Some(mut game) = loaded_game() else {
+        return;
+    };
     game.auto_choice = false;
 
     assert!(game.start_event(245), "common event 245 starts");
@@ -218,8 +232,14 @@ fn sleep_event_251_runs_the_morning_and_advances_the_clock() {
         "the first message is the morning greeting: {first:?}"
     );
     // 实测基线：9 条消息、74 张图片、6 个音效，全程无 warning。
-    assert_eq!(game.stats.messages, 9, "the sleep event shows the measured nine messages");
-    assert_eq!(game.stats.pictures, 74, "and applies the measured 74 picture commands");
+    assert_eq!(
+        game.stats.messages, 9,
+        "the sleep event shows the measured nine messages"
+    );
+    assert_eq!(
+        game.stats.pictures, 74,
+        "and applies the measured 74 picture commands"
+    );
     assert_eq!(game.stats.sounds, 6, "and plays the measured six sounds");
     assert_eq!(game.stats.warnings, 0, "the sleep event is warning-free");
 

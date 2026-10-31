@@ -50,7 +50,8 @@ fn ext_of(path: &Path) -> String {
 fn collect(dir: &Path) -> (Vec<PathBuf>, Vec<PathBuf>) {
     let mut audio = Vec::new();
     let mut urls = Vec::new();
-    let entries = std::fs::read_dir(dir).unwrap_or_else(|e| panic!("read_dir {}: {e}", dir.display()));
+    let entries =
+        std::fs::read_dir(dir).unwrap_or_else(|e| panic!("read_dir {}: {e}", dir.display()));
     for entry in entries {
         let path = entry.expect("dir entry").path();
         if !path.is_file() {
@@ -119,17 +120,41 @@ fn asset_inventory_and_representative_decodes() {
 
     // Inventory shape measured from work/Data.
     assert_eq!(bgm_audio.len() + bgm_urls.len(), 28, "BGM total entries");
-    assert_eq!(bgm_urls.len(), 1, "exactly one external .url shortcut in BGM");
+    assert_eq!(
+        bgm_urls.len(),
+        1,
+        "exactly one external .url shortcut in BGM"
+    );
     assert_eq!(se_audio.len() + se_urls.len(), 214, "SE total entries");
     assert_eq!(se_urls.len(), 0, "SE has no .url shortcuts");
 
     let bgm_counts = ext_counts(&bgm_audio);
-    assert_eq!(bgm_counts.get("mp3").copied().unwrap_or(0), 15, "BGM mp3 count: {bgm_counts:?}");
-    assert_eq!(bgm_counts.get("ogg").copied().unwrap_or(0), 12, "BGM ogg count: {bgm_counts:?}");
+    assert_eq!(
+        bgm_counts.get("mp3").copied().unwrap_or(0),
+        15,
+        "BGM mp3 count: {bgm_counts:?}"
+    );
+    assert_eq!(
+        bgm_counts.get("ogg").copied().unwrap_or(0),
+        12,
+        "BGM ogg count: {bgm_counts:?}"
+    );
     let se_counts = ext_counts(&se_audio);
-    assert_eq!(se_counts.get("mp3").copied().unwrap_or(0), 87, "SE mp3 count: {se_counts:?}");
-    assert_eq!(se_counts.get("ogg").copied().unwrap_or(0), 99, "SE ogg count: {se_counts:?}");
-    assert_eq!(se_counts.get("wav").copied().unwrap_or(0), 28, "SE wav count: {se_counts:?}");
+    assert_eq!(
+        se_counts.get("mp3").copied().unwrap_or(0),
+        87,
+        "SE mp3 count: {se_counts:?}"
+    );
+    assert_eq!(
+        se_counts.get("ogg").copied().unwrap_or(0),
+        99,
+        "SE ogg count: {se_counts:?}"
+    );
+    assert_eq!(
+        se_counts.get("wav").copied().unwrap_or(0),
+        28,
+        "SE wav count: {se_counts:?}"
+    );
 
     // Every real audio extension is one we can decode.
     for f in bgm_audio.iter().chain(se_audio.iter()) {
@@ -162,16 +187,23 @@ fn asset_inventory_and_representative_decodes() {
     ];
     for (label, path) in reps {
         let path = path.unwrap_or_else(|| panic!("no representative {label} file"));
-        let audio = decode_file(&path)
-            .unwrap_or_else(|e| panic!("decode {label} {}: {e}", path.display()));
-        assert!(audio.frames() > 0, "{label} decoded no frames: {}", path.display());
+        let audio =
+            decode_file(&path).unwrap_or_else(|e| panic!("decode {label} {}: {e}", path.display()));
+        assert!(
+            audio.frames() > 0,
+            "{label} decoded no frames: {}",
+            path.display()
+        );
         assert!(audio.sample_rate > 0, "{label} has zero sample rate");
         assert!(
             audio.channels == 1 || audio.channels == 2,
             "{label} has {} channels (expected mono/stereo)",
             audio.channels
         );
-        assert!(!audio.samples.is_empty(), "{label} decoded empty sample buffer");
+        assert!(
+            !audio.samples.is_empty(),
+            "{label} decoded empty sample buffer"
+        );
         for &s in audio.samples.iter() {
             assert!(
                 (-1.0..=1.0).contains(&s),
@@ -291,7 +323,10 @@ fn system_save_settings_roundtrip() {
     // The global settings snapshot is present and the file is self-consistent.
     assert!(save.checksum_ok(), "System.sav checksum must validate");
     assert_eq!(save.chunks().len(), 7, "a full save has seven segments");
-    assert!(save.part2.bgm.is_some(), "settings include the BGM slots (version >= 108)");
+    assert!(
+        save.part2.bgm.is_some(),
+        "settings include the BGM slots (version >= 108)"
+    );
     // vars72_74 is the BGM/SE/ambient volume trio (all 100 = full here).
     assert!(
         save.part2.vars72_74.iter().all(|&v| v <= 100),
@@ -306,18 +341,28 @@ fn system_save_settings_roundtrip() {
     let new = if old == 100 { 80 } else { 100 };
     edited.part2.vars72_74[0] = new;
     let part2 = edited.part2.clone();
-    edited.set_part2(&part2).expect("set_part2 re-encodes the segment");
+    edited
+        .set_part2(&part2)
+        .expect("set_part2 re-encodes the segment");
 
-    let written = edited.to_bytes().expect("to_bytes encrypts the serialized file");
+    let written = edited
+        .to_bytes()
+        .expect("to_bytes encrypts the serialized file");
     let back = SaveFile::parse(&written).expect("re-parse the round-tripped bytes");
     assert!(back.checksum_ok(), "round-tripped checksum must validate");
-    assert_eq!(back.part2.vars72_74[0], new, "edited BGM volume survives round-trip");
+    assert_eq!(
+        back.part2.vars72_74[0], new,
+        "edited BGM volume survives round-trip"
+    );
     assert_eq!(
         &back.part2.vars72_74[1..],
         &save.part2.vars72_74[1..],
         "untouched volume fields are unchanged"
     );
-    assert_eq!(back.part2.bgm, save.part2.bgm, "BGM slots are otherwise identical");
+    assert_eq!(
+        back.part2.bgm, save.part2.bgm,
+        "BGM slots are otherwise identical"
+    );
     assert!(!back.decrypted().is_empty());
 
     // The on-disk System.sav must not have been touched (all edits were in memory).
@@ -358,7 +403,10 @@ fn global_settings_fields_visible_and_sane() {
     );
     // A window/background block exists for this file version, proving the settings
     // snapshot is the full global-settings record, not just a couple of words.
-    assert!(p2.block109.is_some(), "settings include the background block (version >= 109)");
+    assert!(
+        p2.block109.is_some(),
+        "settings include the background block (version >= 109)"
+    );
 
     // This test keeps the acceptance at the file-format layer; the Game-level
     // read/write/apply/persist contract lives in m3_settings_persist.rs and

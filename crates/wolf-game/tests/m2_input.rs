@@ -111,11 +111,7 @@ fn left_click_on_a_hovered_button_writes_its_index_into_var67() {
     for _ in 0..2 {
         game.frame();
     }
-    assert_eq!(
-        game.vm.vars.get(67),
-        1,
-        "picture 400 is index 1 in EV16"
-    );
+    assert_eq!(game.vm.vars.get(67), 1, "picture 400 is index 1 in EV16");
 }
 
 #[test]

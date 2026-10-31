@@ -1143,7 +1143,11 @@ fn request_adapter(
 ) -> Result<wgpu::Adapter, RenderError> {
     let options = adapter_options(compatible_surface);
     let fallback_allowed = !options.force_fallback_adapter;
-    match block_on_bounded(instance.request_adapter(&options), init_timeout(), "adapter")? {
+    match block_on_bounded(
+        instance.request_adapter(&options),
+        init_timeout(),
+        "adapter",
+    )? {
         Ok(adapter) => Ok(adapter),
         Err(_) if fallback_allowed => {
             // Some headless drivers expose no hardware adapter but do expose the
@@ -1177,9 +1181,7 @@ fn request_adapter(
     }
 }
 
-fn request_device(
-    adapter: &wgpu::Adapter,
-) -> Result<(wgpu::Device, wgpu::Queue), RenderError> {
+fn request_device(adapter: &wgpu::Adapter) -> Result<(wgpu::Device, wgpu::Queue), RenderError> {
     block_on_bounded(
         adapter.request_device(&wgpu::DeviceDescriptor::default()),
         init_timeout(),
@@ -1249,12 +1251,14 @@ mod tests {
     fn backend_words_parse_for_the_env_override() {
         assert_eq!(parse_backends("vulkan"), Some(wgpu::Backends::VULKAN));
         assert_eq!(parse_backends("dx12"), Some(wgpu::Backends::DX12));
-        assert_eq!(parse_backends("VULKAN+DX12"), Some(
-            wgpu::Backends::VULKAN | wgpu::Backends::DX12
-        ));
-        assert_eq!(parse_backends("gl, metal"), Some(
-            wgpu::Backends::GL | wgpu::Backends::METAL
-        ));
+        assert_eq!(
+            parse_backends("VULKAN+DX12"),
+            Some(wgpu::Backends::VULKAN | wgpu::Backends::DX12)
+        );
+        assert_eq!(
+            parse_backends("gl, metal"),
+            Some(wgpu::Backends::GL | wgpu::Backends::METAL)
+        );
         assert_eq!(parse_backends("all"), Some(wgpu::Backends::all()));
         assert_eq!(parse_backends("  "), None);
         assert_eq!(parse_backends("mystery"), None);
@@ -1264,10 +1268,8 @@ mod tests {
     fn the_timeout_env_is_clamped_to_a_sane_range() {
         // Not touching the process environment in a test (it is shared): just pin
         // the helper's documented clamp through a direct call with a huge default.
-        let clamped = Duration::from_millis(900_000).clamp(
-            Duration::from_millis(100),
-            Duration::from_millis(600_000),
-        );
+        let clamped = Duration::from_millis(900_000)
+            .clamp(Duration::from_millis(100), Duration::from_millis(600_000));
         assert_eq!(clamped, Duration::from_millis(600_000));
     }
 }

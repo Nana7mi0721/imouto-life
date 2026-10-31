@@ -114,7 +114,11 @@ fn snapshot(game: &Game) -> Vec<Pic> {
             opacity: p.opacity,
             scale: p.scale,
             anchor: p.anchor,
-            text: if p.kind.is_text() { String::new() } else { p.text.clone() },
+            text: if p.kind.is_text() {
+                String::new()
+            } else {
+                p.text.clone()
+            },
         })
         .collect();
     pics.sort_by_key(|p| (p.number, p.file.clone(), p.x, p.y));
@@ -289,7 +293,10 @@ impl Drop for SaveGuard {
 fn save_ui_writes_slot3_then_loads_it_back() {
     // ---- Preconditions / safety net -------------------------------------
     if !data_root().join("Save").join("SaveData01.sav").is_file() {
-        eprintln!("skipping: SaveData01.sav not found under {}", data_root().display());
+        eprintln!(
+            "skipping: SaveData01.sav not found under {}",
+            data_root().display()
+        );
         return;
     }
     if save_file(SLOT).exists() {
@@ -337,12 +344,18 @@ fn save_ui_writes_slot3_then_loads_it_back() {
         "slot 3 should start empty, got {:?}",
         text_at(&game, 12093)
     );
-    assert!(game.choices.is_none(), "save screen must not expose a choice list");
+    assert!(
+        game.choices.is_none(),
+        "save screen must not expose a choice list"
+    );
 
     // Cursor starts on slot 1 (top-left); one DOWN moves to the bottom row,
     // where slot 3 lives, then OK confirms.
     press(&mut game, wolf_game::key::DOWN);
-    assert!(is_running(&game, 131), "save UI closed after moving the cursor");
+    assert!(
+        is_running(&game, 131),
+        "save UI closed after moving the cursor"
+    );
     press(&mut game, wolf_game::key::OK);
     for _ in 0..60 {
         game.frame();
@@ -355,7 +368,9 @@ fn save_ui_writes_slot3_then_loads_it_back() {
     );
     assert_eq!(game.stats.warnings, 0, "save UI produced warnings");
     assert!(
-        game.diagnostics.keys().any(|k| k.contains("220 SaveLoad: wrote")),
+        game.diagnostics
+            .keys()
+            .any(|k| k.contains("220 SaveLoad: wrote")),
         "save did not go through the 220 opcode path: diagnostics {:?}",
         game.diagnostics.keys().collect::<Vec<_>>()
     );
@@ -374,8 +389,16 @@ fn save_ui_writes_slot3_then_loads_it_back() {
         stored_vars, memory_vars,
         "saved normal variables do not match the game state at save time"
     );
-    assert_eq!(save.part3.normal_var(20), Some(77), "sentinel v20 not stored");
-    assert_eq!(save.part3.normal_var(123), Some(4242), "sentinel v123 not stored");
+    assert_eq!(
+        save.part3.normal_var(20),
+        Some(77),
+        "sentinel v20 not stored"
+    );
+    assert_eq!(
+        save.part3.normal_var(123),
+        Some(4242),
+        "sentinel v123 not stored"
+    );
 
     let saved_playtime = save.part2.vars3_21.first().copied().unwrap_or(0);
     assert!(
@@ -423,7 +446,11 @@ fn save_ui_writes_slot3_then_loads_it_back() {
     }
     assert_eq!(
         title_menu,
-        Some(vec!["menu1".to_string(), "menu2".to_string(), "menu3".to_string()]),
+        Some(vec![
+            "menu1".to_string(),
+            "menu2".to_string(),
+            "menu3".to_string()
+        ]),
         "unexpected title menu"
     );
 
@@ -437,7 +464,12 @@ fn save_ui_writes_slot3_then_loads_it_back() {
     assert!(
         is_running(&loader, 14) && is_running(&loader, 131),
         "load UI chain (CE14 -> CE131) did not open, events {:?}",
-        loader.vm.instances().iter().map(|i| i.event).collect::<Vec<_>>()
+        loader
+            .vm
+            .instances()
+            .iter()
+            .map(|i| i.event)
+            .collect::<Vec<_>>()
     );
     assert!(
         text_at(&loader, 12002).contains("读取"),
@@ -459,9 +491,16 @@ fn save_ui_writes_slot3_then_loads_it_back() {
         77,
         "load did not restore the saved sentinel v20 (wrong slot?)"
     );
-    assert_eq!(loader.vm.vars.get(123), 4242, "load did not restore sentinel v123");
+    assert_eq!(
+        loader.vm.vars.get(123),
+        4242,
+        "load did not restore sentinel v123"
+    );
     assert!(
-        loader.diagnostics.keys().any(|k| k.contains("220 SaveLoad: loaded")),
+        loader
+            .diagnostics
+            .keys()
+            .any(|k| k.contains("220 SaveLoad: loaded")),
         "load did not go through the 220 opcode path: diagnostics {:?}",
         loader.diagnostics.keys().collect::<Vec<_>>()
     );
@@ -505,9 +544,18 @@ fn save_ui_writes_slot3_then_loads_it_back() {
     // HUD reflects the restored state.
     let hud = hud_text(&loader);
     assert!(hud.contains("19:30"), "HUD time missing after load: {hud}");
-    assert!(hud.contains("周一"), "HUD weekday missing after load: {hud}");
-    assert!(hud.contains("持有金钱"), "HUD money label missing after load: {hud}");
-    assert!(hud.contains("10000円"), "HUD money value missing after load: {hud}");
+    assert!(
+        hud.contains("周一"),
+        "HUD weekday missing after load: {hud}"
+    );
+    assert!(
+        hud.contains("持有金钱"),
+        "HUD money label missing after load: {hud}"
+    );
+    assert!(
+        hud.contains("10000円"),
+        "HUD money value missing after load: {hud}"
+    );
 
     // Picture geometry of the restored bedroom must match a direct load of
     // SaveData01 (same base snapshot; only the sentinel vars differ).

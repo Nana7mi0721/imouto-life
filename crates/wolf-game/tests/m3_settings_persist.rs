@@ -134,18 +134,36 @@ impl SystemSaveGuard {
             }
         };
         let sha = fnv(&original);
-        let backup_dir = repo_root().join("work").join("out").join("m3_settings_backup");
+        let backup_dir = repo_root()
+            .join("work")
+            .join("out")
+            .join("m3_settings_backup");
         if std::fs::create_dir_all(&backup_dir).is_ok() {
             let _ = std::fs::write(backup_dir.join("System.sav"), &original);
         }
-        eprintln!("System.sav backed up: {} bytes sha={sha:016x}", original.len());
-        Some(Self { path, original, original_sha: sha })
+        eprintln!(
+            "System.sav backed up: {} bytes sha={sha:016x}",
+            original.len()
+        );
+        Some(Self {
+            path,
+            original,
+            original_sha: sha,
+        })
     }
 
     fn assert_untouched(&self, context: &str) {
         let after = std::fs::read(&self.path).expect("re-read System.sav");
-        assert_eq!(after.len(), self.original.len(), "{context}: System.sav length changed");
-        assert_eq!(fnv(&after), self.original_sha, "{context}: System.sav bytes changed");
+        assert_eq!(
+            after.len(),
+            self.original.len(),
+            "{context}: System.sav length changed"
+        );
+        assert_eq!(
+            fnv(&after),
+            self.original_sha,
+            "{context}: System.sav bytes changed"
+        );
         assert_eq!(after, self.original, "{context}: System.sav not restored");
     }
 }
@@ -219,7 +237,11 @@ fn drive_ce132_bgm_volume() -> Option<Ce132Run> {
     for _ in 0..30 {
         game.frame();
     }
-    assert_eq!(self_slot(&game, id, 10), 0, "cursor starts on the first row");
+    assert_eq!(
+        self_slot(&game, id, 10),
+        0,
+        "cursor starts on the first row"
+    );
 
     let reached = hold_until(&mut game, 2, 300, |g| self_slot(g, id, 10) >= 3);
     assert!(reached, "down key must reach the BGM-volume row (index 3)");
@@ -310,7 +332,10 @@ fn system_sav_part2_roundtrips_the_bgm_volume_field() {
     };
     let original = guard.original.clone();
     let save = SaveFile::parse(&original).expect("parse System.sav");
-    assert!(save.checksum_ok(), "System.sav checksum must validate before editing");
+    assert!(
+        save.checksum_ok(),
+        "System.sav checksum must validate before editing"
+    );
 
     let before = save.part2.vars72_74;
     assert!(
@@ -322,21 +347,39 @@ fn system_sav_part2_roundtrips_the_bgm_volume_field() {
     let mut edited = save.clone();
     edited.part2.vars72_74[0] = new_bgm;
     let part2 = edited.part2.clone();
-    edited.set_part2(&part2).expect("set_part2 re-encodes part 2");
+    edited
+        .set_part2(&part2)
+        .expect("set_part2 re-encodes part 2");
 
     let written = edited.to_bytes().expect("to_bytes encrypts the file");
     let back = SaveFile::parse(&written).expect("re-parse the re-encoded System.sav");
-    assert!(back.checksum_ok(), "round-tripped System.sav checksum must validate");
+    assert!(
+        back.checksum_ok(),
+        "round-tripped System.sav checksum must validate"
+    );
     assert_eq!(
         back.part2.vars72_74[0], new_bgm,
         "edited BGM volume survives the encrypt/decrypt round-trip"
     );
 
-    assert_eq!(&back.part2.vars72_74[1..], &before[1..], "SE/ambient volumes unchanged");
-    assert_eq!(back.part2.vars42_45, save.part2.vars42_45, "window colour unchanged");
-    assert_eq!(back.part2.vars64_69, save.part2.vars64_69, "key-config unchanged");
+    assert_eq!(
+        &back.part2.vars72_74[1..],
+        &before[1..],
+        "SE/ambient volumes unchanged"
+    );
+    assert_eq!(
+        back.part2.vars42_45, save.part2.vars42_45,
+        "window colour unchanged"
+    );
+    assert_eq!(
+        back.part2.vars64_69, save.part2.vars64_69,
+        "key-config unchanged"
+    );
     assert_eq!(back.part2.bgm, save.part2.bgm, "BGM slot table unchanged");
-    assert_eq!(back.part2.block109, save.part2.block109, "background block unchanged");
+    assert_eq!(
+        back.part2.block109, save.part2.block109,
+        "background block unchanged"
+    );
     assert_eq!(back.part2.var82, save.part2.var82);
 
     guard.assert_untouched("after format round-trip");
@@ -397,7 +440,10 @@ fn game_reads_system_save_settings_and_seeds_the_live_sys_vars() {
     assert_eq!(game.sys(52), 144, "Sys52 keyboard decide code (pair 0)");
     assert_eq!(game.sys(53), 145, "Sys53 keyboard cancel code (pair 1)");
     assert_eq!(game.sys(54), 146, "Sys54 keyboard sub code (pair 2)");
-    assert!(!game.settings_dirty(), "boot values equal the persisted ones");
+    assert!(
+        !game.settings_dirty(),
+        "boot values equal the persisted ones"
+    );
     assert_eq!(game.stats.warnings, 0);
 
     guard.assert_untouched("after reading settings");
@@ -423,15 +469,26 @@ fn set_settings_round_trips_the_template_and_live_vars() {
     };
     game.set_settings(custom).expect("set_settings");
 
-    assert_eq!(game.settings(), custom, "the save template carries the new settings");
-    assert_eq!(game.live_settings(), custom, "live_settings merges the Sys overlay");
+    assert_eq!(
+        game.settings(),
+        custom,
+        "the save template carries the new settings"
+    );
+    assert_eq!(
+        game.live_settings(),
+        custom,
+        "live_settings merges the Sys overlay"
+    );
     assert_eq!(game.sys(100), 73);
     assert_eq!(game.sys(101), 73, "Sys101 mirrors the BGM volume");
     assert_eq!(game.sys(102), 41);
     assert_eq!(game.sys(52), 150);
     assert_eq!(game.sys(53), 151);
     assert_eq!(game.sys(54), 152);
-    assert!(!game.settings_dirty(), "set_settings synchronises the live pair");
+    assert!(
+        !game.settings_dirty(),
+        "set_settings synchronises the live pair"
+    );
 
     // With no audio engine this is a no-op, but it must not panic or warn.
     game.apply_settings();
@@ -487,16 +544,31 @@ fn save_system_settings_writes_a_checksummed_copy_without_touching_the_real_file
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("scratch dir");
     let path = dir.join("System.sav");
-    game.write_system_settings(&path).expect("write_system_settings");
-    assert!(!dir.join("System.sav.new").exists(), "the .new file is renamed away");
+    game.write_system_settings(&path)
+        .expect("write_system_settings");
+    assert!(
+        !dir.join("System.sav.new").exists(),
+        "the .new file is renamed away"
+    );
 
     let bytes = std::fs::read(&path).expect("read copy");
     let written = SaveFile::parse(&bytes).expect("parse written System.sav");
-    assert!(written.checksum_ok(), "the written file carries a valid checksum");
+    assert!(
+        written.checksum_ok(),
+        "the written file carries a valid checksum"
+    );
     let part2 = &written.part2;
     assert_eq!(part2.vars72_74, [88, 64, 100], "volume trio persisted");
-    assert_eq!(part2.vars64_69, [144, 16, 145, 32, 146, 64], "keys untouched");
-    assert_eq!(part2.vars42_45, [160, 68, 75, 200], "window colour untouched");
+    assert_eq!(
+        part2.vars64_69,
+        [144, 16, 145, 32, 146, 64],
+        "keys untouched"
+    );
+    assert_eq!(
+        part2.vars42_45,
+        [160, 68, 75, 200],
+        "window colour untouched"
+    );
 
     // Neighbouring fields of the settings record are byte-identical to the original.
     assert_eq!(part2.vars40_41, original.part2.vars40_41);
@@ -585,9 +657,14 @@ fn apply_settings_moves_the_mixer_gain() {
     game.vm.vars.set_sys(100, 0);
     game.apply_settings();
     let rendered = game.audio.as_ref().expect("audio").render_offline(64);
-    assert!(rendered[0].abs() < 1e-4, "0% is silent, got {}", rendered[0]);
+    assert!(
+        rendered[0].abs() < 1e-4,
+        "0% is silent, got {}",
+        rendered[0]
+    );
     guard.assert_untouched("after mixer gain checks");
-}/// Loading a numbered save changes the save *template* but must not change the player's
+}
+/// Loading a numbered save changes the save *template* but must not change the player's
 /// global settings: System.sav stays the settings source.
 #[test]
 fn loading_a_numbered_save_does_not_change_the_global_settings() {
@@ -608,7 +685,11 @@ fn loading_a_numbered_save_does_not_change_the_global_settings() {
         before,
         "a loaded slot's part 2 must not replace the System.sav settings"
     );
-    assert_eq!(game.sys(100), before.bgm_volume as i32, "live volume unchanged");
+    assert_eq!(
+        game.sys(100),
+        before.bgm_volume as i32,
+        "live volume unchanged"
+    );
     assert!(
         game.system_save.is_some(),
         "the pristine System.sav template survives a numbered load"
@@ -643,13 +724,17 @@ fn save_system_settings_after_a_load_keeps_the_system_save_skeleton() {
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("scratch dir");
     let out = dir.join("System.sav");
-    game.write_system_settings(&out).expect("write_system_settings");
+    game.write_system_settings(&out)
+        .expect("write_system_settings");
     let written = SaveFile::parse(&std::fs::read(&out).expect("read")).expect("parse");
     assert_eq!(
         written.part1, original.part1,
         "the written System.sav keeps System.sav's map snapshot, not SaveData01's"
     );
-    assert_eq!(written.part4, original.part4, "object tables stay System.sav's");
+    assert_eq!(
+        written.part4, original.part4,
+        "object tables stay System.sav's"
+    );
     assert_eq!(
         written.part2.vars72_74,
         [60, 70, 100],

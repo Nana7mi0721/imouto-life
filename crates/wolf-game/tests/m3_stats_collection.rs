@@ -157,7 +157,9 @@ fn expect_text(texts: &BTreeMap<i32, String>, slot: i32) -> &str {
 // ---------------------------------------------------------------------------
 #[test]
 fn ce296_status_items_align_with_variable_sources() {
-    let Some(mut game) = load_stable(1) else { return };
+    let Some(mut game) = load_stable(1) else {
+        return;
+    };
     let before = save_fingerprint();
 
     assert_eq!(game.vm.vars.get(200), 0, "400 source var[200]");
@@ -192,7 +194,11 @@ fn ce296_status_items_align_with_variable_sources() {
 
     assert!(game.messages.is_empty(), "CE296 should emit no message");
     assert_eq!(game.stats.warnings, 0, "engine warnings");
-    assert_eq!(save_fingerprint(), before, "Save directory must be untouched");
+    assert_eq!(
+        save_fingerprint(),
+        before,
+        "Save directory must be untouched"
+    );
 }
 
 // CE296 count items only appear when their source variables are non-zero.
@@ -202,7 +208,9 @@ fn ce296_status_items_align_with_variable_sources() {
 //   411 肛門       op181 var[186]>=10
 #[test]
 fn ce296_count_items_follow_variables() {
-    let Some(mut game) = load_stable(1) else { return };
+    let Some(mut game) = load_stable(1) else {
+        return;
+    };
 
     for (id, value) in [(188usize, 10i32), (139, 10), (186, 10), (202, 1)] {
         game.vm.vars.set(id, value);
@@ -219,7 +227,10 @@ fn ce296_count_items_follow_variables() {
         expect_text(&texts, 402),
         "将妹妹穿过的内衣全部换成同样的新品，真是辛苦。"
     );
-    assert_eq!(expect_text(&texts, 409), "也有一整晚高潮到到奄奄一息的经历。");
+    assert_eq!(
+        expect_text(&texts, 409),
+        "也有一整晚高潮到到奄奄一息的经历。"
+    );
     assert_eq!(
         expect_text(&texts, 410),
         "两个人为了互相寻求而不断地交缠身体，"
@@ -243,7 +254,9 @@ fn ce296_count_items_follow_variables() {
 // ---------------------------------------------------------------------------
 #[test]
 fn ce301_album_drawer_needs_caller_context() {
-    let Some(mut game) = load_stable(1) else { return };
+    let Some(mut game) = load_stable(1) else {
+        return;
+    };
     let before = save_fingerprint();
 
     game.screen.clear();
@@ -253,10 +266,20 @@ fn ce301_album_drawer_needs_caller_context() {
     }
 
     assert_eq!(game.screen.len(), 0, "CE301 standalone must draw nothing");
-    assert!(game.messages.is_empty(), "CE301 standalone must emit no message");
-    assert!(!running_event(&game, 301), "CE301 standalone should terminate");
+    assert!(
+        game.messages.is_empty(),
+        "CE301 standalone must emit no message"
+    );
+    assert!(
+        !running_event(&game, 301),
+        "CE301 standalone should terminate"
+    );
     assert_eq!(game.stats.warnings, 0);
-    assert_eq!(save_fingerprint(), before, "Save directory must be untouched");
+    assert_eq!(
+        save_fingerprint(),
+        before,
+        "Save directory must be untouched"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -275,7 +298,9 @@ fn ce301_album_drawer_needs_caller_context() {
 // ---------------------------------------------------------------------------
 #[test]
 fn ce303_album_grid_flags_and_cancel_clears() {
-    let Some(mut game) = load_stable(1) else { return };
+    let Some(mut game) = load_stable(1) else {
+        return;
+    };
     let before = save_fingerprint();
 
     assert_eq!(game.vm.vars.get(238), 0, "var[238] before opening album");
@@ -298,7 +323,10 @@ fn ce303_album_grid_flags_and_cancel_clears() {
         (116, "Picture/album_010.png", 611, 249),
     ];
     for (slot, file, x, y) in thumbnails {
-        let p = game.screen.get(slot).unwrap_or_else(|| panic!("slot {slot} missing"));
+        let p = game
+            .screen
+            .get(slot)
+            .unwrap_or_else(|| panic!("slot {slot} missing"));
         assert_eq!(p.file, file, "slot {slot} file");
         assert_eq!((p.x, p.y), (x, y), "slot {slot} position");
         assert_eq!(p.opacity, 1, "slot {slot} thumbnail overlay opacity");
@@ -335,7 +363,10 @@ fn ce303_album_grid_flags_and_cancel_clears() {
         (902, "Picture/stand_mouth.png"),
         (903, "Picture/stand_eyebrow.png"),
     ] {
-        let p = game.screen.get(slot).unwrap_or_else(|| panic!("preview slot {slot}"));
+        let p = game
+            .screen
+            .get(slot)
+            .unwrap_or_else(|| panic!("preview slot {slot}"));
         assert_eq!(p.file, file, "slot {slot}");
         assert_eq!((p.x, p.y), (750, 80), "slot {slot} position");
         assert_eq!(p.opacity, 255, "slot {slot} opacity");
@@ -348,7 +379,10 @@ fn ce303_album_grid_flags_and_cancel_clears() {
     assert!(running_event(&game, 303), "album screen should stay open");
     let settled = slot_files(&game);
     for (slot, file, x, y) in thumbnails {
-        let p = game.screen.get(slot).unwrap_or_else(|| panic!("settled slot {slot}"));
+        let p = game
+            .screen
+            .get(slot)
+            .unwrap_or_else(|| panic!("settled slot {slot}"));
         assert_eq!(p.file, file, "settled slot {slot} file");
         assert_eq!((p.x, p.y), (x, y), "settled slot {slot} position");
     }
@@ -360,5 +394,9 @@ fn ce303_album_grid_flags_and_cancel_clears() {
     assert_eq!(game.vm.vars.get(238), 0, "var[238] must reset after close");
     assert_eq!(game.screen.len(), 0, "album grid must be cleared");
     assert_eq!(game.stats.warnings, 0);
-    assert_eq!(save_fingerprint(), before, "Save directory must be untouched");
+    assert_eq!(
+        save_fingerprint(),
+        before,
+        "Save directory must be untouched"
+    );
 }

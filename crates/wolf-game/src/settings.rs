@@ -182,7 +182,11 @@ mod tests {
         assert_eq!(settings.bgm_volume, VOLUME_MAX);
         assert_eq!(settings.se_volume, 0);
         assert_eq!(settings.ambient_volume, VOLUME_MAX);
-        assert_eq!(settings.key_config, [1, 2, 3, 4, 5, 6], "key words are opaque");
+        assert_eq!(
+            settings.key_config,
+            [1, 2, 3, 4, 5, 6],
+            "key words are opaque"
+        );
         assert_eq!(settings.window_colour, [0, 255, 255, 255]);
     }
 }

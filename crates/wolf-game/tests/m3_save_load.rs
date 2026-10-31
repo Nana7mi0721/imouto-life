@@ -53,7 +53,9 @@ fn data_root() -> PathBuf {
 }
 
 fn save_file(slot: u32) -> PathBuf {
-    data_root().join("Save").join(format!("SaveData{slot:02}.sav"))
+    data_root()
+        .join("Save")
+        .join(format!("SaveData{slot:02}.sav"))
 }
 
 fn open_game() -> Option<Game> {
@@ -243,7 +245,10 @@ fn every_shipped_save_round_trips_through_save_to() {
         }
 
         let stored_vars = stored_normal_var_count(&path);
-        assert!(stored_vars > 0, "slot {slot}: the save stores normal variables");
+        assert!(
+            stored_vars > 0,
+            "slot {slot}: the save stores normal variables"
+        );
         if slot == 1 {
             assert_eq!(stored_vars, 302, "SaveData01 stores 302 normal variables");
         }
@@ -331,7 +336,9 @@ fn save_data_01_and_02_differ_in_hud_time_and_money() {
 
 #[test]
 fn opcode_220_save_request_captures_the_live_state() {
-    let Some(mut game) = open_loaded(1) else { return };
+    let Some(mut game) = open_loaded(1) else {
+        return;
+    };
     let stored_vars = stored_normal_var_count(&save_file(1));
     assert!(stored_vars > 0, "SaveData01 stores normal variables");
     let pics_before = snapshot(&game);
@@ -356,7 +363,11 @@ fn opcode_220_save_request_captures_the_live_state() {
     let mut reloaded = open_game().expect("reload game");
     let loaded = savegame::load_into(&mut reloaded, &out).expect("load the 220-written save");
     assert_eq!(loaded.pictures, pics_before.len(), "220 save picture count");
-    assert_eq!(snapshot(&reloaded), pics_before, "220 save picture geometry");
+    assert_eq!(
+        snapshot(&reloaded),
+        pics_before,
+        "220 save picture geometry"
+    );
     assert_eq!(
         text_picture_count(&reloaded),
         text_pics_before,
@@ -367,7 +378,10 @@ fn opcode_220_save_request_captures_the_live_state() {
         vars_before,
         "220 save normal vars"
     );
-    assert_eq!(reloaded.playtime_frames, playtime_before, "220 save play time");
+    assert_eq!(
+        reloaded.playtime_frames, playtime_before,
+        "220 save play time"
+    );
     assert_eq!(
         (reloaded.vm.vars.get_sys(3), reloaded.vm.vars.get_sys(4)),
         sys_before,
@@ -380,7 +394,9 @@ fn opcode_220_save_request_captures_the_live_state() {
 #[test]
 fn opcode_220_load_request_restores_a_save() {
     let Some(mut game) = open_game() else { return };
-    let Some(baseline) = open_loaded(1) else { return };
+    let Some(baseline) = open_loaded(1) else {
+        return;
+    };
 
     // 220 words: [mode = 1 (load), file = slot 1]. One frame: the request is applied at
     // the end of that frame's VM step, then Game::frame adds one to play time.
@@ -397,7 +413,11 @@ fn opcode_220_load_request_restores_a_save() {
         "the 220 load restores play time (plus the frame it ran in)"
     );
     assert_eq!(game.vm.vars.get(7), 10000, "the 220 load restores money");
-    assert_eq!(text_of(&game, 200), "19:30", "the 220 load restores the clock");
+    assert_eq!(
+        text_of(&game, 200),
+        "19:30",
+        "the 220 load restores the clock"
+    );
 }
 
 #[test]
@@ -420,7 +440,12 @@ fn opcode_222_writes_one_save_address() {
         return;
     };
     // 222 words: [value = 4242, file = slot 7, address = 2_000_000 (normal var 0), flag 0].
-    run_program(&mut game, 90_222, command(222, &[4242, slot as i32, 2_000_000, 0]), 2);
+    run_program(
+        &mut game,
+        90_222,
+        command(222, &[4242, slot as i32, 2_000_000, 0]),
+        2,
+    );
 
     let after = savegame::read_save(&dst).expect("re-read scratch save");
     let written = after.normal_var(0);
@@ -459,7 +484,9 @@ fn save_slots_are_one_based_and_missing_slots_are_a_load_error() {
 
     // The one-based slot -> file name mapping is asserted above; also pin the two-digit
     // formatting for a high slot without touching the shipped files.
-    let high = data_root().join("Save").join(format!("SaveData{:02}.sav", 42));
+    let high = data_root()
+        .join("Save")
+        .join(format!("SaveData{:02}.sav", 42));
     assert_eq!(
         high.file_name().unwrap().to_string_lossy(),
         "SaveData42.sav",
@@ -486,10 +513,7 @@ fn normal_variable_block_does_not_spill_into_later_rows() {
     let mut game = open_game().expect("game");
     savegame::load_into(&mut game, &path).expect("load SaveData01");
     for index in 0..stored {
-        let expected = save
-            .part3
-            .normal_var(index)
-            .expect("row-0 normal variable");
+        let expected = save.part3.normal_var(index).expect("row-0 normal variable");
         assert_eq!(
             game.vm.vars.get(index),
             expected,
@@ -504,7 +528,11 @@ fn normal_variable_block_does_not_spill_into_later_rows() {
         );
     }
 
-    let out = data_root().parent().unwrap().join("out").join("m3_varspan.sav");
+    let out = data_root()
+        .parent()
+        .unwrap()
+        .join("out")
+        .join("m3_varspan.sav");
     std::fs::create_dir_all(out.parent().unwrap()).unwrap();
     let vars_before: Vec<i32> = (0..stored).map(|index| game.vm.vars.get(index)).collect();
     game.save_to(&out).expect("save_to");
@@ -512,7 +540,9 @@ fn normal_variable_block_does_not_spill_into_later_rows() {
     savegame::load_into(&mut reloaded, &out).expect("reload saved file");
     let _ = std::fs::remove_file(&out);
 
-    let vars_after: Vec<i32> = (0..stored).map(|index| reloaded.vm.vars.get(index)).collect();
+    let vars_after: Vec<i32> = (0..stored)
+        .map(|index| reloaded.vm.vars.get(index))
+        .collect();
     assert_eq!(
         vars_after, vars_before,
         "normal variables 0..{stored} must round-trip"
@@ -535,7 +565,10 @@ fn normal_variable_block_does_not_spill_into_later_rows() {
 fn save_data_09_parses_and_loads_if_present() {
     let path = save_file(9);
     if !path.is_file() {
-        eprintln!("skipping: SaveData09.sav is not shipped at {}", path.display());
+        eprintln!(
+            "skipping: SaveData09.sav is not shipped at {}",
+            path.display()
+        );
         return;
     }
     let bytes = std::fs::read(&path).expect("read SaveData09.sav");
@@ -548,7 +581,10 @@ fn save_data_09_parses_and_loads_if_present() {
     };
     assert!(save.checksum_ok(), "SaveData09 checksum validates");
     let stored = save.part3.row_counts.first().copied().unwrap_or(0) as usize;
-    let vardb_len = save.chunk_bytes(VARDB_ID).map(|bytes| bytes.len()).unwrap_or(0);
+    let vardb_len = save
+        .chunk_bytes(VARDB_ID)
+        .map(|bytes| bytes.len())
+        .unwrap_or(0);
     let playtime = save.playtime_frames().unwrap_or(0);
     println!(
         "SaveData09: file_version={:#06X} is_utf8={} stored_pictures={} stored_vars={} vardb={} bytes playtime={}",
@@ -560,21 +596,38 @@ fn save_data_09_parses_and_loads_if_present() {
         playtime
     );
     assert!(save.file_version >= 0x0080, "plausible save format version");
-    assert!(vardb_len > 0, "SaveData09 carries a variable database chunk");
-    assert!(!save.part5.events.is_empty(), "SaveData09 stores picture records");
+    assert!(
+        vardb_len > 0,
+        "SaveData09 carries a variable database chunk"
+    );
+    assert!(
+        !save.part5.events.is_empty(),
+        "SaveData09 stores picture records"
+    );
 
     let mut game = open_game().expect("game");
     let loaded = savegame::load_into(&mut game, &path).expect("SaveData09 loads");
-    assert_eq!(loaded.playtime_frames, playtime, "loaded play time matches the save");
-    assert_eq!(loaded.normal_vars, stored, "loaded normal-var count matches row 0");
-    assert_eq!(game.screen.len(), loaded.pictures, "screen matches the reported picture count");
+    assert_eq!(
+        loaded.playtime_frames, playtime,
+        "loaded play time matches the save"
+    );
+    assert_eq!(
+        loaded.normal_vars, stored,
+        "loaded normal-var count matches row 0"
+    );
+    assert_eq!(
+        game.screen.len(),
+        loaded.pictures,
+        "screen matches the reported picture count"
+    );
     assert!(loaded.pictures > 0, "SaveData09 restores pictures");
     for index in 0..stored {
-        let expected = save
-            .part3
-            .normal_var(index)
-            .expect("row-0 normal variable");
-        assert_eq!(game.vm.vars.get(index), expected, "SaveData09 normal var {index}");
+        let expected = save.part3.normal_var(index).expect("row-0 normal variable");
+        assert_eq!(
+            game.vm.vars.get(index),
+            expected,
+            "SaveData09 normal var {index}"
+        );
     }
 }
 
@@ -592,7 +645,11 @@ fn database_overlay_is_preserved_by_a_round_trip() {
         eprintln!("skipping: {}", path.display());
         return;
     }
-    let out = data_root().parent().unwrap().join("out").join("m3_db_roundtrip.sav");
+    let out = data_root()
+        .parent()
+        .unwrap()
+        .join("out")
+        .join("m3_db_roundtrip.sav");
     std::fs::create_dir_all(out.parent().unwrap()).unwrap();
 
     let shipped = savegame::read_save(&path).expect("read shipped save");

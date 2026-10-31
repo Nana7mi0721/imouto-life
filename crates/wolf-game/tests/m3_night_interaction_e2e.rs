@@ -92,7 +92,8 @@ fn open_loaded() -> Option<Game> {
 fn ui_map() -> Option<Map> {
     let bytes = std::fs::read(data_root().join("MapData").join("SampleMapA.mps")).ok()?;
     let mut map = Map::parse(&bytes).ok()?;
-    map.events.retain(|event| matches!(event.id, 15 | 16 | 17 | 18 | 19 | 20 | 23 | 26));
+    map.events
+        .retain(|event| matches!(event.id, 15 | 16 | 17 | 18 | 19 | 20 | 23 | 26));
     Some(map)
 }
 
@@ -209,12 +210,23 @@ fn assert_status_bar(game: &Game) {
     for number in 1992..=2000 {
         assert!(has_picture(game, number), "status slot {number} is missing");
     }
-    let good = game.screen.get(1995).map(|p| visible(&p.text)).unwrap_or_default();
-    let bad = game.screen.get(1999).map(|p| visible(&p.text)).unwrap_or_default();
+    let good = game
+        .screen
+        .get(1995)
+        .map(|p| visible(&p.text))
+        .unwrap_or_default();
+    let bad = game
+        .screen
+        .get(1999)
+        .map(|p| visible(&p.text))
+        .unwrap_or_default();
     assert!(good.contains("GOOD"), "1995 label = {good:?}");
     assert!(bad.contains("BAD"), "1999 label = {bad:?}");
     let sleeping = picture_file(game, 2000).unwrap_or_default();
-    assert!(sleeping.contains("sleeping_staus.png"), "2000 file = {sleeping:?}");
+    assert!(
+        sleeping.contains("sleeping_staus.png"),
+        "2000 file = {sleeping:?}"
+    );
 }
 
 fn assert_body_layers(game: &Game) {
@@ -232,19 +244,42 @@ fn assert_body_layers(game: &Game) {
 
 #[test]
 fn interface_composition_and_command_state_machine() {
-    let Some(mut game) = enter_interface() else { return };
+    let Some(mut game) = enter_interface() else {
+        return;
+    };
     let live = live_events(&game);
-    assert!(live.contains(&15), "command list page ev15 runs, live = {live:?}");
-    assert!(live.contains(&16), "command judge ev16 runs, live = {live:?}");
-    assert!(live.contains(&18), "body hit test ev18 runs, live = {live:?}");
+    assert!(
+        live.contains(&15),
+        "command list page ev15 runs, live = {live:?}"
+    );
+    assert!(
+        live.contains(&16),
+        "command judge ev16 runs, live = {live:?}"
+    );
+    assert!(
+        live.contains(&18),
+        "body hit test ev18 runs, live = {live:?}"
+    );
     assert_status_bar(&game);
     assert_body_layers(&game);
 
     // The right-hand command buttons and the end button are on screen.
-    assert_eq!(picture_file(&game, 400).as_deref(), Some("Picture/menu1_03.png"));
-    assert_eq!(picture_file(&game, 404).as_deref(), Some("Picture/menu1_03.png"));
-    assert_eq!(picture_file(&game, 1108).as_deref(), Some("Picture/endbutton.png"));
-    assert_eq!(picture_file(&game, 1110).as_deref(), Some("Picture/pose_icon01.png"));
+    assert_eq!(
+        picture_file(&game, 400).as_deref(),
+        Some("Picture/menu1_03.png")
+    );
+    assert_eq!(
+        picture_file(&game, 404).as_deref(),
+        Some("Picture/menu1_03.png")
+    );
+    assert_eq!(
+        picture_file(&game, 1108).as_deref(),
+        Some("Picture/endbutton.png")
+    );
+    assert_eq!(
+        picture_file(&game, 1110).as_deref(),
+        Some("Picture/pose_icon01.png")
+    );
 
     // Page 1: clicking button 400 opens the hand submenu (page 3).
     assert_eq!(var(&game, 100), 1, "interface starts on page 1");
@@ -252,7 +287,11 @@ fn interface_composition_and_command_state_machine() {
     for _ in 0..10 {
         game.frame();
     }
-    assert_eq!(var(&game, 100), 3, "button 400 moves the interface to page 3");
+    assert_eq!(
+        var(&game, 100),
+        3,
+        "button 400 moves the interface to page 3"
+    );
     assert_eq!(
         picture_file(&game, 390).as_deref(),
         Some("Picture/menu1_04.png"),
@@ -265,7 +304,10 @@ fn interface_composition_and_command_state_machine() {
     );
 
     // Page 3 -> page 10 through the submenu button.
-    assert!(click_picture(&mut game, 390), "submenu button 390 is on screen");
+    assert!(
+        click_picture(&mut game, 390),
+        "submenu button 390 is on screen"
+    );
     for _ in 0..10 {
         game.frame();
     }
@@ -294,17 +336,29 @@ fn interface_composition_and_command_state_machine() {
 
 #[test]
 fn patting_the_head_plays_the_cut_in_and_deepens_sleep() {
-    let Some(mut game) = enter_interface() else { return };
-    assert_eq!(var(&game, 66), 0, "射精感 starts at zero at the interface entry");
+    let Some(mut game) = enter_interface() else {
+        return;
+    };
+    assert_eq!(
+        var(&game, 66),
+        0,
+        "射精感 starts at zero at the interface entry"
+    );
     let depth_before = var(&game, 18);
-    assert_eq!(depth_before, var(&game, 19), "sleep depth starts at its maximum");
+    assert_eq!(
+        depth_before,
+        var(&game, 19),
+        "sleep depth starts at its maximum"
+    );
 
     // Picture 1100 is the head hit box at the top of the sleeping sister.
     assert!(has_picture(&game, 1100), "head hit box 1100 is on screen");
     let messages = click_picture_collecting(&mut game, 1100, 40);
 
     assert!(
-        messages.iter().any(|m| m.contains("轻轻抚摸着熟睡着的妹妹的头")),
+        messages
+            .iter()
+            .any(|m| m.contains("轻轻抚摸着熟睡着的妹妹的头")),
         "head-pat message missing from {messages:?}"
     );
     assert!(
@@ -317,14 +371,19 @@ fn patting_the_head_plays_the_cut_in_and_deepens_sleep() {
         var(&game, 18)
     );
     for cut_in in [16000, 16001] {
-        assert!(has_picture(&game, cut_in), "cut-in text picture {cut_in} is missing");
+        assert!(
+            has_picture(&game, cut_in),
+            "cut-in text picture {cut_in} is missing"
+        );
     }
     assert_eq!(game.stats.warnings, 0, "warnings");
 }
 
 #[test]
 fn deep_sleep_refuses_the_face_action() {
-    let Some(mut game) = enter_interface() else { return };
+    let Some(mut game) = enter_interface() else {
+        return;
+    };
     let depth_before = var(&game, 18);
     // ev19 labels picture 1101 「かお」 (face); the mouth box is 1102.
     assert!(has_picture(&game, 1101), "face hit box 1101 is on screen");
@@ -445,14 +504,17 @@ fn end_choice_runs_the_trigger_zero_exit_script() {
     // explicitly here; clicking the end button picture never reaches it
     // (ev18's 1108 branch only writes the unread var v121 - see the module
     // header, reported engine gap).
-    let Some(mut game) = open_loaded() else { return };
-    game.auto_advance = true;
-    game.auto_choice = false;
-    let Some(bytes) = std::fs::read(data_root().join("MapData").join("SampleMapA.mps")).ok()
-    else {
+    let Some(mut game) = open_loaded() else {
         return;
     };
-    let Ok(mut map) = Map::parse(&bytes) else { return };
+    game.auto_advance = true;
+    game.auto_choice = false;
+    let Some(bytes) = std::fs::read(data_root().join("MapData").join("SampleMapA.mps")).ok() else {
+        return;
+    };
+    let Ok(mut map) = Map::parse(&bytes) else {
+        return;
+    };
     map.events.retain(|event| event.id == 21);
     game.vm.vars.set(100, 1);
     game.vm.vars.set(125, 0);
@@ -490,7 +552,11 @@ fn end_choice_runs_the_trigger_zero_exit_script() {
         messages.iter().any(|m| m.contains("暴露了的话就惨了")),
         "exit closing line missing from {messages:?}"
     );
-    assert_eq!(var(&game, 100), 0, "the end choice clears the interface page");
+    assert_eq!(
+        var(&game, 100),
+        0,
+        "the end choice clears the interface page"
+    );
     assert_eq!(var(&game, 125), 0, "the end choice clears the action phase");
     assert_eq!(game.stats.warnings, 0, "warnings");
 }

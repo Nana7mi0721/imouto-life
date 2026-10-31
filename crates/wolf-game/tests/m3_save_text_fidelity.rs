@@ -36,7 +36,9 @@ fn data_root() -> PathBuf {
 }
 
 fn save_file(slot: u32) -> PathBuf {
-    data_root().join("Save").join(format!("SaveData{slot:02}.sav"))
+    data_root()
+        .join("Save")
+        .join(format!("SaveData{slot:02}.sav"))
 }
 
 fn out_dir() -> PathBuf {

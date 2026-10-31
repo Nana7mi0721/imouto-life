@@ -81,7 +81,8 @@ fn fnv1a(bytes: &[u8]) -> u64 {
 /// Content fingerprint of every regular file in work/Data/Save: name, size, FNV-1a.
 fn save_fingerprint() -> Result<Vec<(String, u64, u64)>, String> {
     let dir = save_dir();
-    let entries = std::fs::read_dir(&dir).map_err(|err| format!("cannot list {}: {err}", dir.display()))?;
+    let entries =
+        std::fs::read_dir(&dir).map_err(|err| format!("cannot list {}: {err}", dir.display()))?;
     let mut files = Vec::new();
     for entry in entries {
         let entry = entry.map_err(|err| format!("cannot read {} entry: {err}", dir.display()))?;
@@ -89,8 +90,13 @@ fn save_fingerprint() -> Result<Vec<(String, u64, u64)>, String> {
         if !path.is_file() {
             continue;
         }
-        let bytes = std::fs::read(&path).map_err(|err| format!("cannot read {}: {err}", path.display()))?;
-        let name = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
+        let bytes =
+            std::fs::read(&path).map_err(|err| format!("cannot read {}: {err}", path.display()))?;
+        let name = path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned();
         files.push((name, bytes.len() as u64, fnv1a(&bytes)));
     }
     files.sort();
@@ -138,7 +144,9 @@ impl Drop for Scratch {
 }
 
 fn clear_readonly(path: &Path) {
-    let Ok(meta) = std::fs::metadata(path) else { return };
+    let Ok(meta) = std::fs::metadata(path) else {
+        return;
+    };
     if meta.is_dir() {
         if let Ok(entries) = std::fs::read_dir(path) {
             for entry in entries.flatten() {
@@ -183,8 +191,12 @@ fn random_bytes() -> Vec<u8> {
 
 #[test]
 fn corrupt_save_files_return_err_without_panicking() {
-    let Some(valid) = valid_save_bytes() else { return; };
-    let Some(mut game) = open_game() else { return; };
+    let Some(valid) = valid_save_bytes() else {
+        return;
+    };
+    let Some(mut game) = open_game() else {
+        return;
+    };
     let scratch = Scratch::new("corrupt");
     let parsed = SaveFile::parse(&valid).expect("valid baseline");
 
@@ -197,23 +209,38 @@ fn corrupt_save_files_return_err_without_panicking() {
 
     let mut bad_version = parsed.clone();
     bad_version.file_version = 0x8F;
-    variants.push(("bad_file_version", bad_version.to_bytes().expect("encode bad version")));
+    variants.push((
+        "bad_file_version",
+        bad_version.to_bytes().expect("encode bad version"),
+    ));
 
     let mut bad_end = parsed.clone();
     bad_end.end_byte = 0;
-    variants.push(("bad_end_byte", bad_end.to_bytes().expect("encode bad end byte")));
+    variants.push((
+        "bad_end_byte",
+        bad_end.to_bytes().expect("encode bad end byte"),
+    ));
 
     let mut bad_start = parsed.clone();
     bad_start.header.start_byte = 0;
-    variants.push(("bad_start_byte", bad_start.to_bytes().expect("encode bad start byte")));
+    variants.push((
+        "bad_start_byte",
+        bad_start.to_bytes().expect("encode bad start byte"),
+    ));
 
     let mut huge = parsed.clone();
-    huge.replace_part(5, &[0xFF, 0xFF, 0xFF, 0xFF]).expect("replace vardb");
-    variants.push(("huge_declared_length", huge.to_bytes().expect("encode huge length")));
+    huge.replace_part(5, &[0xFF, 0xFF, 0xFF, 0xFF])
+        .expect("replace vardb");
+    variants.push((
+        "huge_declared_length",
+        huge.to_bytes().expect("encode huge length"),
+    ));
 
     preserve_save_dir("corrupt matrix", || {
         for (name, bytes) in &variants {
-            expect_err(&format!("{name}/SaveFile::parse"), || SaveFile::parse(bytes));
+            expect_err(&format!("{name}/SaveFile::parse"), || {
+                SaveFile::parse(bytes)
+            });
             let path = scratch.write(&format!("{name}.sav"), bytes);
             expect_err(&format!("{name}/read_save"), || savegame::read_save(&path));
             expect_err(&format!("{name}/Game::load_save"), || game.load_save(&path));
@@ -229,8 +256,12 @@ fn corrupt_save_files_return_err_without_panicking() {
 /// neither parser rejects the file and Game::load_save happily loads it.
 #[test]
 fn wrong_checksum_is_detected_but_not_rejected_by_current_load_paths() {
-    let Some(valid) = valid_save_bytes() else { return; };
-    let Some(mut game) = open_game() else { return; };
+    let Some(valid) = valid_save_bytes() else {
+        return;
+    };
+    let Some(mut game) = open_game() else {
+        return;
+    };
     let scratch = Scratch::new("checksum_gap");
 
     preserve_save_dir("checksum gap", || {
@@ -240,16 +271,31 @@ fn wrong_checksum_is_detected_but_not_rejected_by_current_load_paths() {
 
         let save = SaveFile::parse(&bytes).expect("CURRENT GAP: parse accepts a bad checksum");
         assert!(!save.checksum_ok(), "checksum_ok must report the mismatch");
-        println!("checksum gap: stored={} computed={}", save.stored_checksum, save.computed_checksum);
+        println!(
+            "checksum gap: stored={} computed={}",
+            save.stored_checksum, save.computed_checksum
+        );
 
-        let read = savegame::read_save(&path).expect("CURRENT GAP: read_save accepts a bad checksum");
-        assert!(!read.checksum_ok(), "read_save result must report checksum_ok=false");
+        let read =
+            savegame::read_save(&path).expect("CURRENT GAP: read_save accepts a bad checksum");
+        assert!(
+            !read.checksum_ok(),
+            "read_save result must report checksum_ok=false"
+        );
 
-        let loaded = game.load_save(&path).expect("CURRENT GAP: Game::load_save accepts a bad checksum");
-        println!("checksum gap: Game::load_save returned pictures={}", loaded.pictures);
+        let loaded = game
+            .load_save(&path)
+            .expect("CURRENT GAP: Game::load_save accepts a bad checksum");
+        println!(
+            "checksum gap: Game::load_save returned pictures={}",
+            loaded.pictures
+        );
 
         let frame = catch_unwind(AssertUnwindSafe(|| game.frame()));
-        assert!(frame.is_ok(), "a bad-checksum load must not leave the game unusable");
+        assert!(
+            frame.is_ok(),
+            "a bad-checksum load must not leave the game unusable"
+        );
     });
 }
 
@@ -257,23 +303,40 @@ fn wrong_checksum_is_detected_but_not_rejected_by_current_load_paths() {
 #[test]
 #[ignore = "API gap: SaveFile::parse/read_save/Game::load_save do not validate the stored checksum"]
 fn wrong_checksum_is_rejected_by_all_load_paths() {
-    let Some(valid) = valid_save_bytes() else { return; };
-    let Some(mut game) = open_game() else { return; };
+    let Some(valid) = valid_save_bytes() else {
+        return;
+    };
+    let Some(mut game) = open_game() else {
+        return;
+    };
     let scratch = Scratch::new("checksum_fixed");
 
     let mut bytes = valid.clone();
     bytes[2] = bytes[2].wrapping_add(1);
     let path = scratch.write("bad_checksum.sav", &bytes);
 
-    assert!(SaveFile::parse(&bytes).is_err(), "SaveFile::parse must reject a bad checksum");
-    assert!(savegame::read_save(&path).is_err(), "read_save must reject a bad checksum");
-    assert!(game.load_save(&path).is_err(), "Game::load_save must reject a bad checksum");
+    assert!(
+        SaveFile::parse(&bytes).is_err(),
+        "SaveFile::parse must reject a bad checksum"
+    );
+    assert!(
+        savegame::read_save(&path).is_err(),
+        "read_save must reject a bad checksum"
+    );
+    assert!(
+        game.load_save(&path).is_err(),
+        "Game::load_save must reject a bad checksum"
+    );
 }
 
 #[test]
 fn unwritable_save_targets_return_err_without_panicking() {
-    let Some(_valid) = valid_save_bytes() else { return; };
-    let Some(mut game) = open_game() else { return; };
+    let Some(_valid) = valid_save_bytes() else {
+        return;
+    };
+    let Some(mut game) = open_game() else {
+        return;
+    };
     let scratch = Scratch::new("unwritable");
 
     preserve_save_dir("save_to error paths", || {
@@ -288,7 +351,9 @@ fn unwritable_save_targets_return_err_without_panicking() {
 
         let readonly = scratch.path("readonly_target.sav");
         std::fs::write(&readonly, b"existing").expect("make readonly file");
-        let mut permissions = std::fs::metadata(&readonly).expect("stat readonly").permissions();
+        let mut permissions = std::fs::metadata(&readonly)
+            .expect("stat readonly")
+            .permissions();
         permissions.set_readonly(true);
         std::fs::set_permissions(&readonly, permissions).expect("set readonly");
         expect_err("save_to/readonly_file", || game.save_to(&readonly));
@@ -302,8 +367,12 @@ fn unwritable_save_targets_return_err_without_panicking() {
 
 #[test]
 fn failed_load_leaves_the_game_usable() {
-    let Some(valid) = valid_save_bytes() else { return; };
-    let Some(mut game) = open_game() else { return; };
+    let Some(valid) = valid_save_bytes() else {
+        return;
+    };
+    let Some(mut game) = open_game() else {
+        return;
+    };
     let scratch = Scratch::new("failed_load");
 
     preserve_save_dir("failed load recovery", || {
@@ -313,7 +382,10 @@ fn failed_load_leaves_the_game_usable() {
         let frame = catch_unwind(AssertUnwindSafe(|| {
             game.frame();
         }));
-        assert!(frame.is_ok(), "Game must keep running one frame after a failed load");
+        assert!(
+            frame.is_ok(),
+            "Game must keep running one frame after a failed load"
+        );
         println!("failed load recovery: one frame ran after the error");
     });
 }

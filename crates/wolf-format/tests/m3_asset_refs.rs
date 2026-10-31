@@ -73,11 +73,15 @@ fn extension(s: &str) -> Option<String> {
 }
 
 fn is_image(s: &str) -> bool {
-    extension(s).map(|e| IMAGE_EXTS.contains(&e.as_str())).unwrap_or(false)
+    extension(s)
+        .map(|e| IMAGE_EXTS.contains(&e.as_str()))
+        .unwrap_or(false)
 }
 
 fn is_audio(s: &str) -> bool {
-    extension(s).map(|e| AUDIO_EXTS.contains(&e.as_str())).unwrap_or(false)
+    extension(s)
+        .map(|e| AUDIO_EXTS.contains(&e.as_str()))
+        .unwrap_or(false)
 }
 
 /// Normalises a script reference into a lower-case, forward-slash relative path.
@@ -112,7 +116,9 @@ fn build_index(root: &Path) -> (BTreeSet<String>, BTreeMap<String, usize>) {
             .to_ascii_lowercase();
         rels.insert(rel);
         if let Some(name) = file.file_name() {
-            *bases.entry(name.to_string_lossy().to_ascii_lowercase()).or_insert(0) += 1;
+            *bases
+                .entry(name.to_string_lossy().to_ascii_lowercase())
+                .or_insert(0) += 1;
         }
     }
     (rels, bases)
@@ -156,7 +162,11 @@ fn collect_map_refs(root: &Path) -> Vec<RefRecord> {
     let mut maps: Vec<PathBuf> = std::fs::read_dir(&dir)
         .expect("read MapData")
         .filter_map(|e| e.ok().map(|e| e.path()))
-        .filter(|p| p.extension().map(|x| x.eq_ignore_ascii_case("mps")).unwrap_or(false))
+        .filter(|p| {
+            p.extension()
+                .map(|x| x.eq_ignore_ascii_case("mps"))
+                .unwrap_or(false)
+        })
         .collect();
     maps.sort();
     let mut out = Vec::new();
@@ -172,10 +182,7 @@ fn collect_map_refs(root: &Path) -> Vec<RefRecord> {
                             if is_image(s) || is_audio(s) {
                                 out.push(RefRecord {
                                     raw: s.trim().to_owned(),
-                                    origin: format!(
-                                        "Map {} ev{} {:?}",
-                                        name, event.id, event.name
-                                    ),
+                                    origin: format!("Map {} ev{} {:?}", name, event.id, event.name),
                                     opcode: cmd.opcode,
                                 });
                             }
@@ -226,7 +233,10 @@ fn magic_matches_extension(path: &Path) -> Result<(), String> {
     if ok {
         Ok(())
     } else {
-        Err(format!("{}: header magic does not match .{ext}", path.display()))
+        Err(format!(
+            "{}: header magic does not match .{ext}",
+            path.display()
+        ))
     }
 }
 
@@ -270,11 +280,18 @@ fn all_event_and_map_asset_refs_resolve() {
     let mut origins: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for record in &refs {
         let normalised = normalise(&record.raw);
-        origins.entry(normalised.clone()).or_default().insert(record.origin.clone());
+        origins
+            .entry(normalised.clone())
+            .or_default()
+            .insert(record.origin.clone());
         if resolve_exact(&root, &rels, &record.raw).is_some() {
             continue;
         }
-        let base = normalised.rsplit('/').next().unwrap_or(&normalised).to_string();
+        let base = normalised
+            .rsplit('/')
+            .next()
+            .unwrap_or(&normalised)
+            .to_string();
         if bases.contains_key(&base) {
             basename_only.insert(normalised);
         } else {
@@ -306,7 +323,10 @@ fn all_event_and_map_asset_refs_resolve() {
     }
 
     // The only tolerated gaps are the documented WOLF sample-project leftovers.
-    let expected: BTreeSet<String> = KNOWN_UNSHIPPED.iter().map(|s| s.to_ascii_lowercase()).collect();
+    let expected: BTreeSet<String> = KNOWN_UNSHIPPED
+        .iter()
+        .map(|s| s.to_ascii_lowercase())
+        .collect();
     let mut unexpected: BTreeSet<String> = missing.difference(&expected).cloned().collect();
     unexpected.extend(basename_only.difference(&expected).cloned());
     assert!(
@@ -317,7 +337,10 @@ fn all_event_and_map_asset_refs_resolve() {
     // And every audio reference must exist and have content (decoders: task-15).
     for record in &audios {
         let path = resolve_exact(&root, &rels, &record.raw).unwrap_or_else(|| {
-            panic!("audio ref {:?} from {} does not resolve", record.raw, record.origin)
+            panic!(
+                "audio ref {:?} from {} does not resolve",
+                record.raw, record.origin
+            )
         });
         let len = std::fs::metadata(&path).expect("audio metadata").len();
         assert!(
@@ -364,10 +387,7 @@ fn referenced_images_have_valid_magic() {
             Err(err) => failures.push(err),
         }
     }
-    assert!(
-        failures.is_empty(),
-        "image magic failures: {failures:#?}"
-    );
+    assert!(failures.is_empty(), "image magic failures: {failures:#?}");
     assert!(
         checked >= 20,
         "expected to validate >=20 referenced images, validated {checked}"

@@ -594,5 +594,4 @@ mod tests {
         assert_eq!(picture.window, Some((150, 14)));
         assert_eq!(picture.scale, 62);
     }
-
 }

@@ -152,7 +152,10 @@ fn row_rects(game: &Game) -> Vec<[f32; 4]> {
 }
 
 fn row_centre(line: &[f32; 4]) -> (i32, i32) {
-    ((line[0] + line[2] * 0.5) as i32, (line[1] + line[3] * 0.5) as i32)
+    (
+        (line[0] + line[2] * 0.5) as i32,
+        (line[1] + line[3] * 0.5) as i32,
+    )
 }
 
 /// Hovers the centre of row, then holds the left button for a while so a
@@ -203,7 +206,10 @@ fn title_prompt_is_a_real_offscreen_placeholder() {
     let Some(game) = open_title() else {
         return;
     };
-    assert_eq!(trimmed_options(&game), EXPECTED_TITLE.map(str::to_owned).to_vec());
+    assert_eq!(
+        trimmed_options(&game),
+        EXPECTED_TITLE.map(str::to_owned).to_vec()
+    );
     // The WOLF sample title screen parks the window at (-1000,-1000).
     assert_eq!(
         game.choice_anchor(),
@@ -232,7 +238,10 @@ fn title_prompt_is_a_real_offscreen_placeholder() {
             );
         }
     }
-    assert_eq!(game.stats.warnings, 0, "the off-screen title prompt is warning-free");
+    assert_eq!(
+        game.stats.warnings, 0,
+        "the off-screen title prompt is warning-free"
+    );
 }
 
 #[test]
@@ -271,7 +280,11 @@ fn synthetic_relocation_makes_the_three_rows_mouse_hittable() {
         !live_events(&game).contains(&42),
         "the title event (42) has unwound after the cancel"
     );
-    assert_eq!(game.sys(4), 150, "control returned past op102 into [60] Sys4=150");
+    assert_eq!(
+        game.sys(4),
+        150,
+        "control returned past op102 into [60] Sys4=150"
+    );
     assert_eq!(game.stats.warnings, 0);
 }
 
@@ -294,24 +307,36 @@ fn left_click_new_game_teleports_through_map003_into_sample_map_a() {
             break;
         }
         let seen: Vec<&str> = game.diagnostics.keys().map(String::as_str).collect();
-        if seen.iter().any(|l| l.contains("130 Teleport: MapData/Map003.mps"))
-            && seen.iter().any(|l| l.contains("130 Teleport: MapData/SampleMapA.mps"))
+        if seen
+            .iter()
+            .any(|l| l.contains("130 Teleport: MapData/Map003.mps"))
+            && seen
+                .iter()
+                .any(|l| l.contains("130 Teleport: MapData/SampleMapA.mps"))
         {
             reached = true;
             break;
         }
     }
     let seen: Vec<&str> = game.diagnostics.keys().map(String::as_str).collect();
-    assert!(reached, "the clicked new-game path teleports to both maps: {seen:?}");
     assert!(
-        seen.iter().any(|l| l.contains("130 Teleport: MapData/Map003.mps")),
+        reached,
+        "the clicked new-game path teleports to both maps: {seen:?}"
+    );
+    assert!(
+        seen.iter()
+            .any(|l| l.contains("130 Teleport: MapData/Map003.mps")),
         "title menu1 passes through the Map003 new-game hook: {seen:?}"
     );
     assert!(
-        seen.iter().any(|l| l.contains("130 Teleport: MapData/SampleMapA.mps")),
+        seen.iter()
+            .any(|l| l.contains("130 Teleport: MapData/SampleMapA.mps")),
         "the hook then teleports into SampleMapA: {seen:?}"
     );
-    assert_eq!(game.stats.warnings, 0, "the clicked new-game path is warning-free");
+    assert_eq!(
+        game.stats.warnings, 0,
+        "the clicked new-game path is warning-free"
+    );
 }
 
 #[test]
@@ -373,7 +398,10 @@ fn cancel_closes_the_load_grid_but_does_not_reopen_the_title_menu() {
         EXPECTED_TITLE.map(str::to_owned).to_vec(),
         "the title menu is not restored after cancelling the load grid (known gap)"
     );
-    assert_eq!(game.stats.warnings, 0, "cancelling the load grid is warning-free");
+    assert_eq!(
+        game.stats.warnings, 0,
+        "cancelling the load grid is warning-free"
+    );
 }
 
 #[test]
@@ -394,7 +422,10 @@ fn right_button_closes_the_load_grid_through_the_opcode_123_bridge() {
         !has_load_grid(&game),
         "the picture-driven load grid cancels on a right click (op123 sees it)"
     );
-    assert!(!live_events(&game).contains(&14), "CE14 has ended after the right click");
+    assert!(
+        !live_events(&game).contains(&14),
+        "CE14 has ended after the right click"
+    );
     assert_eq!(game.stats.warnings, 0, "right-click cancel is warning-free");
 }
 

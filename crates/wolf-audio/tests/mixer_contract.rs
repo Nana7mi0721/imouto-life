@@ -156,7 +156,10 @@ fn per_voice_volume_above_one_is_clamped() {
     let mut mixer = Mixer::new(48_000, 1);
     mixer.play_se(constant(0.5, 16, 48_000, 1), 2.0);
     for s in mixer.render(4) {
-        assert!((s - 0.5).abs() < 1e-6, "voice gain must clamp to 1.0: got {s}");
+        assert!(
+            (s - 0.5).abs() < 1e-6,
+            "voice gain must clamp to 1.0: got {s}"
+        );
     }
 }
 
@@ -183,9 +186,15 @@ fn non_looping_bgm_ends_and_is_removed() {
     mixer.play_bgm(constant(0.5, 4, 48_000, 1), false, 1.0);
     let out = mixer.render(4);
     assert_eq!(out.len(), 4);
-    assert!(!mixer.bgm_playing(), "a finished non-looping BGM must be removed");
+    assert!(
+        !mixer.bgm_playing(),
+        "a finished non-looping BGM must be removed"
+    );
     let rest = mixer.render(8);
-    assert!(rest.iter().all(|s| s.abs() < 1e-9), "silence after the BGM ended");
+    assert!(
+        rest.iter().all(|s| s.abs() < 1e-9),
+        "silence after the BGM ended"
+    );
 }
 
 #[test]
@@ -212,12 +221,27 @@ fn fade_out_is_monotonic_and_silent_at_the_end() {
     let out = mixer.render(expected);
     assert_eq!(out.len(), expected);
     // Starts at full scale, never rises, and ends essentially silent.
-    assert!((out[0] - 1.0).abs() < 1e-6, "fade must start at full gain: {}", out[0]);
+    assert!(
+        (out[0] - 1.0).abs() < 1e-6,
+        "fade must start at full gain: {}",
+        out[0]
+    );
     for pair in out.windows(2) {
-        assert!(pair[1] <= pair[0] + 1e-7, "fade gain rose: {} -> {}", pair[0], pair[1]);
+        assert!(
+            pair[1] <= pair[0] + 1e-7,
+            "fade gain rose: {} -> {}",
+            pair[0],
+            pair[1]
+        );
     }
-    assert!(out.last().copied().unwrap().abs() < 1e-3, "fade did not reach silence");
-    assert!(!mixer.bgm_playing(), "BGM must be cleared after the fade completes");
+    assert!(
+        out.last().copied().unwrap().abs() < 1e-3,
+        "fade did not reach silence"
+    );
+    assert!(
+        !mixer.bgm_playing(),
+        "BGM must be cleared after the fade completes"
+    );
 
     // The fade length is expressed in game frames, not output samples.
     let mut mixer = Mixer::new(96_000, 1);
@@ -260,7 +284,10 @@ fn resampling_downsamples_by_skipping_source_frames() {
     let out = mixer.render(3);
     let expected = [0.0f32, 0.2, 0.4];
     for (i, (got, want)) in out.iter().zip(expected.iter()).enumerate() {
-        assert!((got - want).abs() < 1e-3, "down {i}: got {got}, want {want}");
+        assert!(
+            (got - want).abs() < 1e-3,
+            "down {i}: got {got}, want {want}"
+        );
     }
 }
 
@@ -392,7 +419,10 @@ fn sound_cmd_play_and_stop_shapes_are_safe() {
             engine.apply_sound_cmd(&cmd(SoundChannel::Bgm, SoundAction::Stop, "", 0, 30));
             assert!(engine.bgm_playing(), "a fading BGM is still audible");
             let _ = engine.render_offline(48_000);
-            assert!(!engine.bgm_playing(), "the fade completed and cleared the BGM");
+            assert!(
+                !engine.bgm_playing(),
+                "the fade completed and cleared the BGM"
+            );
         }
     }
 }
@@ -422,8 +452,8 @@ fn decodes_the_smallest_shipped_se() {
         eprintln!("skipping decodes_the_smallest_shipped_se: work/Data/SE is absent");
         return;
     };
-    let audio = decode_file(&path)
-        .unwrap_or_else(|e| panic!("failed to decode {}: {e}", path.display()));
+    let audio =
+        decode_file(&path).unwrap_or_else(|e| panic!("failed to decode {}: {e}", path.display()));
     assert!(audio.sample_rate > 0, "{}: sample rate", path.display());
     assert!(audio.channels > 0, "{}: channels", path.display());
     assert!(audio.frames() > 0, "{}: frames", path.display());

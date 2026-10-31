@@ -86,7 +86,10 @@ struct EventReport {
     diagnostics: BTreeMap<String, u64>,
 }
 
-fn diff_counts(before: &BTreeMap<String, u64>, after: &BTreeMap<String, u64>) -> BTreeMap<String, u64> {
+fn diff_counts(
+    before: &BTreeMap<String, u64>,
+    after: &BTreeMap<String, u64>,
+) -> BTreeMap<String, u64> {
     let mut out = BTreeMap::new();
     for (key, value) in after {
         let prev = before.get(key).copied().unwrap_or(0);
@@ -255,7 +258,11 @@ fn smoke_events() {
                     .first()
                     .map(|m| short(m, 24))
                     .unwrap_or_default();
-                let choice = report.choices.first().map(|c| short(c, 12)).unwrap_or_default();
+                let choice = report
+                    .choices
+                    .first()
+                    .map(|c| short(c, 12))
+                    .unwrap_or_default();
                 let diag: Vec<String> = report
                     .diagnostics
                     .iter()

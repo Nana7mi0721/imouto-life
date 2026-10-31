@@ -161,7 +161,9 @@ fn run_event(game: &mut Game, id: u32, frames: u32) -> EventRun {
 
 #[test]
 fn ce242_status_panel_paints_the_five_hud_readouts() {
-    let Some(mut game) = open_loaded_bedroom() else { return };
+    let Some(mut game) = open_loaded_bedroom() else {
+        return;
+    };
     let run = run_event(&mut game, 242, 5);
 
     let slots: Vec<i32> = run.pictures.keys().copied().collect();
@@ -201,7 +203,9 @@ fn ce242_status_panel_paints_the_five_hud_readouts() {
 
 #[test]
 fn ce243_time_display_paints_the_clock_and_weekday() {
-    let Some(mut game) = open_loaded_bedroom() else { return };
+    let Some(mut game) = open_loaded_bedroom() else {
+        return;
+    };
     let run = run_event(&mut game, 243, 5);
 
     let slots: Vec<i32> = run.pictures.keys().copied().collect();
@@ -213,14 +217,22 @@ fn ce243_time_display_paints_the_clock_and_weekday() {
     let time = visible(run.pictures.get(&200).map(String::as_str).unwrap_or(""));
     let day = visible(run.pictures.get(&210).map(String::as_str).unwrap_or(""));
     assert!(is_hh_mm(&time), "the clock reads HH:MM, got {time:?}");
-    assert!(day.contains('周'), "the weekday reads like weekday N, got {day:?}");
-    assert!(run.messages.is_empty(), "the clock display shows no message");
+    assert!(
+        day.contains('周'),
+        "the weekday reads like weekday N, got {day:?}"
+    );
+    assert!(
+        run.messages.is_empty(),
+        "the clock display shows no message"
+    );
     assert_eq!(run.warnings, 0, "CE243 runs warning-free");
 }
 
 #[test]
 fn ce244_action_point_change_paints_the_delta() {
-    let Some(mut game) = open_loaded_bedroom() else { return };
+    let Some(mut game) = open_loaded_bedroom() else {
+        return;
+    };
     let run = run_event(&mut game, 244, 8);
 
     let slots: Vec<i32> = run.pictures.keys().copied().collect();
@@ -243,7 +255,9 @@ fn ce244_action_point_change_paints_the_delta() {
 
 #[test]
 fn ce256_daytime_menu_asks_its_prompt_and_winds_the_clock() {
-    let Some(mut game) = open_loaded_bedroom() else { return };
+    let Some(mut game) = open_loaded_bedroom() else {
+        return;
+    };
     let before_time = game
         .screen
         .get(200)

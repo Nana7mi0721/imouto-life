@@ -25,10 +25,10 @@ use std::time::UNIX_EPOCH;
 
 use wolf_format::command::Slot;
 use wolf_format::commonevent::{CommonEvent, CommonEventData};
-use wolf_vm::magic::{Magic, MagicKind};
 use wolf_game::db::Container;
 use wolf_game::savegame;
 use wolf_game::Game;
+use wolf_vm::magic::{Magic, MagicKind};
 
 fn data_root() -> PathBuf {
     let raw = std::env::var("WOLF_DATA_ROOT").unwrap_or_else(|_| "work/Data".to_owned());
@@ -50,7 +50,10 @@ fn open_game() -> Option<Game> {
     match Game::new(data_root()) {
         Ok(game) => Some(game),
         Err(err) => {
-            eprintln!("skipping: cannot open data root {}: {err}", data_root().display());
+            eprintln!(
+                "skipping: cannot open data root {}: {err}",
+                data_root().display()
+            );
             None
         }
     }
@@ -76,7 +79,9 @@ fn open_loaded() -> Option<Game> {
 
 fn save_fingerprint() -> Vec<(String, u64, u64)> {
     let mut out = Vec::new();
-    let Ok(read) = fs::read_dir(save_dir()) else { return out };
+    let Ok(read) = fs::read_dir(save_dir()) else {
+        return out;
+    };
     for entry in read.flatten() {
         let path = entry.path();
         if !path.is_file() {
@@ -157,7 +162,10 @@ fn slot_text(game: &Game, number: i32) -> String {
 }
 
 fn slot_file(game: &Game, number: i32) -> String {
-    game.screen.get(number).map(|p| p.file.clone()).unwrap_or_default()
+    game.screen
+        .get(number)
+        .map(|p| p.file.clone())
+        .unwrap_or_default()
 }
 
 fn press_ok(game: &mut Game) {
@@ -198,11 +206,25 @@ fn minutes(game: &Game) -> i32 {
 #[test]
 fn ce238_panel_shows_trust_interest_sensitivity_and_mood() {
     let before = save_fingerprint();
-    let sensitivity = [(-2, "超钝感"), (-1, "钝感"), (0, "普通"), (1, "敏感"), (2, "超敏感")];
-    let mood = [(-2, "爆发之前"), (-1, "不悦"), (0, "普通"), (1, "高兴"), (2, "哥哥LOVE")];
+    let sensitivity = [
+        (-2, "超钝感"),
+        (-1, "钝感"),
+        (0, "普通"),
+        (1, "敏感"),
+        (2, "超敏感"),
+    ];
+    let mood = [
+        (-2, "爆发之前"),
+        (-1, "不悦"),
+        (0, "普通"),
+        (1, "高兴"),
+        (2, "哥哥LOVE"),
+    ];
 
     for &(level, sens_label) in &sensitivity {
-        let Some(mut game) = open_loaded() else { return };
+        let Some(mut game) = open_loaded() else {
+            return;
+        };
         game.vm.vars.set(20, 42);
         game.vm.vars.set(21, 7);
         game.vm.vars.set(22, level);
@@ -214,9 +236,17 @@ fn ce238_panel_shows_trust_interest_sensitivity_and_mood() {
         assert_eq!(game.stats.warnings, 0, "CE238 v22={level} 不应告警");
         assert_eq!(slot_text(&game, 321), "42", "槽321 应为信頼 v20");
         assert_eq!(slot_text(&game, 322), "7", "槽322 应为性興味 v21");
-        assert_eq!(slot_text(&game, 323), sens_label, "槽323 应为感度 v22={level} 的标签");
+        assert_eq!(
+            slot_text(&game, 323),
+            sens_label,
+            "槽323 应为感度 v22={level} 的标签"
+        );
         let mood_label = mood.iter().find(|(m, _)| *m == level).unwrap().1;
-        assert_eq!(slot_text(&game, 324), mood_label, "槽324 应为機嫌 v23={level} 的标签");
+        assert_eq!(
+            slot_text(&game, 324),
+            mood_label,
+            "槽324 应为機嫌 v23={level} 的标签"
+        );
         assert!(
             slot_file(&game, 320).ends_with("status01.png"),
             "槽320 应为 status01.png，实际 {:?}",
@@ -234,7 +264,9 @@ fn ce238_panel_shows_trust_interest_sensitivity_and_mood() {
 #[test]
 fn night_conversation_costs_action_points_and_advances_time() {
     let before_save = save_fingerprint();
-    let Some(mut game) = open_loaded() else { return };
+    let Some(mut game) = open_loaded() else {
+        return;
+    };
 
     let ap_before = ap(&game);
     let trust_before = var(&game, 20);
@@ -262,7 +294,10 @@ fn night_conversation_costs_action_points_and_advances_time() {
     assert_eq!(ap_after, ap_before - 10, "一次交流应消耗 10 行动力");
     assert_eq!(minutes_after, minutes_before + 30, "一次交流应经过 30 分钟");
     let delta = trust_after - trust_before;
-    assert!(delta > 0 && delta <= 5, "交流后妹妹信頼度应小幅上升，实际 +{delta}");
+    assert!(
+        delta > 0 && delta <= 5,
+        "交流后妹妹信頼度应小幅上升，实际 +{delta}"
+    );
     assert_eq!(game.stats.warnings, 0);
     assert_save_unchanged(&before_save);
 }
@@ -274,7 +309,9 @@ fn night_conversation_costs_action_points_and_advances_time() {
 #[test]
 fn night_bath_advances_time_and_restores_action_points() {
     let before_save = save_fingerprint();
-    let Some(mut game) = open_loaded() else { return };
+    let Some(mut game) = open_loaded() else {
+        return;
+    };
 
     let ap_before = ap(&game);
     let cap = ap_max(&game);
@@ -296,7 +333,10 @@ fn night_bath_advances_time_and_restores_action_points() {
 
     let ap_after = ap(&game);
     assert_eq!(minutes(&game), minutes_before + 60, "泡澡应经过 60 分钟");
-    assert!(ap_after >= ap_before, "泡澡不应减少行动力：{ap_before} -> {ap_after}");
+    assert!(
+        ap_after >= ap_before,
+        "泡澡不应减少行动力：{ap_before} -> {ap_after}"
+    );
     assert!(ap_after <= cap, "行动力不应超过上限 {cap}，实际 {ap_after}");
     assert_eq!(game.stats.warnings, 0);
     assert_save_unchanged(&before_save);
@@ -316,10 +356,17 @@ fn daytime_idle_actions_advance_clock_to_evening() {
     assert!(game.start_event(251), "应能从就寝事件进入翌朝");
     assert!(wait_choices(&mut game, 1500), "翌朝日菜单应弹出");
     assert_eq!((var(&game, 4), var(&game, 5)), (8, 30), "翌朝应为 08:30");
-    assert_eq!((var(&game, 6), var(&game, 99)), (0, 1), "主循环起始应为周一/第1天");
+    assert_eq!(
+        (var(&game, 6), var(&game, 99)),
+        (0, 1),
+        "主循环起始应为周一/第1天"
+    );
     assert_eq!(var(&game, 14), 4, "翌朝 v14 应重置为 4（妹位置）");
     let day_menu = game.choices.as_ref().unwrap().options.clone();
-    assert!(day_menu.iter().any(|o| o.contains("无所事事")), "日菜单应有自由行动项");
+    assert!(
+        day_menu.iter().any(|o| o.contains("无所事事")),
+        "日菜单应有自由行动项"
+    );
 
     for expected in [(12, 0), (15, 0), (17, 0)] {
         choose(&mut game, "无所事事");
@@ -355,7 +402,9 @@ fn daytime_idle_actions_advance_clock_to_evening() {
 // ---------------------------------------------------------------------------
 #[test]
 fn deep_night_menu_forces_bedtime() {
-    let Some(mut game) = open_loaded() else { return };
+    let Some(mut game) = open_loaded() else {
+        return;
+    };
     game.vm.vars.set(4, 1);
     game.vm.vars.set(5, 30);
     assert!(game.start_event(245));
@@ -368,10 +417,16 @@ fn deep_night_menu_forces_bedtime() {
         .iter()
         .map(|o| o.trim().to_owned())
         .collect();
-    assert_eq!(options, vec!["今天就这样睡吧"], "01:30 应只剩就寝项，实际 {options:?}");
+    assert_eq!(
+        options,
+        vec!["今天就这样睡吧"],
+        "01:30 应只剩就寝项，实际 {options:?}"
+    );
 
     for (hour, expect_full) in [(0, true), (3, true)] {
-        let Some(mut game) = open_loaded() else { return };
+        let Some(mut game) = open_loaded() else {
+            return;
+        };
         game.vm.vars.set(4, hour);
         game.vm.vars.set(5, 30);
         assert!(game.start_event(245));
@@ -389,7 +444,9 @@ fn deep_night_menu_forces_bedtime() {
 #[test]
 fn evening_bedtime_rolls_weekday_to_midnight() {
     let before_save = save_fingerprint();
-    let Some(mut game) = open_loaded() else { return };
+    let Some(mut game) = open_loaded() else {
+        return;
+    };
     let day_before = var(&game, 99);
     let weekday_before = var(&game, 6);
     assert_eq!((var(&game, 4), var(&game, 5)), (19, 30), "读档应为 19:30");
@@ -401,7 +458,11 @@ fn evening_bedtime_rolls_weekday_to_midnight() {
             break;
         }
     }
-    assert_eq!((var(&game, 4), var(&game, 5)), (0, 0), "傍晚就寝应快进到 00:00");
+    assert_eq!(
+        (var(&game, 4), var(&game, 5)),
+        (0, 0),
+        "傍晚就寝应快进到 00:00"
+    );
     assert_eq!(var(&game, 6), weekday_before + 1, "跨过午夜星期应 +1");
     assert_eq!(var(&game, 99), day_before, "就寝本身不增加同居天数");
     assert_eq!(game.stats.warnings, 0);
@@ -415,7 +476,9 @@ fn evening_bedtime_rolls_weekday_to_midnight() {
 #[test]
 fn late_night_bedtime_skips_to_next_evening() {
     let before_save = save_fingerprint();
-    let Some(mut game) = open_loaded() else { return };
+    let Some(mut game) = open_loaded() else {
+        return;
+    };
     let day_before = var(&game, 99);
     game.vm.vars.set(4, 4);
     game.vm.vars.set(5, 30);
@@ -439,7 +502,11 @@ fn late_night_bedtime_skips_to_next_evening() {
         options.iter().any(|o| o.contains("去茶叶店")),
         "深夜超时应落到次日购物场景，实际 {options:?}"
     );
-    assert_eq!((var(&game, 4), var(&game, 5)), (19, 0), "04:30 就寝应跳过整日到次日 19:00");
+    assert_eq!(
+        (var(&game, 4), var(&game, 5)),
+        (19, 0),
+        "04:30 就寝应跳过整日到次日 19:00"
+    );
     assert_eq!(var(&game, 99), day_before + 1, "跨日后同居天数应 +1");
     assert_eq!(game.stats.warnings, 0);
     assert_save_unchanged(&before_save);
@@ -452,7 +519,10 @@ fn late_night_bedtime_skips_to_next_evening() {
 // ---------------------------------------------------------------------------
 
 fn arg(cmd: &wolf_format::command::Command, index: usize) -> i32 {
-    let bytes = cmd.params.get(index * 4..index * 4 + 4).unwrap_or(&[0, 0, 0, 0]);
+    let bytes = cmd
+        .params
+        .get(index * 4..index * 4 + 4)
+        .unwrap_or(&[0, 0, 0, 0]);
     i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
 }
 
@@ -465,7 +535,9 @@ fn as_var(raw: i32) -> Option<u32> {
 
 /// 取某条 111 条件分支的所有 (变量, 右值, 运算符)。
 fn condition_triples(event: &CommonEvent, pc: usize) -> Vec<(u32, i32, i32)> {
-    let Some(Slot::Command(cmd)) = event.commands.get(pc) else { return Vec::new() };
+    let Some(Slot::Command(cmd)) = event.commands.get(pc) else {
+        return Vec::new();
+    };
     if cmd.opcode != 111 {
         return Vec::new();
     }
@@ -499,7 +571,9 @@ fn op150_file(event: &CommonEvent, pc: usize) -> String {
 }
 
 fn writes_var(event: &CommonEvent, pc: usize) -> Option<(u32, i32)> {
-    let Some(Slot::Command(cmd)) = event.commands.get(pc) else { return None };
+    let Some(Slot::Command(cmd)) = event.commands.get(pc) else {
+        return None;
+    };
     if cmd.opcode != 121 {
         return None;
     }
@@ -544,21 +618,21 @@ fn ending_thresholds_are_wired_in_scripts() {
     let ev258 = data.event(258).expect("CE258 晩ごはん処理应存在");
     let pc954 = condition_triples(ev258, 954);
     assert!(
-        pc954.iter().any(|&(v, rhs, op)| v == 201 && rhs == 0 && op == 2),
+        pc954
+            .iter()
+            .any(|&(v, rhs, op)| v == 201 && rhs == 0 && op == 2),
         "CE258 pc954 应为 v201==0，实际 {pc954:?}"
     );
     let pc956 = condition_triples(ev258, 956);
     assert!(
-        pc956.iter().any(|&(v, rhs, op)| v == 99 && rhs == 100 && op == 1),
+        pc956
+            .iter()
+            .any(|&(v, rhs, op)| v == 99 && rhs == 100 && op == 1),
         "CE258 pc956 应为 v99>=100，实际 {pc956:?}"
     );
-    let write_v201 = (995..=1010).find_map(|pc| {
-        writes_var(ev258, pc).filter(|&(v, value)| v == 201 && value == 1)
-    });
-    assert!(
-        write_v201.is_some(),
-        "CE258 应在 100 日结局后写 v201=1"
-    );
+    let write_v201 = (995..=1010)
+        .find_map(|pc| writes_var(ev258, pc).filter(|&(v, value)| v == 201 && value == 1));
+    assert!(write_v201.is_some(), "CE258 应在 100 日结局后写 v201=1");
 
     // 相册：CE303 读结局标记 v200/v202/v201/v203。
     let ev303 = data.event(303).expect("CE303 アルバム画面呼び出し应存在");

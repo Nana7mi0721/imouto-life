@@ -41,7 +41,9 @@ fn data_root() -> PathBuf {
 }
 
 fn save_file(slot: u32) -> PathBuf {
-    data_root().join("Save").join(format!("SaveData{slot:02}.sav"))
+    data_root()
+        .join("Save")
+        .join(format!("SaveData{slot:02}.sav"))
 }
 
 fn out_dir() -> PathBuf {
@@ -203,7 +205,8 @@ fn a_second_load_and_save_of_the_written_file_is_stable() {
         game.load_save(&first_path).expect("the written save loads");
         let _ = std::fs::remove_file(&first_path);
         let _ = std::fs::remove_file(&second_path);
-        game.save_to(&second_path).expect("the second save_to writes");
+        game.save_to(&second_path)
+            .expect("the second save_to writes");
         let second = std::fs::read(&second_path).expect("the second save is readable");
         let _ = std::fs::remove_file(&second_path);
         assert_eq!(
@@ -214,11 +217,7 @@ fn a_second_load_and_save_of_the_written_file_is_stable() {
         assert!(
             first == second,
             "SaveData{slot:02}: load -> save is not idempotent ({} byte(s) differ)",
-            first
-                .iter()
-                .zip(&second)
-                .filter(|(a, b)| a != b)
-                .count()
+            first.iter().zip(&second).filter(|(a, b)| a != b).count()
         );
     }
 }

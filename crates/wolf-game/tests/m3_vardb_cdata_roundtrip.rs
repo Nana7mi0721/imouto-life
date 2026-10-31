@@ -41,7 +41,9 @@ fn out_dir() -> PathBuf {
 }
 
 fn save_file(slot: u32) -> PathBuf {
-    data_root().join("Save").join(format!("SaveData{slot:02}.sav"))
+    data_root()
+        .join("Save")
+        .join(format!("SaveData{slot:02}.sav"))
 }
 
 fn open_new() -> Option<Game> {
@@ -119,9 +121,9 @@ fn live_cells(game: &Game) -> Vec<Cell> {
         };
         for row in 0..row_count {
             for col in 0..field_count {
-                let number = game
-                    .databases
-                    .num(Container::CData, ty as i32, row as i32, col as i32);
+                let number =
+                    game.databases
+                        .num(Container::CData, ty as i32, row as i32, col as i32);
                 let text = game
                     .databases
                     .text(Container::CData, ty as i32, row as i32, col as i32);
@@ -223,7 +225,10 @@ fn new_game_save_template_is_seeded_from_the_static_cdata() {
             return;
         }
     };
-    assert_eq!(system.vardb.type_count, 0, "System.sav ships an empty template");
+    assert_eq!(
+        system.vardb.type_count, 0,
+        "System.sav ships an empty template"
+    );
     assert!(system.vardb.types.is_empty());
 
     let Some(mut game) = open_new() else {
@@ -234,16 +239,20 @@ fn new_game_save_template_is_seeded_from_the_static_cdata() {
         .databases
         .num(Container::CData, ty as i32, row as i32, col as i32)
         .expect("CData type6 row0 col1 is numeric");
-    game.databases
-        .set_num(Container::CData, ty as i32, row as i32, col as i32, original + 1);
+    game.databases.set_num(
+        Container::CData,
+        ty as i32,
+        row as i32,
+        col as i32,
+        original + 1,
+    );
     let cells = live_cells(&game);
     assert_eq!(cells.len(), EXPECTED_CDATA_CELLS);
 
     // The template is seeded as soon as the game is constructed, before any save.
     let template = game.base_save.as_ref().expect("System.sav template");
     assert_eq!(
-        template.vardb.type_count as usize,
-        EXPECTED_VARDB_TYPES,
+        template.vardb.type_count as usize, EXPECTED_VARDB_TYPES,
         "the seeded template has all 30 CDataBase types"
     );
     assert_eq!(
@@ -269,8 +278,7 @@ fn new_game_save_template_is_seeded_from_the_static_cdata() {
         "seeding the schema means no cell is refused"
     );
     assert_eq!(
-        stored.vardb.type_count as usize,
-        EXPECTED_VARDB_TYPES,
+        stored.vardb.type_count as usize, EXPECTED_VARDB_TYPES,
         "the written save carries the full schema"
     );
     assert_eq!(
@@ -286,7 +294,11 @@ fn new_game_save_template_is_seeded_from_the_static_cdata() {
         .databases
         .num(Container::CData, ty as i32, row as i32, col as i32)
         .expect("CData type6 row0 col1 still numeric");
-    assert_eq!(after, original + 1, "the runtime edit must survive the round trip");
+    assert_eq!(
+        after,
+        original + 1,
+        "the runtime edit must survive the round trip"
+    );
 
     let _ = std::fs::remove_file(&path);
 }
@@ -303,8 +315,13 @@ fn new_game_save_preserves_every_cdata_cell_and_runtime_edit() {
         .databases
         .num(Container::CData, ty as i32, row as i32, col as i32)
         .expect("CData type6 row0 col1 is numeric");
-    game.databases
-        .set_num(Container::CData, ty as i32, row as i32, col as i32, original + 1);
+    game.databases.set_num(
+        Container::CData,
+        ty as i32,
+        row as i32,
+        col as i32,
+        original + 1,
+    );
     let cells = live_cells(&game);
     assert_eq!(cells.len(), EXPECTED_CDATA_CELLS);
 
@@ -327,7 +344,11 @@ fn new_game_save_preserves_every_cdata_cell_and_runtime_edit() {
         .databases
         .num(Container::CData, ty as i32, row as i32, col as i32)
         .expect("CData type6 row0 col1 still numeric");
-    assert_eq!(after, original + 1, "the runtime edit must survive the round trip");
+    assert_eq!(
+        after,
+        original + 1,
+        "the runtime edit must survive the round trip"
+    );
 
     let _ = std::fs::remove_file(&path);
 }

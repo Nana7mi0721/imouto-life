@@ -569,8 +569,12 @@ impl Databases {
                             *row.numbers.get(*slot).unwrap_or(&0),
                         ),
                         FieldKind::Str(slot) => {
-                            let mut body =
-                                row.strings.get(*slot).cloned().unwrap_or_default().into_bytes();
+                            let mut body = row
+                                .strings
+                                .get(*slot)
+                                .cloned()
+                                .unwrap_or_default()
+                                .into_bytes();
                             // The game stores NUL-terminated MemData bodies.
                             body.push(0);
                             wolf_save::vardb::VariableValue::String(body)

@@ -77,12 +77,7 @@ fn press_ok(game: &mut Game) {
 }
 
 fn choose(game: &mut Game, needle: &str) -> String {
-    let options = game
-        .choices
-        .as_ref()
-        .expect("choices open")
-        .options
-        .clone();
+    let options = game.choices.as_ref().expect("choices open").options.clone();
     let index = options
         .iter()
         .position(|option| option.contains(needle))
@@ -105,7 +100,9 @@ fn drive_daytime(game: &mut Game) -> Vec<Vec<String>> {
                 let events = live_events(game);
                 if game.choices.is_none()
                     && var(game, 4) >= 18
-                    && !events.iter().any(|&e| e == 241 || e == 251 || e == 255 || e == 256)
+                    && !events
+                        .iter()
+                        .any(|&e| e == 241 || e == 251 || e == 255 || e == 256)
                 {
                     break;
                 }
@@ -159,7 +156,9 @@ fn open_and_cancel_night_menu(game: &mut Game) {
         .options
         .clone();
     assert!(
-        options.iter().any(|option| option.contains("今天就这样睡吧")),
+        options
+            .iter()
+            .any(|option| option.contains("今天就这样睡吧")),
         "夜菜单应含就寝项, got {options:?}"
     );
     press(game, key::CANCEL);
@@ -263,7 +262,11 @@ fn save_and_verify(source: &mut Game, path: &std::path::Path) {
     }
     for index in 302..337 {
         assert_eq!(source.vm.vars.get(index), 0, "source vars[{index}] 应为 0");
-        assert_eq!(loaded.vm.vars.get(index), 0, "loaded vars[{index}] 应为 0 (row-span 回归)");
+        assert_eq!(
+            loaded.vm.vars.get(index),
+            0,
+            "loaded vars[{index}] 应为 0 (row-span 回归)"
+        );
     }
     for index in [4usize, 5, 6, 7, 14, 20, 99] {
         assert_eq!(
@@ -272,8 +275,15 @@ fn save_and_verify(source: &mut Game, path: &std::path::Path) {
             "vars[{index}] 应跨存档一致"
         );
     }
-    assert_eq!(loaded.playtime_frames, source.playtime_frames, "playtime 应与保存时刻一致");
-    assert_eq!(screen_snapshot(&loaded), screen_snapshot(&source), "screen 图片几何应一致");
+    assert_eq!(
+        loaded.playtime_frames, source.playtime_frames,
+        "playtime 应与保存时刻一致"
+    );
+    assert_eq!(
+        screen_snapshot(&loaded),
+        screen_snapshot(&source),
+        "screen 图片几何应一致"
+    );
     let loaded_db = db_snapshot(&loaded);
     let source_db = db_snapshot(&source);
     // 已知引擎限制（已报 Lead）：Game::new 的 base_save 模板 vardb 与静态 CData 的
@@ -329,7 +339,11 @@ fn title_new_game_reaches_sample_map_a_and_records_initial_state() {
             .any(|line| line.contains("130 Teleport: MapData/SampleMapA.mps")),
         "新游戏应经 Map003 hook 进入 SampleMapA: {diagnostics:?}"
     );
-    assert!(game.screen.len() > 30, "SampleMapA 房间+HUD 应绘制, got {}", game.screen.len());
+    assert!(
+        game.screen.len() > 30,
+        "SampleMapA 房间+HUD 应绘制, got {}",
+        game.screen.len()
+    );
     assert_eq!(game.stats.warnings, 0, "新游戏路径应无 warning");
 
     // 初始节奏（与 m3_map_events / m6 实测一致）：第 1 天 周一 19:30。
@@ -337,7 +351,11 @@ fn title_new_game_reaches_sample_map_a_and_records_initial_state() {
     // 移植后具体数值会变（旧 xorshift 采样是 15466 / 2），因此只约束合理区间。
     assert_eq!(var(&game, 99), 1, "初始同居天数 v99=1");
     assert_eq!(var(&game, 6), 0, "初始星期 v6=0 (周一)");
-    assert_eq!((var(&game, 4), var(&game, 5)), (19, 30), "初始时钟应为 19:30");
+    assert_eq!(
+        (var(&game, 4), var(&game, 5)),
+        (19, 30),
+        "初始时钟应为 19:30"
+    );
     let money = var(&game, 7);
     assert!(
         (10_001..=20_000).contains(&money),
@@ -361,7 +379,11 @@ fn title_new_game_reaches_sample_map_a_and_records_initial_state() {
     game.auto_choice = false;
     open_and_cancel_night_menu(&mut game);
     assert_eq!(var(&game, 99), 1, "取消夜菜单后同居天数不变");
-    assert_eq!((var(&game, 4), var(&game, 5)), (19, 30), "取消夜菜单后时钟仍为 19:30");
+    assert_eq!(
+        (var(&game, 4), var(&game, 5)),
+        (19, 30),
+        "取消夜菜单后时钟仍为 19:30"
+    );
 }
 
 #[test]
@@ -372,7 +394,11 @@ fn three_days_round_trip_through_save_slots() {
     // 干净 Game::new 事件态初始化第 1 天 08:30 日菜单。
     assert!(game.start_event(251), "干净态 CE251 应初始化第 1 天");
     morning_wait(&mut game);
-    assert_eq!((var(&game, 99), var(&game, 6)), (1, 0), "起始应为第 1 天周一");
+    assert_eq!(
+        (var(&game, 99), var(&game, 6)),
+        (1, 0),
+        "起始应为第 1 天周一"
+    );
     assert_eq!((var(&game, 4), var(&game, 5)), (8, 30), "起始应为 08:30");
     assert_eq!(game.stats.warnings, 0);
 
@@ -398,10 +424,16 @@ fn three_days_round_trip_through_save_slots() {
         // 白天推进到 19:30。
         let menus = drive_daytime(&mut game);
         assert!(
-            menus.iter().any(|menu| menu.iter().any(|option| option.contains("一个人去"))),
+            menus
+                .iter()
+                .any(|menu| menu.iter().any(|option| option.contains("一个人去"))),
             "第 {day} 天白天应出现归宅菜单, menus={menus:?}"
         );
-        assert_eq!((var(&game, 4), var(&game, 5)), (19, 30), "第 {day} 天应推进到 19:30");
+        assert_eq!(
+            (var(&game, 4), var(&game, 5)),
+            (19, 30),
+            "第 {day} 天应推进到 19:30"
+        );
         assert!(game.choices.is_none(), "19:30 应无待选菜单");
 
         // 纯事件态的日循环按 docs/M2_SLICE.md 走 CE251 就寝推进到次日 08:30；
@@ -410,12 +442,19 @@ fn three_days_round_trip_through_save_slots() {
 
         assert_eq!(var(&game, 99), before_day + 1, "第 {day} 天后同居天数应 +1");
         assert_eq!(var(&game, 6), before_week + 1, "第 {day} 天后星期应 +1");
-        assert_eq!((var(&game, 4), var(&game, 5)), (8, 30), "第 {day} 天翌朝应为 08:30");
+        assert_eq!(
+            (var(&game, 4), var(&game, 5)),
+            (8, 30),
+            "第 {day} 天翌朝应为 08:30"
+        );
         assert_eq!(var(&game, 14), 4, "翌朝妹位置应重置为 4");
         assert!(
             game.choices
                 .as_ref()
-                .map(|choices| choices.options.iter().any(|option| option.contains("无所事事")))
+                .map(|choices| choices
+                    .options
+                    .iter()
+                    .any(|option| option.contains("无所事事")))
                 .unwrap_or(false),
             "翌朝应回到日菜单, got {:?}",
             game.choices.as_ref().map(|c| c.options.clone())
@@ -423,5 +462,9 @@ fn three_days_round_trip_through_save_slots() {
         assert_eq!(game.stats.warnings, 0, "第 {day} 天不应产生 warning");
     }
 
-    assert_eq!((var(&game, 99), var(&game, 6)), (3, 2), "连续 3 日后应为第 3 天周三");
+    assert_eq!(
+        (var(&game, 99), var(&game, 6)),
+        (3, 2),
+        "连续 3 日后应为第 3 天周三"
+    );
 }

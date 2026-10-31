@@ -24,8 +24,20 @@ use wolf_game::db::Container;
 use wolf_game::game::Game;
 use wolf_game::savegame;
 
-const WORKDAY_MENU: [&str; 5] = ["无所事事地度过 ", "在附近散步 ", "做家务 ", "偷内裤 ", "睡觉 "];
-const HOLIDAY_MENU: [&str; 5] = ["和妹妹一起玩 ", "做运动 ", "把积攒的家务做完 ", "努力打工 ", "睡觉 "];
+const WORKDAY_MENU: [&str; 5] = [
+    "无所事事地度过 ",
+    "在附近散步 ",
+    "做家务 ",
+    "偷内裤 ",
+    "睡觉 ",
+];
+const HOLIDAY_MENU: [&str; 5] = [
+    "和妹妹一起玩 ",
+    "做运动 ",
+    "把积攒的家务做完 ",
+    "努力打工 ",
+    "睡觉 ",
+];
 
 /// 数据根：默认 work/Data，可被 WOLF_DATA_ROOT 覆盖（相对路径按 crate 往上两级解析）。
 fn data_root() -> PathBuf {
@@ -58,7 +70,11 @@ fn normalized_game() -> Option<Game> {
     let mut game = open_game()?;
     let out_dir = data_root().parent()?.join("out");
     std::fs::create_dir_all(&out_dir).ok()?;
-    let tmp = out_dir.join(format!("m3_week7_normalize-{}-{}.sav", std::process::id(), scratch_seq()));
+    let tmp = out_dir.join(format!(
+        "m3_week7_normalize-{}-{}.sav",
+        std::process::id(),
+        scratch_seq()
+    ));
     game.save_to(&tmp).ok()?;
     game.load_save(&tmp).ok()?;
     let _ = std::fs::remove_file(&tmp);
@@ -108,7 +124,11 @@ fn choose(game: &mut Game, needle: &str) -> String {
 }
 
 fn menu_options(game: &Game) -> Vec<String> {
-    game.choices.as_ref().expect("a menu is open").options.clone()
+    game.choices
+        .as_ref()
+        .expect("a menu is open")
+        .options
+        .clone()
 }
 
 fn has_option(options: &[String], needle: &str) -> bool {
@@ -331,7 +351,10 @@ fn roundtrip_check(game: &mut Game, out: &std::path::Path, label: &str) {
     let _ = std::fs::remove_file(out);
 
     let vars_after: Vec<i32> = (0..span).map(|index| var(&reloaded, index)).collect();
-    assert_eq!(vars_after, vars_before, "{label}: 普通变量 0..{span} 必须逐项一致");
+    assert_eq!(
+        vars_after, vars_before,
+        "{label}: 普通变量 0..{span} 必须逐项一致"
+    );
     for index in span..337 {
         assert_eq!(
             var(&reloaded, index),
@@ -383,13 +406,20 @@ fn roundtrip_check(game: &mut Game, out: &std::path::Path, label: &str) {
         "{label}: 回落模板基线的数据库单元过多（{reverted} 个），超过本作已知的少量不可编码字段"
     );
 
-    assert_eq!(geometry(&reloaded), pics_before, "{label}: 画面几何逐图一致");
+    assert_eq!(
+        geometry(&reloaded),
+        pics_before,
+        "{label}: 画面几何逐图一致"
+    );
     assert_eq!(
         text_picture_count(&reloaded),
         text_pics_before,
         "{label}: 文本图数量一致"
     );
-    assert_eq!(reloaded.playtime_frames, playtime_before, "{label}: 游戏时长一致");
+    assert_eq!(
+        reloaded.playtime_frames, playtime_before,
+        "{label}: 游戏时长一致"
+    );
     assert_eq!(reloaded.stats.warnings, 0, "{label}: 读档后不应有 warning");
 }
 
@@ -424,7 +454,10 @@ fn seven_day_week_loop_advances_and_wraps() {
             );
             assert_eq!(
                 options,
-                WORKDAY_MENU.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+                WORKDAY_MENU
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect::<Vec<_>>(),
                 "工作日第 {day} 天应弹出 CE256 日菜单"
             );
         } else {
@@ -435,7 +468,10 @@ fn seven_day_week_loop_advances_and_wraps() {
             );
             assert_eq!(
                 options,
-                HOLIDAY_MENU.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+                HOLIDAY_MENU
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect::<Vec<_>>(),
                 "休日第 {day} 天应弹出 CE259 休日菜单"
             );
         }
@@ -448,11 +484,18 @@ fn seven_day_week_loop_advances_and_wraps() {
     // 第 8 天：周一（v6 6 -> 0），工作日起床 08:30、CE256 日菜单。
     assert_eq!(var(&game, 99), 8, "第 8 天应为同居第 8 天");
     assert_eq!(var(&game, 6), 0, "第 8 天星期应回卷到周一 (v6=0)");
-    assert_eq!((var(&game, 4), var(&game, 5)), (8, 30), "第 8 天应 08:30 起床");
+    assert_eq!(
+        (var(&game, 4), var(&game, 5)),
+        (8, 30),
+        "第 8 天应 08:30 起床"
+    );
     assert_eq!(var(&game, 14), 4, "第 8 天早晨妹位置应为 4");
     assert_eq!(
         menu_options(&game),
-        WORKDAY_MENU.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+        WORKDAY_MENU
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>(),
         "第 8 天应回到工作日 CE256 日菜单"
     );
     assert_eq!(game.stats.warnings, 0, "整周不应产生 warning");
@@ -485,7 +528,11 @@ fn cross_day_save_roundtrip_preserves_state() {
         .expect("data root has a parent")
         .join("out");
     std::fs::create_dir_all(&out_dir).expect("create work/out");
-    let out = out_dir.join(format!("m3_week7_roundtrip-{}-{}.sav", std::process::id(), scratch_seq()));
+    let out = out_dir.join(format!(
+        "m3_week7_roundtrip-{}-{}.sav",
+        std::process::id(),
+        scratch_seq()
+    ));
     let _ = std::fs::remove_file(&out);
 
     assert!(game.start_event(251), "应能启动就寝事件 CE251");

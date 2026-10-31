@@ -38,7 +38,9 @@ fn data_root() -> PathBuf {
 }
 
 fn save_file(slot: u32) -> PathBuf {
-    data_root().join("Save").join(format!("SaveData{slot:02}.sav"))
+    data_root()
+        .join("Save")
+        .join(format!("SaveData{slot:02}.sav"))
 }
 
 /// Loads one shipped save straight into the bedroom HUD state (no menu involvement).
@@ -138,10 +140,11 @@ fn save_dir_fingerprint() -> Vec<(String, u64)> {
     out
 }
 
-
 #[test]
 fn ce131_save_slot_grid_draws_and_cancels() {
-    let Some(mut game) = open_loaded(1) else { return; };
+    let Some(mut game) = open_loaded(1) else {
+        return;
+    };
     let before = save_dir_fingerprint();
 
     game.screen.clear();
@@ -177,7 +180,10 @@ fn ce131_save_slot_grid_draws_and_cancels() {
 
     // Each slot window plus its cursor layer is actually on screen.
     for slot in [12050, 12051, 12070, 12071, 12090, 12091, 12110, 12111] {
-        assert!(game.screen.get(slot).is_some(), "CE131 slot window {slot} missing");
+        assert!(
+            game.screen.get(slot).is_some(),
+            "CE131 slot window {slot} missing"
+        );
     }
 
     // The grid is not a choice / message prompt.
@@ -194,12 +200,18 @@ fn ce131_save_slot_grid_draws_and_cancels() {
         .collect();
     assert!(leftover.is_empty(), "CE131 grid not cleared: {leftover:?}");
     assert_eq!(game.stats.warnings, 0, "CE131 warnings after cancel");
-    assert_eq!(save_dir_fingerprint(), before, "CE131 must not write any save file");
+    assert_eq!(
+        save_dir_fingerprint(),
+        before,
+        "CE131 must not write any save file"
+    );
 }
 
 #[test]
 fn ce132_system_settings_draws_navigates_and_cancels() {
-    let Some(mut game) = open_loaded(1) else { return; };
+    let Some(mut game) = open_loaded(1) else {
+        return;
+    };
 
     game.screen.clear();
     game.messages.clear();
@@ -219,11 +231,26 @@ fn ce132_system_settings_draws_navigates_and_cancels() {
         .map(|slot| text_of(&game, slot))
         .collect::<Vec<_>>()
         .join("|");
-    for needle in ["ＢＧＭ音量", "ＳＥ音量", "キーリピート速度", "決定キー", "キャンセル"] {
-        assert!(labels.contains(needle), "CE132 label {needle} missing: {labels}");
+    for needle in [
+        "ＢＧＭ音量",
+        "ＳＥ音量",
+        "キーリピート速度",
+        "決定キー",
+        "キャンセル",
+    ] {
+        assert!(
+            labels.contains(needle),
+            "CE132 label {needle} missing: {labels}"
+        );
     }
-    assert!(text_of(&game, 12061).contains("リセット"), "CE132 reset button");
-    assert!(text_of(&game, 12062).contains("設定完了"), "CE132 apply button");
+    assert!(
+        text_of(&game, 12061).contains("リセット"),
+        "CE132 reset button"
+    );
+    assert!(
+        text_of(&game, 12062).contains("設定完了"),
+        "CE132 apply button"
+    );
     assert_eq!(game.stats.warnings, 0, "CE132 warnings while drawing");
 
     // Moving the highlight down swaps the help line under the list.
@@ -232,7 +259,10 @@ fn ce132_system_settings_draws_navigates_and_cancels() {
     press(&mut game, wolf_game::key::DOWN);
     assert!(running(&game, 132), "CE132 still open after pressing down");
     let help1 = text_of(&game, 12004);
-    assert_ne!(help1, help0, "CE132 help line should change when the cursor moves");
+    assert_ne!(
+        help1, help0,
+        "CE132 help line should change when the cursor moves"
+    );
     assert_eq!(game.stats.warnings, 0, "CE132 warnings after navigating");
 
     press(&mut game, wolf_game::key::CANCEL);
@@ -243,13 +273,18 @@ fn ce132_system_settings_draws_navigates_and_cancels() {
         .filter(|p| p.number >= 12000)
         .map(|p| p.number)
         .collect();
-    assert!(leftover.is_empty(), "CE132 screen not cleared: {leftover:?}");
+    assert!(
+        leftover.is_empty(),
+        "CE132 screen not cleared: {leftover:?}"
+    );
     assert_eq!(game.stats.warnings, 0, "CE132 warnings after cancel");
 }
 
 #[test]
 fn ce14_menu_dispatches_to_save_screen_and_cancels() {
-    let Some(mut game) = open_loaded(1) else { return; };
+    let Some(mut game) = open_loaded(1) else {
+        return;
+    };
     let before = save_dir_fingerprint();
 
     game.screen.clear();
@@ -266,7 +301,10 @@ fn ce14_menu_dispatches_to_save_screen_and_cancels() {
         text_of(&game, 12002)
     );
     assert!(running(&game, 14), "CE14 dispatcher itself is running");
-    assert!(running(&game, 131), "CE14 launched the save-field child CE131");
+    assert!(
+        running(&game, 131),
+        "CE14 launched the save-field child CE131"
+    );
     assert_eq!(game.stats.warnings, 0, "CE14 warnings while drawing");
 
     press(&mut game, wolf_game::key::CANCEL);
@@ -282,6 +320,9 @@ fn ce14_menu_dispatches_to_save_screen_and_cancels() {
         .collect();
     assert!(leftover.is_empty(), "CE14 screen not cleared: {leftover:?}");
     assert_eq!(game.stats.warnings, 0, "CE14 warnings after cancel");
-    assert_eq!(save_dir_fingerprint(), before, "CE14 must not write any save file");
+    assert_eq!(
+        save_dir_fingerprint(),
+        before,
+        "CE14 must not write any save file"
+    );
 }
-

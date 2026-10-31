@@ -41,7 +41,11 @@ fn push_all(
     strings: impl IntoIterator<Item = String>,
 ) {
     for text in strings {
-        out.push(Source { file: file.to_owned(), field: field.to_owned(), text });
+        out.push(Source {
+            file: file.to_owned(),
+            field: field.to_owned(),
+            text,
+        });
     }
 }
 
@@ -61,7 +65,12 @@ fn collect_common_events(root: &Path, out: &mut Vec<Source>) {
             "default_strings",
             event.arg_string_pages.iter().flatten().cloned(),
         );
-        push_all(out, &tag, "self_variable_names", event.self_variable_names.clone());
+        push_all(
+            out,
+            &tag,
+            "self_variable_names",
+            event.self_variable_names.clone(),
+        );
         push_all(out, &tag, "return_name", [event.return_name.clone()]);
         for slot in &event.commands {
             if let wolf_format::command::Slot::Command(cmd) = slot {
@@ -150,7 +159,11 @@ fn collect_maps(root: &Path, out: &mut Vec<Source>) {
     let mut maps: Vec<PathBuf> = std::fs::read_dir(&dir)
         .expect("read MapData")
         .filter_map(|e| e.ok().map(|e| e.path()))
-        .filter(|p| p.extension().map(|x| x.eq_ignore_ascii_case("mps")).unwrap_or(false))
+        .filter(|p| {
+            p.extension()
+                .map(|x| x.eq_ignore_ascii_case("mps"))
+                .unwrap_or(false)
+        })
         .collect();
     maps.sort();
     for map_path in &maps {
@@ -225,8 +238,7 @@ fn every_container_parses_without_replacement_characters() {
         }
     }
 
-    let files: std::collections::BTreeSet<&str> =
-        sources.iter().map(|s| s.file.as_str()).collect();
+    let files: std::collections::BTreeSet<&str> = sources.iter().map(|s| s.file.as_str()).collect();
     println!(
         "string audit: {} strings across {} files, U+FFFD={}, control={}, halfwidth+CJK={}, empty={}",
         sources.len(),
@@ -252,9 +264,7 @@ fn every_container_parses_without_replacement_characters() {
     let unexplained: Vec<&Source> = replacement
         .iter()
         .copied()
-        .filter(|s| {
-            !(s.file == "CE 257" && s.field == "command_string" && s.text.contains("红茶"))
-        })
+        .filter(|s| !(s.file == "CE 257" && s.field == "command_string" && s.text.contains("红茶")))
         .collect();
     assert!(
         unexplained.is_empty(),
@@ -288,7 +298,15 @@ fn known_chinese_strings_decode_stably() {
         .collect::<Vec<_>>()
         .join("\n");
 
-    for anchor in ["行动力", "持有金钱", "早上好", "网络商店", "安全套", "跳蛋", "春药"] {
+    for anchor in [
+        "行动力",
+        "持有金钱",
+        "早上好",
+        "网络商店",
+        "安全套",
+        "跳蛋",
+        "春药",
+    ] {
         if !corpus.contains(anchor) {
             if matches!(anchor, "行动力" | "持有金钱") {
                 panic!("expected core Chinese anchor {anchor:?} in decoded corpus");
@@ -330,7 +348,11 @@ const CE257_TEA: &[u8] =
 #[allow(invalid_from_utf8)]
 fn ce250_first_item_name_is_a_data_defect() {
     assert!(std::str::from_utf8(CE250_ITEM).is_err());
-    let a1_run = CE250_ITEM.iter().skip(4).take_while(|&&b| b == 0xA1).count();
+    let a1_run = CE250_ITEM
+        .iter()
+        .skip(4)
+        .take_while(|&&b| b == 0xA1)
+        .count();
     assert_eq!(a1_run, 7, "CE250 item has an odd 0xA1 run");
     assert_eq!(CE250_ITEM[4 + a1_run], 0x20);
     assert_eq!(CE250_ITEM.len(), 30);

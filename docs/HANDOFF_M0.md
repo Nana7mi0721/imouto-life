@@ -509,3 +509,48 @@ WOLF_DATA_ROOT="$PWD/work/Data" ./target/debug/wolf-cli.exe verify | tail -20
     Windows `PermissionDenied (os error 5)` 写 `target/test-scratch/m3_settings/System.sav`，
     单独重跑即通过，属 Defender/索引瞬时锁，非代码问题。
   * **当前进度**：M0–M4 主体完成；M4 剩余仅实机键位/设置/音量听感核验（需用户操作）。
+
+* 2026-10-31（本轮并行收口：文字排版完整缓存 + 夜间交互 e2e + SE stop 语义 + 最终验收基线）：
+  * **task-47 文字排版完整缓存（Lead 接管 m4-perf 未完成部分）**：
+    `crates/wolf-game/src/textpic.rs` 新增 `fingerprint(raw, ctx)`（静态 markup 直接
+    hash；变量/代码转义用零 advance 布局解析后 hash 每个 run；含调色板 RGB）；
+    `crates/wolf-game/src/game.rs` 新增 `TextQuadKey` / `CachedTextQuads` /
+    `TextQuadCache` / `TextCacheStats` 与 `Game::text_cache_stats()`，
+    `text_quads(&self)` 按 picture number 命中缓存、未命中走 `build_text_picture`，
+    每帧 retain 可见图片；`set_font_metrics` 递增 `text_font_gen` 失效。
+    `PictureVars` 的 `num/text` 原来用 magic base 直接问 `Variables`（后者按
+    bank-local slot 存储），fallback 永远读到 0，改为 `get(index)` / `get_str(index)`。
+    新增 `crates/wolf-game/tests/m4_text_cache.rs` 4 条：静态首帧 miss/次帧 hit 且 quad
+    相同、`\v[0]` 7→8 失效、只改 x 失效、安装 ttf 失效。视觉：夜菜单 capture 与
+    night_menu4 逐字节相同，状态面板 capture 与 m4_final_status_panel 逐字节相同。
+    性能：m3_perf_baseline B/D/E text 0.036/0.035/0.044（与 §9 的 0.032/0.032/0.041
+    同噪声带）；probe 读档卧室冷 0.1122 ms → 命中 0.0324 ms/call，菜单冷 0.1079 →
+    0.0373；命中虽免 shaping，但 fingerprint/克隆成本抵消，稳态无可测收益也无回归，
+    已在 docs/M4_PERF.md §7/§10 如实记录。
+  * **task-48 夜间交互 e2e（test-adapt）**：新增 `crates/wolf-game/tests/m4_night_gaps.rs`
+    3 条：v59 嫌恶感 `v64*100/18`（18/21/22/36→100/116/122/200）、射精感 v66 只在 120
+    强制触发并清 v125、真实点 picture 1108 (984,552) 进 ev21 是/否分支选“是”后
+    v100=0/v125=0 且 warnings=0。
+  * **task-49 SE Stop 语义（m3-fixer）**：普查 247 条 opcode 140 → 73 条无文件名状态
+    全是 stop-all（62 个 FreeAll 变体 + 11 个 DB-entry Play），无 per-voice 身份；
+    补 `crates/wolf-vm/src/exec.rs` 解码注释/单测、`wolf-audio` 文档与 3 条
+    `mixer_contract` 契约测试；docs/M4_PARITY §2 删除“单条 SE 无法单独停止”，遗留
+    11 条 sysdb DBEntry Play 需 SysDatabase SE id 解析（独立后续）。
+  * **task-50 最终验收（verify-baseline，预变更基线）**：HEAD 7204e56 上
+    cargo fmt --all --check OK；cargo test -q --workspace 86 binaries 789 passed/
+    0 failed/2 ignored；数据全量同；verify PASS 64/1 pending；verify --wolf
+    PASS 72/0。6 图 work/out/shots/m4_final_*.png：title 84.9%、bedroom 94.0%、
+    status 90.0%、night 90.4%、shop 28.7%、album 54.0%；contact 见
+    m4_final_contact.png，报告 m4_pre_baseline.md。
+  * **验收（本轮 Lead 已跑）**：cargo fmt --all；cargo test -q --workspace exit 0；
+    WOLF_DATA_ROOT=work/Data cargo test -q --workspace 全绿 0 failed；
+    verify PASS 64 check(s) / 1 SKIP（dxarchive.header）。
+  * **task-50 最终验收（源码冻结 + 本轮全部改动）**：cargo fmt --all --check EXIT 0；
+    cargo test -q --workspace = 88 test binaries，800 passed / 0 failed / 2 ignored；
+    WOLF_DATA_ROOT=work/Data 同（800/0/2）；verify PASS 64 matched / 1 pending；
+    verify --wolf PASS 72 matched / 0 pending，entries 1361、bytes_equal 1361/1361、
+    read_failures 0。相对预基线 789→800 passed、86→88 binaries（+11：m4_text_cache 4、
+    m4_night_gaps 3、mixer_contract +3、现有集成套件 +1）。6 图非黑：title 84.9%、
+    bedroom 94.0%、status 90.0%、night 90.4%、shop 28.7%、album 54.0%；contact 与
+    报告见 work/out/shots/m4_final_contact.png、m4_final_report.md。
+  * **状态**：按用户 m07177 要求，本轮四个子任务收口并提交后暂停推进重构，不再开新任务。

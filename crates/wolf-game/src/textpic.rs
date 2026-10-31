@@ -232,6 +232,57 @@ pub fn measure_with(text: &str, font_px: f32, advance: Advance<'_>) -> f32 {
         .sum()
 }
 
+/// A cheap fingerprint of everything about `raw` that its laid-out runs depend on.
+///
+/// `Game::text_quads` caches one `Vec<TextQuad>` per text picture and needs a key that
+/// changes whenever re-laying the picture would produce different quads. Position, anchor
+/// and alpha are folded in by the caller; this function covers the part that comes from
+/// the markup itself, including every variable, database cell and palette colour an escape
+/// reads. Two calls with the same resolved content return the same value; a variable that
+/// changes what the picture renders returns a different one, which invalidates the cache.
+///
+/// The value is only required to be stable within one process (the cache lives in memory),
+/// so [DefaultHasher](std::collections::hash_map::DefaultHasher) is enough.
+///
+/// A markup string with no variable or computed-code escape lays out the same for the same
+/// bytes, so the common static label hashes its raw text and skips the layout walk entirely.
+/// Dynamic markup is resolved through `ctx` with a zero advance (no glyph shaping) and the
+/// resolved text, per-run style and palette colour are hashed instead.
+#[must_use]
+pub fn fingerprint(raw: &str, ctx: &Ctx<'_>) -> u64 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut hasher = DefaultHasher::new();
+    ctx.default_font_px.to_bits().hash(&mut hasher);
+    let tokens = tokenize(raw);
+    let dynamic = tokens
+        .iter()
+        .any(|token| matches!(token, TextToken::Var(_) | TextToken::Code { .. }));
+    if !dynamic {
+        // The raw bytes (plus the default size above) are the whole input. Still fold in
+        // the palette so a `\c[n]` label follows a palette change.
+        raw.hash(&mut hasher);
+        for token in &tokens {
+            if let TextToken::Color(index) = token {
+                rgb(ctx, Some(*index as i32)).hash(&mut hasher);
+            }
+        }
+        return hasher.finish();
+    }
+    let zero = |_ch: char, _px: f32| 0.0_f32;
+    let runs = layout_with(raw, 0.0, 0.0, 0, ctx, &zero);
+    runs.len().hash(&mut hasher);
+    for run in &runs {
+        run.text.hash(&mut hasher);
+        run.font_px.to_bits().hash(&mut hasher);
+        run.colour.hash(&mut hasher);
+        run.outline.hash(&mut hasher);
+        run.align_right.hash(&mut hasher);
+        rgb(ctx, run.colour).hash(&mut hasher);
+    }
+    hasher.finish()
+}
+
 /// Size of the block `raw` would occupy, in pixels.
 ///
 /// The picture layer needs this for text pictures: their box is not given by an asset

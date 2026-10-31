@@ -264,12 +264,15 @@ impl Engine {
     /// * BGM Play  -> `play_bgm_with_fade(file, looping = true, frames)`
     /// * BGM Stop  -> `stop_bgm(frames)` (fade-out length in game frames)
     /// * SE  Play  -> `play_se_with_delay(file, frames)` (concurrent; frames = start delay)
-    /// * SE  Stop  -> `stop_all_se()`
+    /// * SE  Stop  -> `stop_all_se()` (stop-all by design, see below)
     ///
-    /// `SoundCmd.frames` (opcode 140 intArgs[1], the "fade time / delay" slot) is now honoured
-    /// on Play as well as Stop: a BGM Play fades in linearly over that many game frames and an
-    /// SE Play stays silent for that many game frames first. `frames == 0` reproduces the old
-    /// immediate-start behaviour.
+    /// `SoundCmd.frames` (opcode 140 intArgs[1], the "fade time / delay" slot) is honoured
+    /// on Play as well as Stop: a BGM Play fades in linearly over that many game frames, an
+    /// SE Play stays silent for that many game frames first, and a BGM Stop fades out over
+    /// them. `frames == 0` reproduces the old immediate-start behaviour. An SE Stop ignores
+    /// `frames`: retail encodes opcode 140 stops as `SoundFreeAll` / `SoundFreeAllVariable`,
+    /// which carry no file name or voice id (all 73 stops in the shipped data have empty
+    /// string lists), so a stop clears every concurrent SE on the channel.
     pub fn apply_sound_cmd(&mut self, cmd: &SoundCmd) {
         let volume = (cmd.volume.clamp(0, 100) as f32) / 100.0;
         let frames = cmd.frames.max(0) as u32;

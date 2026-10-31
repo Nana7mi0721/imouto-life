@@ -261,7 +261,10 @@ impl Mixer {
         }
     }
 
-    /// Immediately stop all SE voices.
+    /// Immediately stop every SE voice.
+    ///
+    /// Retail opcode 140 SE stops decode to `State::FreeAll` with no file name or voice
+    /// id, so they clear the whole SE bus; there is no per-file stop in the data to model.
     pub fn stop_all_se(&mut self) {
         self.ses.clear();
     }

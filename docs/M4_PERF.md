@@ -185,12 +185,13 @@ WOLF_DATA_ROOT=work/Data cargo test -q -p wolf-game --test m3_perf_baseline -- -
      准备里最大的一项。代价是约 1 MB 内存（27,648 quad × ~36 B）。风险低。
 
 3. **缓存文字排版结果**
-   - 现状：第一步（去掉 `layout` 之后重复 `measure` 的那一趟 shaping）已落地，
-     见 §9；剩下的是按图片缓存整个 `Vec<TextQuad>`。
-   - 完整做法：按图片缓存 `Vec<TextQuad>`，键为 text / 位置 / anchor / alpha / 字体
-     + 变量代次。
-   - 预期：宽度复用约省 3–10%（见 §9），完整缓存再省剩余部分。风险中：WOLF 文字
-     可引用变量，缓存必须随变量变化失效。
+   - 已由 task-47 落地，见 §10：按图片缓存整个 `Vec<TextQuad>`，键覆盖解析后的
+     markup / 位置 / anchor / alpha / 字体代次，变量、数据库单元格与调色板变化都会
+     失效。
+   - 实测：命中路径不再做 glyph shaping，但当前每个场景只有 10–14 个 quad、34 个
+     文字图片，fingerprint 与每帧克隆 `Vec` 的成本把收益抵消；稳态 ms/call 与
+     §9 的宽度复用持平（见 §10）。完整缓存保留在代码里，语义完整（密集文字页才会
+     显现收益），不构成回归。
 
 被否掉的方向：`auto_events.sync`、`Screen::tick/advance` 都是亚微秒级，优化它们
 不会改善玩家体验；VM 指令派发在 E 的 380 指令/帧里也不是主因（见 6.1）。
@@ -233,3 +234,51 @@ advance；`Game::text_quads` 直接用 `run.width + run.font_px`，不再对同�
   （约 11%），D 0.033 → **0.032**，E 0.041 → **0.041**（持平）。
 - 仍保留的两项：每个 run 的 `layout` shaping 本身、以及每帧为每个文字图片重建
   `Vec<TextQuad>`；完整缓存仍属候选 3 的未做部分。
+
+## 10. 文字排版完整缓存（task-47，2026-10-31）
+
+代码：`crates/wolf-game/src/textpic.rs` 的 `fingerprint(raw, ctx)`；
+`crates/wolf-game/src/game.rs` 的 `TextQuadKey` / `CachedTextQuads` /
+`TextQuadCache`、`build_text_picture` 与 `Game::text_cache_stats()`。
+
+缓存单位是**每个图片编号**的最终 `Vec<TextQuad>`。`TextQuadKey` 覆盖：
+
+- `fingerprint`：静态 markup 直接 hash 原始字节 + default font px + 每个 `\c[n]`
+  的调色板 RGB；含 `\v` / 代码转义时用零 advance 的 `layout_with` 解析后，hash
+  每个 run 的文本、字号、颜色索引、outline、右对齐标志与调色板 RGB。变量、数据库
+  单元格或调色板一变，key 就变。
+- `x_bits` / `y_bits`：`picture.x/y + effect_offset()` 再除 `ui_scale_for`
+  （CE95 的十分之一格缩放也在内）。
+- `anchor`、`alpha_bits`（`picture.alpha()`，含淡入与 290 效果）、`font_gen`
+  （`set_font_metrics` 每次成功/失败安装都会 `wrapping_add(1)`）。
+
+每帧结束时 `retain` 只保留本帧可见的图片编号，离屏图片的缓存立即释放。
+缓存挂在 `RefCell` 后，`text_quads(&self)` 的签名和所有只读调用点不变。
+
+顺带修正：`PictureVars` 的 `num`/`text` 原来用 `VAR_BASE + index` / `STR_BASE +
+index` 直接问 `Variables`，但 `Variables` 按 bank-local slot 存储（VM 在更上层解码
+magic 地址），这条 fallback 永远读到 0。改成 `self.vars.get(index)` /
+`get_str(index)`。正常 `150` 的文本在 VM 里已 `expand`，所以不影响已渲染画面；
+它只影响“展开器没解掉、留给 host 兜底”的 `\v` / `\s`。新增集成测试
+`crates/wolf-game/tests/m4_text_cache.rs`（4 个）：
+
+- `a_static_text_picture_is_laid_out_once`：首帧 1 miss，第二帧 1 hit，quad 列表相同。
+- `a_variable_text_change_invalidates_the_cache`：`\v[0]` 从 7 改 8，quad 文本从
+  “7”变“8”，miss 递增；再一帧命中。
+- `moving_a_picture_rebuilds_its_quads`：只改 x，quad rect 跟着变，miss 递增。
+- `installing_font_metrics_invalidates_cached_layouts`：安装数据集内任一 `.ttf` 后
+  下一次必 miss。
+
+实测（同机、GPU0 仍有训练负载；`m3_perf_baseline` 每个场景是全新 `Game`，其 10 次
+`text_quads` 平均含 1 次冷启动）：B 0.036、D 0.035、E 0.044 ms/call，与 §9 的
+0.032/0.032/0.041 在噪声范围内。单独 probe（读档卧室 34 个非空文字图片）：
+
+- B：首帧冷 `text_quads` **0.1122 ms**，之后 1000 次命中 **0.0324 ms/call**
+  （`TextCacheStats` 34000 hits / 34 misses）。
+- D：首帧冷 **0.1079 ms**，之后命中 **0.0373 ms/call**。
+
+结论：命中路径确实不再做 glyph shaping，但本作每帧只有 10–14 个 text quad，
+fingerprint、`HashMap` 查找与每帧克隆 `Vec<TextQuad>` 的成本与之相当，所以稳态
+没有可测收益，也没有回归。保留完整缓存是为了语义完整、并在文字图片更密集的页面
+上避免 shaping；如果后续要在这条路上继续，先消除 `fingerprint` 的重复 tokenize
+（例如按 picture.text 缓存静态判定），或把返回类型改成借用切片，才可能体现收益。

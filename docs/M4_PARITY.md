@@ -20,10 +20,21 @@ M4 的目标：让 Rust 重写在**玩家可感知层面**与零售 2.03 等价�
 
 ## 2. 音频
 
-- 引擎/混音器已完成并有 15 条离线契约测试（音量、循环、淡出、SE 混音、重采样、null）。
+- 引擎/混音器已完成，离线契约测试覆盖音量、循环、淡出、SE 混音、重采样、null 与
+  SE stop-all（`mixer_contract` 18 条 + `m4_soundcmd` 11 条 + 单元测试）。
 - `SoundCmd.frames` 的 BGM 淡入 / SE 延迟语义已实现（task-45，`m4_soundcmd` 契约测试）。
-- 待办：单条 SE 仍无法单独停止；play 路径实机试听；BGM/SE 音量设置项与界面排布已完成，
-  实机听感与键位重绑定仍需用户截图/操作核验。
+- opcode 140 的 SE 停止在零售数据里是 `SoundFreeAll`/`SoundFreeAllVariable`（参考解码器
+  `State::FreeAll`），不携带文件名或 voice id；普查 `BasicData/CommonEvent.dat` +
+  `MapData/*.mps` 共 247 条 opcode 140，其中 73 条无文件名状态（62 条真正 FreeAll 变体：
+  60 个 0xFF 哨兵 + 2 个变量形态；11 条 DB-entry 播放），字符串表全为空。故 SE Stop 的
+  零售语义就是清空整个 SE 总线（stop-all），Rust 端 `stop_all_se()` 正确，无需也不应实现
+  per-voice stop；`mixer_contract` 已加「多条并发 SE 一次停止全清空、BGM 不受影响」契约
+  测试。
+- 待办：play 路径实机试听；BGM/SE 音量设置项与界面排布已完成，实机听感与键位重绑定仍需
+  用户截图/操作核验。
+- 遗留（非 M4 阻塞）：少量 sound-type=0 的 DB-entry SE 播放（如 CE249 pc258/pc280、
+  SampleMapA ev15 的 `ints=[544,...]`）当前被播放判别落入 Stop 分支，需 SysDatabase SE
+  id 解析，属独立后续。
 - 本作 BGM 69.2 MB / SE 10.6 MB，全部在 work/Data，无需再解包。
 
 ## 3. 存档互通与格式保真

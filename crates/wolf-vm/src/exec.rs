@@ -294,8 +294,9 @@ pub struct SoundCmd {
     /// Volume from intArgs[4], 0..=100 in retail data (the editor also stores 200 for a
     /// few loud SE; the mixer clamps at full scale).
     pub volume: i32,
-    /// intArgs[1]: fade-in length for BGM, start delay for SE, or fade-out length for a
-    /// stop. The mixer currently consumes it only on stop.
+    /// intArgs[1], the shared "fade time / delay" slot: fade-in length for a BGM play,
+    /// start delay for an SE play, or fade-out length for a BGM stop. All of these are
+    /// honoured by the mixer via `AudioEngine::apply_sound_cmd`; 0 means immediate.
     pub frames: i32,
 }
 
@@ -1900,27 +1901,42 @@ fn execute(
                 Some(Signal::Blocked)
             }
             140 => {
-                // Raw layout (wolfrpg-map-parser 0.4.1 sound_command):
-                //   [0] = options/system-db/type word
+                // Raw layout (wolfrpg-map-parser sound_command). The first word is
+                //   options (1 byte) | system-db entry (u16, LE) | sound-type (1 byte):
+                //   options high nibble = operation (0 BGM, 1 BGS, 2 SE),
+                //   options low  nibble = process type (0 playback, 1 preload, 3 free),
+                //   sound-type = 0 DB entry, 1 variable, 2 file name, 0xFF stop sentinel.
                 //   [1] = fade time (BGM/BGS) or delay (SE)
                 //   [2] = variable, [3] = start time
                 //   [4] = volume, [5] = tempo, [6] = loop point (BGM/BGS only)
                 // Old code mistook [1] for the volume, which silenced every track whose
                 // fade time was 0 and rendered 10 as 10%. The retail data's [4] values
                 // are the sane 0..100 (200 for the loud SE), so read [4] here.
+                //
+                // Play vs stop: the parser models a stop as `State::FreeAll`
+                // (`SoundFreeAll` / `SoundFreeAllVariable`), which carries no file name
+                // or voice id. A census of all 247 opcode-140 commands in
+                // BasicData/CommonEvent.dat + MapData/*.mps found 73 commands with no
+                // file-name state (62 genuine FreeAll variants: 60 0xFF sentinels plus 2
+                // variable forms; 11 DB-entry plays). Every one has `strings == []`; the
+                // 174 commands carrying a file are all plays (sound-type == file name).
+                // So stop means "clear the whole channel", and bit 25 (sound-type's
+                // file-name bit) is a faithful play discriminator for every command this
+                // title ships. The 11 DB-entry plays land in the Stop arm; resolving
+                // system-db SE ids is a separate follow-up, not a per-voice stop.
                 let bits = arg(cmd, 0);
+                // options high nibble 2 = SE; BGS (1) shares the BGM bus in this mixer.
                 let channel = if bits & 0x20 != 0 {
                     SoundChannel::Se
                 } else {
                     SoundChannel::Bgm
                 };
-                let playing = bits >= 0 && bits & 0x0200_0000 != 0;
-                let (action, file, volume, frames) = if playing {
+                let is_play = bits >= 0 && bits & 0x0200_0000 != 0;
+                let (action, file, volume, frames) = if is_play {
                     let file = expand(cmd.strings.first().map_or("", String::as_str), inst, vars);
                     let volume = if argc(cmd) >= 6 { arg(cmd, 4) } else { 100 };
-                    // For BGM this is the fade-in length; SE treats the same slot as a
-                    // start delay. The mixer currently only uses frames when stopping,
-                    // but keeping it here preserves the field instead of dropping it.
+                    // Shared fade/delay slot: fade-in for BGM, start delay for SE. Both
+                    // are honoured by `AudioEngine::apply_sound_cmd`.
                     let frames = if argc(cmd) >= 6 {
                         arg(cmd, 1).max(0)
                     } else {
@@ -1928,6 +1944,8 @@ fn execute(
                     };
                     (SoundAction::Play, file, volume, frames)
                 } else {
+                    // Stop-all: retail FreeAll has no identity, so there is no file name
+                    // to read; `frames` is the BGM fade-out length (SE clears at once).
                     let frames = if argc(cmd) <= 5 { arg(cmd, 1) } else { 0 };
                     (SoundAction::Stop, String::new(), 0, frames)
                 };
@@ -3898,6 +3916,33 @@ mod tests {
         assert_eq!(host.sounds[0].action, SoundAction::Play);
         assert_eq!(host.sounds[0].volume, 70);
         assert_eq!(host.sounds[0].frames, 10);
+    }
+
+    #[test]
+    fn se_stop_clears_the_whole_channel_and_carries_no_file() {
+        let e = event(
+            1,
+            "sestop",
+            vec![
+                cmd(140, &[0x0200_0020, 0, 0, 0, 100, 100], &["SE/a"]),
+                cmd(140, &[0x0200_0020, 0, 0, 0, 100, 100], &["SE/b"]),
+                cmd(140, &[-224, 15], &[]),
+            ],
+        );
+        let mut vm = vm_with(vec![e]);
+        let mut host = Recorder::default();
+        vm.start_event(1).unwrap();
+        vm.step_frame(&mut host);
+        assert_eq!(host.sounds.len(), 3);
+        assert_eq!(host.sounds[0].action, SoundAction::Play);
+        assert_eq!(host.sounds[0].file, "SE/a");
+        assert_eq!(host.sounds[1].action, SoundAction::Play);
+        assert_eq!(host.sounds[1].file, "SE/b");
+        let stop = &host.sounds[2];
+        assert_eq!(stop.action, SoundAction::Stop);
+        assert_eq!(stop.channel, SoundChannel::Se);
+        assert!(stop.file.is_empty(), "a retail SE stop has no file name");
+        assert_eq!(stop.frames, 15);
     }
 
     #[test]

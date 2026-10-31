@@ -16,9 +16,10 @@
 //! * `Engine::apply_sound_cmd` accepts every BGM/SE Play/Stop shape without panicking and
 //!   keeps the documented state transitions.
 //!
-//! Residual gap pinned by omission: `SoundCmd.frames` is a fade-in for BGM and a start
-//! delay for SE in the retail engine, but this mixer consumes it only on Stop (see
-//! `apply_sound_cmd`'s doc comment); no test asserts the unimplemented half.
+//! `SoundCmd.frames` is a fade-in for BGM, a start delay for SE, and a fade-out for a BGM
+//! stop; all three are honoured now. A retail opcode 140 SE stop is `State::FreeAll` in the
+//! reference decoder — it carries no file name or voice id — so it clears the whole SE bus,
+//! which `se_stop_is_stop_all_and_clears_every_concurrent_voice` pins.
 
 use std::path::{Path, PathBuf};
 
@@ -425,6 +426,45 @@ fn sound_cmd_play_and_stop_shapes_are_safe() {
             );
         }
     }
+}
+
+#[test]
+fn se_stop_is_stop_all_and_clears_every_concurrent_voice() {
+    let mut engine = Engine::null_with(48_000, 2);
+    engine.play_se_audio(constant(0.2, 4_800, 48_000, 1), 1.0);
+    engine.play_se_audio(constant(0.3, 4_800, 48_000, 1), 1.0);
+    engine.play_se_audio_with_delay(constant(0.4, 4_800, 48_000, 1), 1.0, 30);
+    assert_eq!(engine.se_count(), 3, "three concurrent/pending SE voices");
+
+    // intArgs[1] is the BGM fade-out slot; an SE stop ignores it and clears at once.
+    engine.apply_sound_cmd(&cmd(SoundChannel::Se, SoundAction::Stop, "", 0, 12));
+    assert_eq!(engine.se_count(), 0, "SE Stop clears every SE voice");
+    let out = engine.render_offline(256);
+    assert!(out.iter().all(|s| s.abs() < 1e-9), "nothing left to render");
+}
+
+#[test]
+fn se_stop_leaves_the_bgm_voice_untouched() {
+    let mut engine = Engine::null_with(48_000, 2);
+    engine.play_bgm_audio(constant(0.25, 4_800, 48_000, 2), true, 1.0);
+    engine.play_se_audio(constant(0.5, 4_800, 48_000, 1), 1.0);
+    engine.play_se_audio(constant(0.5, 4_800, 48_000, 1), 1.0);
+    assert!(engine.bgm_playing());
+    assert_eq!(engine.se_count(), 2);
+
+    engine.apply_sound_cmd(&cmd(SoundChannel::Se, SoundAction::Stop, "", 0, 0));
+    assert_eq!(engine.se_count(), 0, "SE stop clears the SE bus");
+    assert!(engine.bgm_playing(), "SE stop must not touch BGM");
+    let out = engine.render_offline(256);
+    assert!(out.iter().any(|s| s.abs() > 1e-6), "BGM is still audible");
+}
+
+#[test]
+fn se_stop_on_an_empty_bus_is_a_silent_no_op() {
+    let mut engine = Engine::null_with(48_000, 2);
+    engine.apply_sound_cmd(&cmd(SoundChannel::Se, SoundAction::Stop, "", 0, 5));
+    assert_eq!(engine.se_count(), 0);
+    assert!(engine.render_offline(64).iter().all(|s| s.abs() < 1e-9));
 }
 
 // ---------------------------------------------------------------------------

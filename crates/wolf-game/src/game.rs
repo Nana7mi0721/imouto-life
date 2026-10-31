@@ -14,7 +14,8 @@
 //!   everything the VM produced during the frame is readable when it returns. That makes
 //!   a recorded session replayable, which is how the save-compat work will be verified.
 
-use std::collections::BTreeMap;
+use std::cell::RefCell;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 use std::path::{Path, PathBuf};
 
@@ -235,6 +236,54 @@ fn volume_word(value: i32) -> u32 {
         .unwrap_or(crate::settings::VOLUME_MAX)
 }
 
+/// One text picture's cache identity.
+///
+/// A cached layout is reused only while every input that shapes its quad list still
+/// matches: the resolved markup (via [`crate::textpic::fingerprint`]), the base position,
+/// the anchor, the alpha and the installed font generation. Position and alpha are kept as
+/// raw bits so the key stays `Copy + Eq` and comparing two frames is free.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct TextQuadKey {
+    fingerprint: u64,
+    x_bits: u32,
+    y_bits: u32,
+    anchor: u8,
+    alpha_bits: u32,
+    font_gen: u64,
+}
+
+/// A laid-out picture, tagged with the key it was built for.
+#[derive(Clone, Debug)]
+struct CachedTextQuads {
+    key: TextQuadKey,
+    quads: Vec<crate::atlas::TextQuad>,
+}
+
+/// Per-picture text layout cache for [`Game::text_quads`].
+///
+/// A visible text picture is re-laid every frame; the cache keeps the last `Vec<TextQuad>`
+/// per picture number and hands back a clone when nothing that affects it changed. Entries
+/// for pictures that left the screen are dropped at the end of each call. The memory this
+/// holds is one quad list per visible text picture (a few KB on the densest HUD), which is
+/// bounded by the picture layer and released as soon as those pictures disappear.
+#[derive(Default)]
+struct TextQuadCache {
+    pictures: HashMap<i32, CachedTextQuads>,
+    hits: u64,
+    misses: u64,
+}
+
+/// A snapshot of the text layout cache, for tests and diagnostics.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TextCacheStats {
+    /// Pictures served from the cache (their key was unchanged since the last frame).
+    pub hits: u64,
+    /// Pictures that had to be laid out from scratch.
+    pub misses: u64,
+    /// Pictures currently resident in the cache.
+    pub pictures: usize,
+}
+
 /// The running game.
 pub struct Game {
     /// The interpreter.
@@ -250,6 +299,12 @@ pub struct Game {
     /// Real glyph advances for text-picture anchors, when the host has loaded the game's
     /// font. `None` keeps the testable half-em fallback in [`crate::textpic`].
     pub font_metrics: Option<crate::fontmetrics::FontMetrics>,
+    /// Bumped whenever [`Self::set_font_metrics`] installs a font, so the text layout cache
+    /// knows a cached advance table is stale.
+    text_font_gen: u64,
+    /// Per-picture text layout cache for [`Self::text_quads`]. Interior mutability keeps
+    /// that method `&self`, which every caller and test already relies on.
+    text_cache: RefCell<TextQuadCache>,
     /// The current map's tile layers, drawn underneath every picture. WOLF draws the
     /// tile grid first and the picture layer over it; keeping the two separate here
     /// preserves that order and lets a map switch replace only the tile half.
@@ -389,6 +444,8 @@ impl Game {
             screen_tint: ScreenTint::new(),
             screen_transition: ScreenTransition::new(),
             font_metrics: None,
+            text_font_gen: 0,
+            text_cache: RefCell::new(TextQuadCache::default()),
             tilemap: None,
             tilesets,
             assets: Assets::new(&root),
@@ -628,6 +685,8 @@ impl Game {
     /// is not a usable font, in which case the half-em fallback stays in place.
     pub fn set_font_metrics(&mut self, bytes: Vec<u8>) -> bool {
         self.font_metrics = crate::fontmetrics::FontMetrics::load(bytes);
+        // Any change to the advance table invalidates every cached text layout.
+        self.text_font_gen = self.text_font_gen.wrapping_add(1);
         self.font_metrics.is_some()
     }
 
@@ -1171,7 +1230,12 @@ impl Game {
             colours: &colours,
             default_font_px: self.font_px(),
         };
+        // The cache lives behind a RefCell so this stays `&self`; every caller and test
+        // borrows the game immutably and must keep working.
+        let mut cache = self.text_cache.borrow_mut();
+        let font_gen = self.text_font_gen;
         let mut quads = Vec::new();
+        let mut seen: HashSet<i32> = HashSet::new();
         for picture in self.screen.iter() {
             if !picture.kind.is_text() || picture.hidden || picture.text.is_empty() {
                 continue;
@@ -1188,45 +1252,108 @@ impl Game {
             let ui = self.screen.ui_scale_for(picture.number);
             let x = (picture.x as f32 + dx) / ui;
             let y = (picture.y as f32 + dy) / ui;
-            let runs = if let Some(metrics) = &self.font_metrics {
-                let advance = |ch: char, px: f32| metrics.advance(ch, px);
-                crate::textpic::layout_with(&picture.text, x, y, picture.anchor, &ctx, &advance)
-            } else {
-                crate::textpic::layout(&picture.text, x, y, picture.anchor, &ctx)
-            };
             let alpha = picture.alpha();
-            for run in runs {
-                if run.text.is_empty() {
-                    continue;
-                }
-                // The balloon library keeps its controls parked far off screen;
-                // shaping and drawing them costs time and cannot reach a pixel.
-                if !crate::picture::on_screen([run.x, run.y, run.font_px, run.font_px * 2.0]) {
-                    continue;
-                }
-                // The box only has to be wide enough that the glyph pass never
-                // re-wraps what the layout already broke; one extra em of slack
-                // covers the shaped advance being a few percent off the half-em rule.
-                // The width comes from the same advances the layout used to place the
-                // run, so measuring it again here would only repeat that walk.
-                let width = run.width + run.font_px;
-                quads.push(crate::atlas::TextQuad {
-                    number: picture.number,
-                    text: run.text,
-                    rect: [
-                        run.x,
-                        run.y,
-                        width.max(1.0),
-                        run.font_px * crate::textpic::DEFAULT_LINE_PITCH_RATIO,
-                    ],
-                    alpha,
-                    font_px: run.font_px,
-                    colour: crate::textpic::rgb(&ctx, run.colour).unwrap_or([255, 255, 255]),
-                    outline: run.outline,
-                });
+            // The variable-derived text rides inside the fingerprint; the rest of the
+            // shape of the quad list comes from the base position, anchor, alpha and the
+            // font generation.
+            let key = TextQuadKey {
+                fingerprint: crate::textpic::fingerprint(&picture.text, &ctx),
+                x_bits: x.to_bits(),
+                y_bits: y.to_bits(),
+                anchor: picture.anchor,
+                alpha_bits: alpha.to_bits(),
+                font_gen,
+            };
+            seen.insert(picture.number);
+            // Clone the cached quads out before touching the counter, so the borrow of
+            // `cache.pictures` has ended by the time `cache.hits` is written.
+            let reused = cache
+                .pictures
+                .get(&picture.number)
+                .filter(|entry| entry.key == key)
+                .map(|entry| entry.quads.clone());
+            let cached = if let Some(cached) = reused {
+                cache.hits += 1;
+                cached
+            } else {
+                let built = self.build_text_picture(picture, x, y, alpha, &ctx);
+                cache.misses += 1;
+                cache.pictures.insert(
+                    picture.number,
+                    CachedTextQuads {
+                        key,
+                        quads: built.clone(),
+                    },
+                );
+                built
+            };
+            quads.extend(cached);
+        }
+        // Forget pictures that are no longer visible; their memory is not reused until
+        // they come back, and holding every number forever would leak across a long run.
+        cache.pictures.retain(|number, _| seen.contains(number));
+        quads
+    }
+
+    /// Lays one text picture out into its quad list. This is the old body of
+    /// [`Self::text_quads`], factored out so the cache can call it on a miss.
+    fn build_text_picture(
+        &self,
+        picture: &crate::picture::Picture,
+        x: f32,
+        y: f32,
+        alpha: f32,
+        ctx: &crate::textpic::Ctx<'_>,
+    ) -> Vec<crate::atlas::TextQuad> {
+        let runs = if let Some(metrics) = &self.font_metrics {
+            let advance = |ch: char, px: f32| metrics.advance(ch, px);
+            crate::textpic::layout_with(&picture.text, x, y, picture.anchor, ctx, &advance)
+        } else {
+            crate::textpic::layout(&picture.text, x, y, picture.anchor, ctx)
+        };
+        let mut quads = Vec::new();
+        for run in runs {
+            if run.text.is_empty() {
+                continue;
             }
+            // The balloon library keeps its controls parked far off screen;
+            // shaping and drawing them costs time and cannot reach a pixel.
+            if !crate::picture::on_screen([run.x, run.y, run.font_px, run.font_px * 2.0]) {
+                continue;
+            }
+            // The box only has to be wide enough that the glyph pass never re-wraps what
+            // the layout already broke; one extra em of slack covers the shaped advance
+            // being a few percent off the half-em rule. The width comes from the same
+            // advances the layout used to place the run, so measuring it again here would
+            // only repeat that walk.
+            let width = run.width + run.font_px;
+            quads.push(crate::atlas::TextQuad {
+                number: picture.number,
+                text: run.text,
+                rect: [
+                    run.x,
+                    run.y,
+                    width.max(1.0),
+                    run.font_px * crate::textpic::DEFAULT_LINE_PITCH_RATIO,
+                ],
+                alpha,
+                font_px: run.font_px,
+                colour: crate::textpic::rgb(ctx, run.colour).unwrap_or([255, 255, 255]),
+                outline: run.outline,
+            });
         }
         quads
+    }
+
+    /// How the text layout cache is doing: hit/miss counters and resident picture count.
+    #[must_use]
+    pub fn text_cache_stats(&self) -> TextCacheStats {
+        let cache = self.text_cache.borrow();
+        TextCacheStats {
+            hits: cache.hits,
+            misses: cache.misses,
+            pictures: cache.pictures.len(),
+        }
     }
 
     /// Loads a WOLF save file: normal variables, the choice anchor and the whole picture
@@ -1729,11 +1856,13 @@ struct PictureVars<'a> {
 
 impl crate::textpic::Vars for PictureVars<'_> {
     fn num(&self, index: usize) -> i32 {
-        self.vars.get(wolf_vm::magic::VAR_BASE as usize + index)
+        // `Variables` stores the ordinary banks by their bank-local slot; the VM
+        // decodes the magic addresses before it reaches this store.
+        self.vars.get(index)
     }
 
     fn text(&self, index: usize) -> String {
-        let raw = self.vars.get_str(wolf_vm::magic::STR_BASE as usize + index);
+        let raw = self.vars.get_str(index);
         if raw.is_empty() {
             self.num(index).to_string()
         } else {

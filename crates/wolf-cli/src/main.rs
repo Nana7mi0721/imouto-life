@@ -29,7 +29,7 @@ use wolf_game::{choice, Game};
 use wolf_render::{Renderer, SpriteInstance, TextItem, LOGICAL_H, LOGICAL_W};
 use wolf_vm::{
     ChoiceReply, DbOp, DbValue, Host, InstanceId, LogLevel, PictureCmd, PrecompileStats, Program,
-    ProgramSet, SoundCmd, StepReport, Vm,
+    ProgramSet, SoundCmd, StepReport, Vm, WolfRng,
 };
 
 /// One asserted number.
@@ -1547,6 +1547,23 @@ fn run_list(root: &Path, filter: Option<&str>) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+/// Installs the shipped `Game.dat` random table into a bare VM.
+///
+/// `Game::new` does this for capture/play (see docs/research/M7_PRNG.md); `run` and
+/// `run --map` build a `Vm` directly, and without this they would draw from the
+/// synthetic editor-style table instead of the retail stream. The two leading u32
+/// words are generator outputs, not seeds, so only the table itself reproduces the
+/// game's draws. Missing or malformed `Game.dat` leaves the VM's deterministic
+/// fallback in place.
+fn install_retail_rng(vm: &mut Vm, root: &Path, basic: &Path) {
+    let parsed = read(&basic.join("Game.dat"))
+        .or_else(|| read(&root.join("Game.dat")))
+        .and_then(|bytes| GameDat::parse(&bytes).ok());
+    if let Some(dat) = parsed {
+        vm.rng = WolfRng::from_game(dat.random_a, dat.random_b, dat.static_randoms.clone());
+    }
+}
+
 fn run_event(root: &Path, id: u32, frames: usize, trace: bool, answer: Option<usize>) -> ExitCode {
     println!("wolf-cli run --event {id} --frames {frames}");
     let basic = if root.join("BasicData").is_dir() {
@@ -1583,6 +1600,7 @@ fn run_event(root: &Path, id: u32, frames: usize, trace: bool, answer: Option<us
     println!();
 
     let mut vm = Vm::new(programs);
+    install_retail_rng(&mut vm, root, &basic);
     let mut host = TraceHost::new(trace, answer);
     if vm.start_event(id).is_none() {
         eprintln!("  ! cannot start event {id}");
@@ -2024,37 +2042,261 @@ fn game_dir() -> PathBuf {
     }
 }
 
-/// Finds a TTF to draw WOLF text with.
+/// Fonts this series ships next to the data, best first.
 ///
-/// Search order: `<root>/Fonts`, `<root>`, then `$WOLF_GAME_DIR`, then the documented
-/// Steam install path. A missing font is not fatal - the capture still renders the art
-/// and reports that text was skipped.
-/// Gives text-picture layout the real glyph advances from the same TTF the renderer
-/// shapes with. Without it anchors 1/3/4 drift by the half-em-vs-real difference.
-pub(crate) fn install_font_metrics(game: &mut Game, root: &Path) {
-    if let Some((_, bytes)) = find_font(root) {
-        game.set_font_metrics(bytes);
-    }
+/// This game's data root contains the Japanese face
+/// `07やさしさゴシックボールド.ttf` and the alternative
+/// `◆GenJyuuGothicX-P-Bold.ttf`; the sister game uses the ASCII spellings. They are the
+/// fallback when the system font `Game.dat` names is unavailable.
+const BUNDLED_FONT_NAMES: [&str; 6] = [
+    "07やさしさゴシックボールド.ttf",
+    "07yasashi.ttf",
+    "◆GenJyuuGothicX-P-Bold.ttf",
+    "GenJyuuGothicXPB.ttf",
+    "Lolita.ttf",
+    "MSGOTHIC.TTF",
+];
+
+/// Font files to try, in retail precedence order.
+///
+/// 1. The system font `Game.dat` names. WOLF 2.00 stores the UI family in the string
+///    table (`font_main`, `strings[3]`; this game: `Microsoft Yahei UI Bold`), and the
+///    Chinese patch renders through that family, not through the bundled Japanese face.
+/// 2. The bundled faces ([`BUNDLED_FONT_NAMES`]) under `<root>/Fonts`, `<root>`, then the
+///    install directory.
+/// 3. Any other `*.ttf/*.otf/*.ttc` those directories ship, sorted by path so the choice
+///    is deterministic.
+///
+/// Only paths that exist are returned; the caller reads bytes lazily and may fall through
+/// to the next entry if the renderer rejects one (e.g. a TTC the local fontdb cannot open).
+fn font_paths(root: &Path) -> Vec<PathBuf> {
+    font_paths_in(root, &game_dir())
 }
 
-fn find_font(root: &Path) -> Option<(PathBuf, Vec<u8>)> {
-    const NAMES: [&str; 4] = [
-        "Lolita.ttf",
-        "07yasashi.ttf",
-        "GenJyuuGothicXPB.ttf",
-        "MSGOTHIC.TTF",
-    ];
-    let mut bases: Vec<PathBuf> = vec![root.join("Fonts"), root.to_path_buf()];
-    bases.push(game_dir());
-    for base in bases {
-        for name in NAMES {
-            let candidate = base.join(name);
-            if let Ok(bytes) = std::fs::read(&candidate) {
-                return Some((candidate, bytes));
+/// [`font_paths`] with the install directory as an explicit parameter, so the search
+/// order is testable without touching `$WOLF_GAME_DIR`.
+fn font_paths_in(root: &Path, install: &Path) -> Vec<PathBuf> {
+    let mut out: Vec<PathBuf> = Vec::new();
+    {
+        let mut push = |path: PathBuf| {
+            if path.is_file() && !out.contains(&path) {
+                out.push(path);
+            }
+        };
+
+        // 1. The retail font family, main name first and the three secondary names after.
+        if let Some(dat) = read_game_dat(root) {
+            for family in std::iter::once(dat.font_main()).chain(dat.fonts_secondary()) {
+                for path in system_font_paths(family) {
+                    push(path);
+                }
+            }
+        }
+
+        // 2. The bundled faces in known-name order.
+        let bases = [
+            root.join("Fonts"),
+            root.to_path_buf(),
+            install.to_path_buf(),
+        ];
+        for base in &bases {
+            for name in BUNDLED_FONT_NAMES {
+                push(base.join(name));
+            }
+        }
+
+        // 3. Deterministic scan for a font under a name the lists do not know.
+        for base in &bases {
+            let Ok(entries) = std::fs::read_dir(base) else {
+                continue;
+            };
+            let mut fonts: Vec<PathBuf> = entries
+                .flatten()
+                .map(|entry| entry.path())
+                .filter(|path| path.is_file() && is_font(path))
+                .collect();
+            fonts.sort();
+            for path in fonts {
+                push(path);
             }
         }
     }
+    out
+}
+
+/// Reads and parses the game's `Game.dat`, whether the root is the install directory or
+/// the unpacked data directory. A missing or malformed file is not fatal.
+fn read_game_dat(root: &Path) -> Option<GameDat> {
+    let candidates = [
+        root.join("BasicData").join("Game.dat"),
+        root.join("Game.dat"),
+    ];
+    for path in candidates {
+        let Ok(bytes) = std::fs::read(&path) else {
+            continue;
+        };
+        if let Ok(dat) = GameDat::parse(&bytes) {
+            return Some(dat);
+        }
+    }
     None
+}
+
+/// Windows font directories, system first and per-user second.
+fn system_font_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    match std::env::var_os("WINDIR") {
+        Some(windir) => dirs.push(PathBuf::from(windir).join("Fonts")),
+        None => dirs.push(PathBuf::from("C:/Windows/Fonts")),
+    }
+    if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+        let user = PathBuf::from(local)
+            .join("Microsoft")
+            .join("Windows")
+            .join("Fonts");
+        if user.is_dir() {
+            dirs.push(user);
+        }
+    }
+    dirs
+}
+
+/// The first font candidate the text stack can actually open.
+///
+/// `play` uses this single-font entry point; `capture` walks [`font_paths`] itself so it
+/// can report every rejected candidate.
+pub(crate) fn find_font(root: &Path) -> Option<(PathBuf, Vec<u8>)> {
+    for path in font_paths(root) {
+        let Ok(bytes) = std::fs::read(&path) else {
+            continue;
+        };
+        if renderer_accepts_font(&bytes) {
+            return Some((path, bytes));
+        }
+    }
+    None
+}
+
+/// Whether the renderer's own font database can parse this file.
+///
+/// `missing_glyphs` returns an empty list in two situations: the font covers every
+/// character, or `fontdb` rejected the file. Feeding it a private-use and a noncharacter
+/// codepoint separates them: a font that parsed cannot draw those, so a non-empty list
+/// proves the file is usable. This mirrors the renderer's acceptance test without a GPU.
+fn renderer_accepts_font(bytes: &[u8]) -> bool {
+    !wolf_render::missing_glyphs(bytes, "\u{F0000}\u{10FFFD}", 20.0).is_empty()
+}
+
+/// Lower-cases a font family name and drops separators, so `Microsoft Yahei UI Bold`
+/// and `microsoft yahei ui bold` compare equal.
+fn normalise_family(name: &str) -> String {
+    name.chars()
+        .filter(|ch| ch.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+/// The Windows font files a `Game.dat` family name most likely lives in, best first.
+///
+/// Windows names fonts by family while the files on disk use unrelated short names
+/// (`Microsoft YaHei` is `msyh.ttc`), so the faces this series actually names are listed
+/// explicitly. An unlisted family is still resolved by [`family_matches_file`].
+fn system_font_files(family: &str) -> Vec<&'static str> {
+    match normalise_family(family).as_str() {
+        "microsoftyahei" | "microsoftyaheiui" => vec!["msyh.ttc", "msyhbd.ttc"],
+        "microsoftyaheibold" | "microsoftyaheiuibold" => vec!["msyhbd.ttc", "msyh.ttc"],
+        "msgothic" | "mspgothic" | "msgothicui" => vec!["msgothic.ttc"],
+        "msmincho" => vec!["msmincho.ttc"],
+        "yugothic" | "yugothicui" => vec!["YuGothR.ttc", "YuGothB.ttc"],
+        "yugothicbold" => vec!["YuGothB.ttc", "YuGothR.ttc"],
+        "meiryo" | "meiryoui" => vec!["meiryo.ttc", "meiryob.ttc"],
+        "meiryobold" => vec!["meiryob.ttc", "meiryo.ttc"],
+        "segoeui" => vec!["segoeui.ttf"],
+        "arial" => vec!["arial.ttf"],
+        "tahoma" => vec!["tahoma.ttf"],
+        "simsun" => vec!["simsun.ttc"],
+        "simhei" => vec!["simhei.ttf"],
+        _ => Vec::new(),
+    }
+}
+
+/// True when a font file's stem names the family, e.g. `arial.ttf` for `Arial`.
+fn family_matches_file(family_key: &str, path: &Path) -> bool {
+    let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
+        return false;
+    };
+    let stem = normalise_family(stem);
+    // Very short stems ("ms") would match everything; only trust four characters or more.
+    stem.len() >= 4 && (stem == family_key || family_key.contains(&stem))
+}
+
+/// The existing Windows font files for one family, in preference order.
+fn system_font_paths(family: &str) -> Vec<PathBuf> {
+    let family = family.trim();
+    if family.is_empty() {
+        return Vec::new();
+    }
+    let dirs = system_font_dirs();
+    let mut out: Vec<PathBuf> = Vec::new();
+    for file in system_font_files(family) {
+        for dir in &dirs {
+            let path = dir.join(file);
+            if path.is_file() && !out.contains(&path) {
+                out.push(path);
+            }
+        }
+    }
+    // Anything the table does not name: case-insensitive file-name match over the Fonts
+    // directories, so e.g. a family whose file is simply its own name still resolves.
+    let key = normalise_family(family);
+    if key.len() < 4 {
+        return out;
+    }
+    for dir in &dirs {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            continue;
+        };
+        let mut fonts: Vec<PathBuf> = entries
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|path| path.is_file() && is_font(path))
+            .collect();
+        fonts.sort();
+        for path in fonts {
+            if !out.contains(&path) && family_matches_file(&key, &path) {
+                out.push(path);
+            }
+        }
+    }
+    out
+}
+
+/// True for the font container extensions the renderer can parse.
+fn is_font(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            matches!(
+                extension.to_ascii_lowercase().as_str(),
+                "ttf" | "otf" | "ttc"
+            )
+        })
+}
+
+/// Gives text-picture layout the real glyph advances from the same font the renderer
+/// shapes with. Without it anchors 1/3/4 drift by the half-em-vs-real difference.
+///
+/// The retail-named system font is tried first; a font the metrics parser cannot read
+/// (for whatever reason the renderer might also reject) falls through to the next.
+pub(crate) fn install_font_metrics(game: &mut Game, root: &Path) {
+    for path in font_paths(root) {
+        let Ok(bytes) = std::fs::read(&path) else {
+            continue;
+        };
+        if game.set_font_metrics(bytes) {
+            break;
+        }
+    }
 }
 
 /// Builds a render instance from an atlas quad, carrying its alpha and its picture tone.
@@ -2299,14 +2541,31 @@ fn render_capture_frame(
         eprintln!("atlas upload failed: {err}");
         return false;
     }
-    // Text pictures need a font; the original game keeps its TTFs next to Game.exe, not
-    // inside the unpacked data root, so the lookup falls back to the install directory.
-    match find_font(root) {
-        Some((path, bytes)) => match renderer.set_font(&bytes) {
-            Ok(()) => println!("  font      : {}", path.display()),
-            Err(err) => eprintln!("  font rejected ({}): {err}", path.display()),
-        },
+    // Text pictures need a font. Prefer the system family `Game.dat` names (retail
+    // parity; the CN patch renders through Microsoft YaHei), then the bundled faces and
+    // the install directory. The renderer is the authority on whether a file is usable:
+    // a TTC the local fontdb rejects must not blank the text pass, so try the next
+    // candidate instead.
+    let mut chosen: Option<PathBuf> = None;
+    let mut rejected: Vec<(PathBuf, String)> = Vec::new();
+    for path in font_paths(root) {
+        let Ok(bytes) = std::fs::read(&path) else {
+            continue;
+        };
+        match renderer.set_font(&bytes) {
+            Ok(()) => {
+                chosen = Some(path);
+                break;
+            }
+            Err(err) => rejected.push((path, err.to_string())),
+        }
+    }
+    match chosen {
+        Some(path) => println!("  font      : {}", path.display()),
         None => println!("  font      : none found; text pictures will not draw"),
+    }
+    for (path, err) in rejected {
+        eprintln!("  font rejected ({}): {err}", path.display());
     }
 
     let instances: Vec<SpriteInstance> = sprites.iter().map(tint_instance).collect();
@@ -2823,6 +3082,15 @@ fn run_capture_map(
     // them before the map's own pages so HUD/UI scripts are live from frame 0.
     game.start_engine_events();
     game.start_pages(&map, None);
+    // A map photograph is the room, not a story. `start_pages` also starts the map's
+    // autorun pages, and SampleMapA event 0 is the new-game opening: its very first
+    // picture is `cg/blackscreen.jpg`, a purely black 1024x540 CG painted full-screen
+    // over the tile layer, so `capture --map SampleMapA --frames 30` came out black
+    // (measured 0.0% non-black at frames 1..9; `--frames 0`, before event 0 runs, is
+    // 100% non-black). The parallel pages are the ones that dress the room and keep its
+    // HUD alive, so keep those and retire the one-shot scripts. `--map-run <NAME>
+    // --event <ID>` is the path that plays a script page.
+    let stopped_autorun = stop_autorun_pages(&mut game);
     let peak = drive_capture_frames(&mut game, frames, answers);
 
     let CaptureFrame {
@@ -2852,6 +3120,9 @@ fn run_capture_map(
     );
     println!("  camera    : [0, 0] (Game tile layer, fixed origin)");
     println!("  frames    : {frames} (peak {peak} coroutine(s))");
+    println!(
+        "  autorun   : {stopped_autorun} one-shot script page(s) skipped (parallel pages kept)"
+    );
     {
         let rgb = game.screen_tint_rgb();
         println!(
@@ -2951,6 +3222,28 @@ fn run_capture_map(
         }
     }
     ExitCode::SUCCESS
+}
+
+/// Stops the one-shot autorun pages a `capture --map` run just started.
+///
+/// `MapRuntime::start_pending` records that a page already started during this
+/// activation and does not restart a non-looping page, so stopping the coroutine here
+/// retires the script for the rest of the capture. Parallel pages keep running and
+/// restart when their stream ends, which is what keeps the room's HUD alive.
+///
+/// Returns how many pages were retired, for the capture report.
+fn stop_autorun_pages(game: &mut Game) -> usize {
+    let mut stopped = 0;
+    for slot in game.runtime.slots() {
+        if slot.trigger != wolf_game::map_runtime::Trigger::Autorun {
+            continue;
+        }
+        if let Some(instance) = slot.instance() {
+            game.vm.stop_instance(instance);
+            stopped += 1;
+        }
+    }
+    stopped
 }
 
 /// Run one MAP event page through the interpreter.
@@ -3161,6 +3454,7 @@ fn run_map_event(
     println!();
 
     let mut vm = Vm::new(programs);
+    install_retail_rng(&mut vm, root, &basic);
     vm.hot_trace = hot;
     let mut host = TraceHost::new(trace, answer);
     if vm.start_program(Arc::new(program)).is_none() {
@@ -3266,7 +3560,10 @@ fn run_map_event(
 
 #[cfg(test)]
 mod tests {
-    use super::{key_bits_for_frame, parse_key_frame, resolve_capture_entry, CaptureEntry};
+    use super::{
+        font_paths_in, key_bits_for_frame, parse_key_frame, renderer_accepts_font,
+        resolve_capture_entry, system_font_files, CaptureEntry,
+    };
     use std::path::{Path, PathBuf};
 
     /// `capture --event 239` used to fall through to `Entry::Boot` because `boot`
@@ -3365,6 +3662,87 @@ mod tests {
                 true
             ),
             CaptureEntry::Save(path)
+        );
+    }
+
+    /// The shipped font has a Japanese name the sister-game list never contained. The
+    /// fallback scan has to find it (or any TTF under a new name) deterministically,
+    /// and the game's own face must win over the alternative when both are present.
+    #[test]
+    fn font_lookup_prefers_the_games_face_and_scans_unexpected_names() {
+        // Temp files live under the repo's gitignored work/out: the harness sandbox
+        // denies writes to the user's temp directory.
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
+        let dir = repo
+            .join("work/out")
+            .join(format!("font-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("temp font dir");
+        let empty_game = dir.join("game");
+        std::fs::create_dir_all(&empty_game).expect("temp game dir");
+
+        // Unknown names only: sorted scan picks the first extension-sorted path.
+        std::fs::write(dir.join("zz-unknown.ttf"), b"fake").expect("font file");
+        std::fs::write(dir.join("aa-unknown.otf"), b"fake").expect("font file");
+        let paths = font_paths_in(&dir, &empty_game);
+        assert_eq!(paths[0].file_name().unwrap(), "aa-unknown.otf");
+        assert_eq!(paths[1].file_name().unwrap(), "zz-unknown.ttf");
+        std::fs::remove_file(dir.join("aa-unknown.otf")).expect("remove probe font");
+        std::fs::remove_file(dir.join("zz-unknown.ttf")).expect("remove probe font");
+
+        // Both shipped names present: the game's own face is chosen.
+        std::fs::write(dir.join("◆GenJyuuGothicX-P-Bold.ttf"), b"fake").expect("font file");
+        std::fs::write(dir.join("07やさしさゴシックボールド.ttf"), b"fake").expect("font file");
+        let paths = font_paths_in(&dir, &empty_game);
+        assert_eq!(
+            paths[0].file_name().unwrap(),
+            "07やさしさゴシックボールド.ttf"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// `Game.dat` names a Windows font *family*; the file it lives in has an unrelated
+    /// short name. The mapping is pure, so this test runs without any font installed.
+    #[test]
+    fn game_dat_font_family_maps_to_windows_font_files() {
+        assert_eq!(
+            system_font_files("Microsoft Yahei UI Bold"),
+            vec!["msyhbd.ttc", "msyh.ttc"]
+        );
+        assert_eq!(
+            system_font_files("microsoft yahei"),
+            vec!["msyh.ttc", "msyhbd.ttc"]
+        );
+        assert_eq!(system_font_files("MS Gothic"), vec!["msgothic.ttc"]);
+        assert!(system_font_files("Unlisted Face").is_empty());
+    }
+
+    #[test]
+    fn renderer_accepts_font_rejects_garbage() {
+        assert!(!renderer_accepts_font(b"not a font"));
+    }
+
+    /// The CN patch's retail family is a TTC. `play` funnels through [`find_font`], which
+    /// validates with the renderer's own font database before returning a candidate, so
+    /// prove that the system collection passes that check on a machine that has it.
+    #[test]
+    fn system_ttc_is_accepted_by_the_text_stack() {
+        let Some(path) = super::system_font_paths("Microsoft Yahei UI Bold")
+            .into_iter()
+            .find(|path| {
+                path.extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("ttc"))
+            })
+        else {
+            eprintln!("skipping: no system Microsoft YaHei TTC installed");
+            return;
+        };
+        let bytes = std::fs::read(&path).expect("read system TTC");
+        assert!(
+            renderer_accepts_font(&bytes),
+            "fontdb rejected {}",
+            path.display()
         );
     }
 }

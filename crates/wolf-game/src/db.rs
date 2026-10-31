@@ -95,6 +95,15 @@ pub const FIRST_EMPTY_COLUMN: i32 = -1;
 /// copying a combatant into the temporary battle tables. The value operand is ignored.
 pub const ROW_CLEAR_COLUMN: i32 = -2;
 
+/// Column id a `250` **read** uses to return the editor name of one row.
+///
+/// CE265 (メッセージウィンドウの変更) reads `Data (26, 0, -3)` and CE267
+/// (顔グラフィックの変更) reads `Sys (24, 0, -3)`, both into a string variable.
+/// Type 26 is メッセージウィンドウ種類 and type 24 is 顔グラフィック名, so the
+/// negative column is the row's own editor name (the label a `.project`
+/// companion carries), which the engine hands back as a string.
+pub const ROW_NAME_COLUMN: i32 = -3;
+
 /// First row of the runtime extension area, i.e. the `100 + n` battle slots.
 ///
 /// `CDataBase` type 0 holds 17 rows in this game, yet a capture of CE239 is seen to
@@ -260,6 +269,20 @@ impl Databases {
                 .table(container)
                 .and_then(|table| table.types.get(usize::try_from(db_type).ok()?))
                 .map(|table| table.rows.len()),
+        }
+    }
+
+    /// Editor name of row `row` of `db_type` — the `250` read of column [ROW_NAME_COLUMN].
+    ///
+    /// `None` when the type or row does not exist, or when no `.project` companion
+    /// supplied the labels (the `.dat` files carry no names). The SysDatabase keeps
+    /// its own name table; the other two share [`Database::row_name`].
+    pub fn row_name(&self, container: Container, db_type: i32, row: i32) -> Option<&str> {
+        let ty = usize::try_from(db_type).ok()?;
+        let row = usize::try_from(row).ok()?;
+        match container {
+            Container::Sys => self.sys.as_ref()?.name_of(ty, row),
+            _ => self.table(container)?.row_name(ty, row),
         }
     }
 
@@ -492,7 +515,13 @@ impl Databases {
                     let column = i32::try_from(column).unwrap_or(i32::MAX);
                     if *definition >= 2000 {
                         if let Some(bytes) = row.string(column as u32) {
-                            let text = String::from_utf8_lossy(bytes);
+                            // Saved vardb strings mix CP932 template text with GBK
+                            // fan-translation text (measured: ヒーローさん CP932, 没有数据
+                            // GBK). A lossy UTF-8 read would turn both into mojibake and,
+                            // worse, make a re-save unable to recognise the unchanged
+                            // cell. Decode with the same heuristic the .dat loaders use;
+                            // the writer keeps the original bytes when the text matches.
+                            let text = wolf_format::bytes::decode_wolf_str(bytes);
                             let text = text.trim_end_matches(char::from(0));
                             self.set_text(Container::CData, db_type, row_index, column, text);
                         }
@@ -502,6 +531,77 @@ impl Databases {
                 }
             }
         }
+    }
+
+    /// Builds the complete save-file variable database from the static `CDataBase`.
+    ///
+    /// `Save/System.sav` is the template a brand-new game saves from, but this build's
+    /// copy carries an **empty** variable database (0 types / 0 rows / 0 configs,
+    /// measured — see docs/M3_VARDB_BUG.md). [`Self::write_into`] can only overwrite
+    /// types, rows and fields that already exist, so without a schema no 可変DB cell
+    /// can reach the file and every runtime edit is lost on reload.
+    ///
+    /// The static `CDataBase.dat` is the authoritative schema: its type count, field
+    /// kinds, `data_id_method` and row table are exactly what the shipped SaveData01/02
+    /// variable databases carry (30 types / 1052 configs / the same `dis` values), and
+    /// the only difference is the one row a script appends at run time, which
+    /// [`Self::reconcile_row_counts`] adds when that happens. Values start at the static
+    /// cells; [`Self::write_into`] then overlays the live engine cells.
+    ///
+    /// Does nothing (and returns false) when the database already has a schema or when
+    /// `CDataBase.dat` is missing — a loaded retail save keeps its own complete vardb.
+    pub fn seed_vardb(&self, database: &mut wolf_save::VariableDatabase) -> bool {
+        if !database.types.is_empty() {
+            return false;
+        }
+        let Some(cdata) = self.cdata.as_ref() else {
+            return false;
+        };
+        let mut types = Vec::with_capacity(cdata.types.len());
+        for table in &cdata.types {
+            let config: Vec<u32> = table.fields.iter().map(FieldKind::raw).collect();
+            let mut rows = Vec::with_capacity(table.rows.len());
+            for (index, row) in table.rows.iter().enumerate() {
+                let mut fields = Vec::with_capacity(config.len());
+                for (column, kind) in table.fields.iter().enumerate() {
+                    let value = match kind {
+                        FieldKind::Num(slot) => wolf_save::vardb::VariableValue::Number(
+                            *row.numbers.get(*slot).unwrap_or(&0),
+                        ),
+                        FieldKind::Str(slot) => {
+                            let mut body =
+                                row.strings.get(*slot).cloned().unwrap_or_default().into_bytes();
+                            // The game stores NUL-terminated MemData bodies.
+                            body.push(0);
+                            wolf_save::vardb::VariableValue::String(body)
+                        }
+                    };
+                    fields.push(wolf_save::vardb::VariableField {
+                        id: column as u32,
+                        value,
+                    });
+                }
+                rows.push(wolf_save::vardb::VariableRow {
+                    index: index as u32,
+                    fields,
+                });
+            }
+            let row_count = rows.len() as u32;
+            types.push(wolf_save::vardb::VariableType {
+                // Every retail save stores m_unknown = -2 with the real count in
+                // m_fieldCount (vardb.rs documents this), and `dis` mirrors the
+                // static `data_id_method` byte for byte on all 30 types.
+                unknown: -2,
+                dis: i32::try_from(table.data_id_method).unwrap_or(0),
+                field_count: config.len() as u32,
+                config,
+                row_count,
+                rows,
+            });
+        }
+        database.type_count = types.len() as u32;
+        database.types = types;
+        true
     }
 
     /// Copies the engine-owned `CData` cells into a save file variable database.
@@ -853,6 +953,34 @@ mod tests {
         assert_eq!(
             databases.text(Container::Sys, 24, 4, 0),
             Some("DLC_data/member_20_s.png")
+        );
+    }
+
+    #[test]
+    fn a_negative_name_column_returns_the_row_name() {
+        // CE265 reads Data (26, 0, -3) and CE267 reads Sys (24, 0, -3): the column
+        // is [ROW_NAME_COLUMN], the editor name of one row rather than a field.
+        let Some(root) = have_data() else { return };
+        let databases = Databases::load(&root.join("BasicData"), DEFAULT_SCREEN);
+        assert_eq!(
+            databases.row_name(Container::Data, 26, 0),
+            Some("まる（妹）"),
+            "Data type 26 is メッセージウィンドウ種類"
+        );
+        assert_eq!(
+            databases.row_name(Container::Sys, 24, 0),
+            Some("ウィンドウ表示なし"),
+            "Sys type 24 is 顔グラフィック名"
+        );
+        assert_eq!(
+            databases.row_name(Container::Data, 26, 99),
+            None,
+            "a row past the table has no name"
+        );
+        // A store without the .project companions has no names at all.
+        assert_eq!(
+            Databases::with_engine_defaults(DEFAULT_SCREEN).row_name(Container::Data, 26, 0),
+            None
         );
     }
 

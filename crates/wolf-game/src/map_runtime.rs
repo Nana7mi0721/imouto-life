@@ -31,6 +31,8 @@ use wolf_format::mps::{Map, PageCondition, CONDITION_SLOTS};
 use wolf_vm::exec::InstanceId;
 use wolf_vm::{Magic, MagicKind, Program, SelfVars, Variables, Vm};
 
+use crate::tilemap::TILE_PX;
+
 /// What a page's trigger byte tells the runtime to do.
 ///
 /// Measured over the 134 shipped pages: 0 appears 14 times, 1 26 times, 2 90
@@ -76,10 +78,10 @@ impl Trigger {
 
     /// True when the runtime starts the page on its own.
     ///
-    /// Action key and player touch both need a player, so they stay dormant
-    /// until an input or movement layer exists (M2 has neither: the game is a
-    /// point-and-click UI whose clicks go through opcode 124, not through map
-    /// events).
+    /// Action key and player touch both need a player, so they stay dormant until
+    /// an input or movement layer exists. [`MapRuntime::action_key_at`] is that
+    /// layer for trigger 0 (a point-and-click press); trigger 3 (player touch)
+    /// still has no movement model in this fixed-screen game and stays dormant.
     #[must_use]
     pub fn is_automatic(self) -> bool {
         matches!(
@@ -99,6 +101,9 @@ impl Trigger {
 struct PageState {
     trigger: Trigger,
     conditions: [PageCondition; CONDITION_SLOTS],
+    /// Range extension in tiles to the right and below the event tile.
+    collision_width: u8,
+    collision_height: u8,
     /// None for a page with an empty command stream (blank page).
     program: Option<Arc<Program>>,
 }
@@ -107,6 +112,9 @@ struct PageState {
 struct EventState {
     id: u32,
     name: String,
+    /// Map position in tiles, as stored in the event record.
+    x: i32,
+    y: i32,
     pages: Vec<PageState>,
     /// Index of the active page, None when no page's conditions hold.
     active: Option<usize>,
@@ -190,6 +198,8 @@ impl MapRuntime {
                     PageState {
                         trigger: Trigger::from_byte(page.trigger),
                         conditions: page.conditions(),
+                        collision_width: page.collision_width,
+                        collision_height: page.collision_height,
                         program,
                     }
                 })
@@ -197,6 +207,8 @@ impl MapRuntime {
             events.push(EventState {
                 id: event.id,
                 name: event.name.clone(),
+                x: event.x as i32,
+                y: event.y as i32,
                 pages,
                 active: None,
                 instance: None,
@@ -292,6 +304,88 @@ impl MapRuntime {
             .iter()
             .map(|state| (state.id, select_page(state, vm)))
             .collect()
+    }
+
+    /// Activate the action-key page under a screen point.
+    ///
+    /// This is the point-and-click bridge WOLF itself does not need: the shipped
+    /// game has no walking player, so the 44 trigger-0 pages of SampleMapA (the
+    /// save button, the day menu, the status panel, the deep-night end prompt,
+    /// the sister's click handlers, ...) can never be reached through a facing
+    /// tile. The caller feeds a fresh press (a left click, or the confirm key with
+    /// the pointer over the map) and this starts the page whose conditions hold
+    /// under that pixel.
+    ///
+    /// Hit area: the event record stores the position in tiles and the page stores
+    /// a collision *range extension*. This port reads both as tiles and uses
+    /// `(1 + collision) * TILE_PX`, anchored at the event tile's top-left corner
+    /// and growing right and down. The conversion matches the shipped HUD: event 5
+    /// `セーブ` sits on tile (2,33) with a 3x3 extension (64x64 px) under the
+    /// bottom-left 保存 icon, and event 21 `終了仮` on (61,34) with 5x3 (96x64 px)
+    /// under the bottom-right end button. The boundary points are pinned by a
+    /// data-driven test in `tests/m3_map_click.rs`.
+    ///
+    /// Only trigger 0 is served; a live instance is never restarted (one instance
+    /// per event, as in [`Self::start_pending`]), and a page is started with the
+    /// event's stored self-variable bank. When several hotspots contain the point,
+    /// the smallest area wins (the most specific control), ties by map order.
+    /// Player-touch pages stay dormant: this game has no movement layer.
+    ///
+    /// Returns the event id that was started, so the caller can record the hit.
+    pub fn action_key_at(&mut self, vm: &mut Vm, x: i32, y: i32) -> Option<u32> {
+        // Phase 1 only reads the VM: pick the smallest action-key hotspot under
+        // the point whose event is not already running.
+        let mut best: Option<(i64, usize, usize)> = None;
+        for (index, state) in self.events.iter().enumerate() {
+            if state.instance.is_some_and(|id| vm.instance(id).is_some()) {
+                continue;
+            }
+            let Some(page_index) = select_page(state, vm) else {
+                continue;
+            };
+            let Some(page) = state.pages.get(page_index) else {
+                continue;
+            };
+            if page.trigger != Trigger::ActionKey || page.program.is_none() {
+                continue;
+            }
+            let (left, top, width, height) = hit_rect(state, page);
+            if x < left || x >= left + width || y < top || y >= top + height {
+                continue;
+            }
+            let area = i64::from(width) * i64::from(height);
+            if best.is_none_or(|(area_best, index_best, _)| (area, index) < (area_best, index_best))
+            {
+                best = Some((area, index, page_index));
+            }
+        }
+        let (_, index, page_index) = best?;
+
+        // Phase 2 mutates: mirror the page-switch and start bookkeeping of
+        // `start_pending`, but without the autorun/once-per-page gates because an
+        // action-key page runs once per press.
+        let state = &mut self.events[index];
+        let program = Arc::clone(state.pages.get(page_index)?.program.as_ref()?);
+        if state.active != Some(page_index) {
+            if let Some(id) = state.instance.take() {
+                if let Some(instance) = vm.instance(id) {
+                    state.self_vars = Some(instance.self_vars.clone());
+                }
+                vm.stop_instance(id);
+            }
+            if state.active.is_some() {
+                self.switches += 1;
+            }
+            state.active = Some(page_index);
+            state.starts_on_page = 0;
+        }
+        let self_vars = state.self_vars.clone().unwrap_or_default();
+        let id = vm.start_program_with_self(program, self_vars)?;
+        state.instance = Some(id);
+        state.starts += 1;
+        state.starts_on_page += 1;
+        self.restarts += 1;
+        Some(state.id)
     }
 
     /// Re-select every page, swap the coroutines of the pages that changed, and
@@ -397,6 +491,20 @@ impl MapRuntime {
     }
 }
 
+/// The pixel rectangle an action-key press must land in for `state`'s page.
+///
+/// WOLF stores the event position in tiles plus a *range extension* (the ksy calls
+/// the fields `range_extension_x`/`range_extension_y`, max 250). The port treats
+/// the extension as extra tiles to the right and below the event's own tile, so
+/// the rectangle is `(1 + collision) * TILE_PX` wide and tall. See
+/// [`MapRuntime::action_key_at`] for the shipped-UI evidence behind the unit.
+fn hit_rect(state: &EventState, page: &PageState) -> (i32, i32, i32, i32) {
+    let tile = TILE_PX as i32;
+    let width = (1 + i32::from(page.collision_width)) * tile;
+    let height = (1 + i32::from(page.collision_height)) * tile;
+    (state.x * tile, state.y * tile, width, height)
+}
+
 /// The page WOLF would display for this event right now.
 fn select_page(state: &EventState, vm: &Vm) -> Option<usize> {
     let live = state
@@ -448,6 +556,13 @@ mod tests {
 
     fn page(trigger: u8, commands: Vec<Slot>) -> MapEventPage {
         page_with(trigger, [0; 4], [0; 4], [0; 4], commands)
+    }
+
+    fn page_collision(trigger: u8, collision: (u8, u8), commands: Vec<Slot>) -> MapEventPage {
+        let mut page = page(trigger, commands);
+        page.collision_width = collision.0;
+        page.collision_height = collision.1;
+        page
     }
 
     fn page_with(
@@ -742,5 +857,65 @@ mod tests {
             2,
             "a restarted parallel page must resume with the event's bank"
         );
+    }
+
+    #[test]
+    fn action_key_rect_is_one_plus_collision_tiles_and_skips_running_pages() {
+        // Event at tile (2,3) with a 2x1 extension: x 32..=79, y 48..=79.
+        let map = map_with(vec![
+            MapEvent {
+                id: 5,
+                name: "save".to_owned(),
+                x: 2,
+                y: 3,
+                pages: vec![page_collision(0, (2, 1), vec![Slot::Blank])],
+            },
+            MapEvent {
+                id: 6,
+                name: "parallel".to_owned(),
+                x: 0,
+                y: 0,
+                pages: vec![page(2, vec![Slot::Blank])],
+            },
+        ]);
+        let mut runtime = MapRuntime::collect(&map);
+        let mut vm = Vm::new(ProgramSet::default());
+
+        // Outside on every edge: the rectangle is half-open.
+        for (x, y) in [(31, 60), (80, 60), (40, 47), (40, 80), (0, 0)] {
+            assert_eq!(
+                runtime.action_key_at(&mut vm, x, y),
+                None,
+                "({x},{y}) must miss"
+            );
+        }
+
+        // Top-left corner and inside both hit; only trigger 0 is served.
+        assert_eq!(runtime.action_key_at(&mut vm, 32, 48), Some(5));
+        let starts = |runtime: &MapRuntime| {
+            runtime
+                .slots()
+                .iter()
+                .find(|slot| slot.event == 5)
+                .map(|slot| slot.starts)
+                .unwrap_or(0)
+        };
+        assert_eq!(starts(&runtime), 1, "the click starts the action-key page");
+
+        // One instance per event: a second press while the page runs is ignored.
+        assert_eq!(runtime.action_key_at(&mut vm, 40, 60), None);
+        assert_eq!(starts(&runtime), 1, "a live page must not restart");
+
+        // A retired page can be activated again.
+        runtime.stop_all(&mut vm);
+        runtime.start_pending(&mut vm);
+        assert_eq!(runtime.action_key_at(&mut vm, 79, 79), Some(5));
+        assert_eq!(starts(&runtime), 2);
+
+        // Trigger 2 (parallel) is never started by a press even though it sits
+        // inside the same coordinates.
+        runtime.stop_all(&mut vm);
+        runtime.start_pending(&mut vm);
+        assert_eq!(runtime.action_key_at(&mut vm, 5, 5), None);
     }
 }

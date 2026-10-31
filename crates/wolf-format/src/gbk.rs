@@ -36,6 +36,37 @@ pub fn decode(bytes: &[u8]) -> (String, bool) {
     (out, bad)
 }
 
+/// Encodes a string back to GBK bytes.
+///
+/// Characters not present in the table become `?` (0x3F). ASCII (U+0000..U+007F) is
+/// emitted verbatim; every other character is looked up by its Unicode code point.
+#[must_use]
+pub fn encode(text: &str) -> Vec<u8> {
+    let mut out = Vec::with_capacity(text.len() * 2);
+    for ch in text.chars() {
+        let cp = ch as u32;
+        if cp < 0x80 {
+            out.push(cp as u8);
+            continue;
+        }
+        let mut found = None;
+        for &(code, uni) in TABLE {
+            if u32::from(uni) == cp {
+                found = Some(code);
+                break;
+            }
+        }
+        match found {
+            Some(code) => {
+                out.push((code >> 8) as u8);
+                out.push((code & 0xff) as u8);
+            }
+            None => out.push(b'?'),
+        }
+    }
+    out
+}
+
 static TABLE: &[(u16, u16)] = &[
     (0x8140, 0x4E02),
     (0x8141, 0x4E04),

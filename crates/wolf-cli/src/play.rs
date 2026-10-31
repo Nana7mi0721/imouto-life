@@ -52,6 +52,8 @@ pub fn run(
     if crate::AUDIO.load(std::sync::atomic::Ordering::Relaxed) {
         game.enable_audio();
     }
+    // System.sav volumes reach the mixer before the first frame is rendered.
+    game.apply_settings();
     crate::install_font_metrics(&mut game, root);
     // The same entry-point rules `capture` uses: default boot (the TitleMap autorun
     // event and its three splashes), --menu-only for common event 42, --map-run for a
@@ -103,6 +105,7 @@ pub fn run(
     };
     let mut app = App {
         game,
+        root: root.to_path_buf(),
         atlas: Atlas::new(),
         sprites: Vec::new(),
         texts: Vec::new(),
@@ -120,6 +123,15 @@ pub fn run(
     if let Err(err) = event_loop.run_app(&mut app) {
         eprintln!("event loop failed: {err}");
         return std::process::ExitCode::FAILURE;
+    }
+    // The retail engine stores the global settings when the session ends. Only write when
+    // CE132 actually changed a volume, so a session that never opened the settings screen
+    // leaves Save/System.sav byte-identical.
+    if app.game.settings_dirty() {
+        match app.game.save_system_settings() {
+            Ok(()) => println!("settings: saved to Save/System.sav"),
+            Err(err) => eprintln!("settings: could not persist: {err}"),
+        }
     }
     println!(
         "exit: {} frame(s), {} instruction(s), {} picture op(s), {} warning(s)",
@@ -139,6 +151,8 @@ pub fn run(
 
 struct App {
     game: Game,
+    /// Data root the game was built from, kept so F12 can rebuild the session in place.
+    root: std::path::PathBuf,
     atlas: Atlas,
     sprites: Vec<SpriteInstance>,
     texts: Vec<TextQuad>,
@@ -174,6 +188,45 @@ impl App {
             // tearing the window down, so the capture stays inspectable.
         }
         self.rebuild();
+    }
+
+    /// F12 = restart (manual01, `F12_Reset=1` in Game.ini).
+    ///
+    /// Rebuilds the whole `Game` from the data root and boots it into the title map,
+    /// exactly like starting `play` afresh, without tearing down the window, the
+    /// renderer or the packed atlas. The retail engine resets the running game rather
+    /// than relaunching the executable, so this keeps the same session window.
+    ///
+    /// On failure the current session is left untouched and the error is printed:
+    /// a broken restart must not take the window down with it.
+    fn restart(&mut self) {
+        let root = self.root.clone();
+        let mut game = match Game::new(&root) {
+            Ok(game) => game,
+            Err(err) => {
+                eprintln!("restart failed (cannot reload the game data): {err}");
+                return;
+            }
+        };
+        if crate::AUDIO.load(std::sync::atomic::Ordering::Relaxed) {
+            game.enable_audio();
+        }
+        game.apply_settings();
+        crate::install_font_metrics(&mut game, &root);
+        if let Err(err) = game.boot() {
+            eprintln!("restart failed (boot): {err}");
+            return;
+        }
+        // The atlas is keyed by asset path, and a restart reads the same data root, so the
+        // packed images stay valid. Only the transient state belongs to the old session.
+        self.game = game;
+        self.held.clear();
+        self.mouse_buttons = 0;
+        self.step();
+        if let Some(renderer) = self.renderer.as_ref() {
+            self.refresh_title(renderer);
+        }
+        println!("restart: F12 booted the title map again");
     }
 
     /// Rebuilds the draw list: script pictures, the runtime choice panel, and text.
@@ -385,6 +438,14 @@ impl ApplicationHandler for App {
                         event_loop.exit();
                         return;
                     }
+                    // manual01: F12 restarts the game. Ignore auto-repeat so a held key
+                    // cannot reload the data root dozens of times a second.
+                    if is_restart_key(&event.logical_key) {
+                        if !event.repeat {
+                            self.restart();
+                        }
+                        return;
+                    }
                     if let Some(bit) = bit {
                         self.held.insert(bit);
                     }
@@ -500,6 +561,14 @@ fn game_point(window: &Window, x: f64, y: f64) -> [i32; 2] {
     ]
 }
 
+/// True for the physical key that restarts the session.
+///
+/// manual01 lists F12 as 「再起动」 and `Game.ini` ships `F12_Reset=1`, so the port
+/// mirrors that binding instead of reserving F12 for anything else.
+fn is_restart_key(key: &Key) -> bool {
+    matches!(key, Key::Named(NamedKey::F12))
+}
+
 fn wolf_bit(key: &Key) -> Option<u32> {
     match key {
         Key::Named(NamedKey::ArrowUp) => Some(key::UP),
@@ -516,5 +585,27 @@ fn wolf_bit(key: &Key) -> Option<u32> {
             _ => None,
         },
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_restart_key;
+    use winit::keyboard::{Key, NamedKey};
+
+    /// manual01/F12_Reset: only F12 restarts; F10 stays the quit key and the ordinary
+    /// gameplay keys must never trigger a reload.
+    #[test]
+    fn f12_is_the_restart_key() {
+        assert!(is_restart_key(&Key::Named(NamedKey::F12)));
+        for key in [
+            Key::Named(NamedKey::F10),
+            Key::Named(NamedKey::F11),
+            Key::Named(NamedKey::Escape),
+            Key::Named(NamedKey::Enter),
+            Key::Character("z".into()),
+        ] {
+            assert!(!is_restart_key(&key), "{key:?} must not restart");
+        }
     }
 }

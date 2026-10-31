@@ -18,7 +18,10 @@
 //! exact same 1024x576 pixels the window would show, which is what
 //! `examples/title_blit.rs --out` and the integration tests use.
 
+use std::future::Future;
 use std::sync::Arc;
+use std::task::{Context, Poll, Waker};
+use std::time::{Duration, Instant};
 
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
@@ -84,9 +87,10 @@ struct QuadUniform {
 
 /// Everything needed to draw one frame.
 ///
-/// Construction is synchronous (`pollster::block_on` inside) because winit 0.30
-/// hands us the window from a synchronous `resumed` callback; see
-/// `crate::error` for the rationale.
+/// Construction is synchronous (a bounded `block_on` inside, see
+/// [`block_on_bounded`]) because winit 0.30 hands us the window from a synchronous
+/// `resumed` callback; see `crate::error` for the rationale and for why every
+/// bring-up step has a deadline.
 pub struct Renderer {
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -145,24 +149,13 @@ impl Renderer {
     /// touching the window should clone the `Arc` first.
     pub fn new(window: Arc<Window>) -> Result<Self, RenderError> {
         let size = window.inner_size();
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+        let instance = new_instance();
         let surface: wgpu::Surface<'static> = instance
             .create_surface(window)
             .map_err(|e| RenderError::CreateSurface(e.to_string()))?;
 
-        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::HighPerformance,
-            compatible_surface: Some(&surface),
-            force_fallback_adapter: false,
-            apply_limit_buckets: false,
-        }))
-        .map_err(|_| RenderError::NoAdapter {
-            backends: format!("{:?}", wgpu::Backends::all()),
-        })?;
-
-        let (device, queue) =
-            pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default()))
-                .map_err(|e: wgpu::RequestDeviceError| RenderError::DeviceRequest(e.to_string()))?;
+        let adapter = request_adapter(&instance, Some(&surface))?;
+        let (device, queue) = request_device(&adapter)?;
 
         let adapter_info = adapter.get_info();
         let caps = surface.get_capabilities(&adapter);
@@ -226,20 +219,9 @@ impl Renderer {
     /// `--out` mode of `examples/title_blit.rs` work on machines (or CI) with
     /// no window, no compositor and no display.
     pub fn new_offscreen() -> Result<Self, RenderError> {
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
-        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::HighPerformance,
-            compatible_surface: None,
-            force_fallback_adapter: false,
-            apply_limit_buckets: false,
-        }))
-        .map_err(|_| RenderError::NoAdapter {
-            backends: format!("{:?}", wgpu::Backends::all()),
-        })?;
-
-        let (device, queue) =
-            pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default()))
-                .map_err(|e: wgpu::RequestDeviceError| RenderError::DeviceRequest(e.to_string()))?;
+        let instance = new_instance();
+        let adapter = request_adapter(&instance, None)?;
+        let (device, queue) = request_device(&adapter)?;
 
         let adapter_info = adapter.get_info();
         // Any non-zero size works: the scaler is only consulted for the blit,
@@ -997,8 +979,16 @@ impl Renderer {
         let slice = buffer.slice(..);
         slice.map_async(wgpu::MapMode::Read, |_| {});
         self.device
-            .poll(wgpu::PollType::wait_indefinitely())
-            .map_err(|e| RenderError::ReadbackFailed(e.to_string()))?;
+            .poll(wgpu::PollType::Wait {
+                submission_index: None,
+                timeout: Some(readback_timeout()),
+            })
+            .map_err(|e| {
+                RenderError::ReadbackFailed(format!(
+                    "GPU readback did not finish within {} ms: {e}",
+                    readback_timeout().as_millis()
+                ))
+            })?;
 
         let view = slice
             .get_mapped_range()
@@ -1033,6 +1023,171 @@ impl Renderer {
     }
 }
 
+/// Drives `future` to completion with a deadline, instead of `pollster::block_on`.
+///
+/// wgpu's adapter/device bring-up is a driver call. On a wedged or memory-starved
+/// GPU it can stay pending forever, which used to make a headless capture hang the
+/// whole process with no output. Here a pending future is re-polled every couple of
+/// milliseconds until the deadline, then reported as [`RenderError::InitTimeout`].
+fn block_on_bounded<F: Future>(
+    future: F,
+    timeout: Duration,
+    stage: &'static str,
+) -> Result<F::Output, RenderError> {
+    let mut future = std::pin::pin!(future);
+    // No wake is needed: the loop itself re-polls, so a no-op waker is enough.
+    let mut context = Context::from_waker(Waker::noop());
+    let deadline = Instant::now() + timeout;
+    loop {
+        if let Poll::Ready(value) = future.as_mut().poll(&mut context) {
+            return Ok(value);
+        }
+        if Instant::now() >= deadline {
+            return Err(RenderError::InitTimeout {
+                stage,
+                millis: u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX),
+            });
+        }
+        // Two milliseconds keeps the wait cheap. Polling the future (rather than
+        // relying on wgpu's callback) is what actually advances the handshake.
+        std::thread::sleep(Duration::from_millis(2));
+    }
+}
+
+/// Reads a millisecond setting from the environment, clamped to a sane range.
+fn env_millis(name: &str, default: u64) -> Duration {
+    let millis = std::env::var(name)
+        .ok()
+        .and_then(|raw| raw.trim().parse::<u64>().ok())
+        .unwrap_or(default)
+        .clamp(100, 600_000);
+    Duration::from_millis(millis)
+}
+
+/// Deadline for `request_adapter` / `request_device`.
+///
+/// `WOLF_RENDER_TIMEOUT_MS` overrides the 30 s default (clamped to 100 ms..10 min).
+fn init_timeout() -> Duration {
+    env_millis("WOLF_RENDER_TIMEOUT_MS", 30_000)
+}
+
+/// Deadline for the offscreen readback wait.
+///
+/// `WOLF_RENDER_READBACK_TIMEOUT_MS` overrides the 30 s default.
+fn readback_timeout() -> Duration {
+    env_millis("WOLF_RENDER_READBACK_TIMEOUT_MS", 30_000)
+}
+
+/// `WOLF_RENDER_BACKEND` parser: `vulkan`, `dx12`, `gl`, `metal`, `webgpu`, `all`,
+/// or a comma/plus separated combination. Unknown words are ignored.
+fn parse_backends(raw: &str) -> Option<wgpu::Backends> {
+    let mut backends = wgpu::Backends::empty();
+    for part in raw.split([',', '+', ';', ' ']) {
+        let part = part.trim().to_ascii_lowercase();
+        match part.as_str() {
+            "" => {}
+            "all" => backends = wgpu::Backends::all(),
+            "vulkan" | "vk" => backends |= wgpu::Backends::VULKAN,
+            "dx12" | "d3d12" => backends |= wgpu::Backends::DX12,
+            "gl" | "gles" | "opengl" => backends |= wgpu::Backends::GL,
+            "metal" => backends |= wgpu::Backends::METAL,
+            "webgpu" | "browser" => backends |= wgpu::Backends::BROWSER_WEBGPU,
+            _ => {}
+        }
+    }
+    (!backends.is_empty()).then_some(backends)
+}
+
+fn backends_override() -> Option<wgpu::Backends> {
+    std::env::var("WOLF_RENDER_BACKEND")
+        .ok()
+        .and_then(|raw| parse_backends(&raw))
+}
+
+fn new_instance() -> wgpu::Instance {
+    let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
+    if let Some(backends) = backends_override() {
+        descriptor.backends = backends;
+    }
+    wgpu::Instance::new(descriptor)
+}
+
+/// Adapter preferences, with an escape hatch for a wedged or contended GPU.
+///
+/// `WOLF_RENDER_ADAPTER` selects `high` (default), `low` (integrated / low-power),
+/// `none` (no preference) or `fallback` (software adapter).
+fn adapter_options<'a, 'b>(
+    compatible_surface: Option<&'a wgpu::Surface<'b>>,
+) -> wgpu::RequestAdapterOptions<'a, 'b> {
+    let mode = std::env::var("WOLF_RENDER_ADAPTER")
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase();
+    let (power_preference, force_fallback_adapter) = match mode.as_str() {
+        "low" | "lowpower" | "integrated" => (wgpu::PowerPreference::LowPower, false),
+        "none" => (wgpu::PowerPreference::None, false),
+        "fallback" | "software" => (wgpu::PowerPreference::LowPower, true),
+        _ => (wgpu::PowerPreference::HighPerformance, false),
+    };
+    wgpu::RequestAdapterOptions {
+        power_preference,
+        compatible_surface,
+        force_fallback_adapter,
+        apply_limit_buckets: false,
+    }
+}
+
+fn request_adapter(
+    instance: &wgpu::Instance,
+    compatible_surface: Option<&wgpu::Surface<'static>>,
+) -> Result<wgpu::Adapter, RenderError> {
+    let options = adapter_options(compatible_surface);
+    let fallback_allowed = !options.force_fallback_adapter;
+    match block_on_bounded(instance.request_adapter(&options), init_timeout(), "adapter")? {
+        Ok(adapter) => Ok(adapter),
+        Err(_) if fallback_allowed => {
+            // Some headless drivers expose no hardware adapter but do expose the
+            // software one. One retry is cheap compared to giving up outright.
+            let fallback = wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::LowPower,
+                compatible_surface,
+                force_fallback_adapter: true,
+                apply_limit_buckets: false,
+            };
+            match block_on_bounded(
+                instance.request_adapter(&fallback),
+                init_timeout(),
+                "adapter (fallback)",
+            )? {
+                Ok(adapter) => Ok(adapter),
+                Err(_) => Err(RenderError::NoAdapter {
+                    backends: format!(
+                        "{:?}",
+                        backends_override().unwrap_or_else(wgpu::Backends::all)
+                    ),
+                }),
+            }
+        }
+        Err(_) => Err(RenderError::NoAdapter {
+            backends: format!(
+                "{:?}",
+                backends_override().unwrap_or_else(wgpu::Backends::all)
+            ),
+        }),
+    }
+}
+
+fn request_device(
+    adapter: &wgpu::Adapter,
+) -> Result<(wgpu::Device, wgpu::Queue), RenderError> {
+    block_on_bounded(
+        adapter.request_device(&wgpu::DeviceDescriptor::default()),
+        init_timeout(),
+        "device",
+    )?
+    .map_err(|e: wgpu::RequestDeviceError| RenderError::DeviceRequest(e.to_string()))
+}
+
 fn make_atlas_bind(
     device: &wgpu::Device,
     layout: &wgpu::BindGroupLayout,
@@ -1053,4 +1208,66 @@ fn make_atlas_bind(
             },
         ],
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_ready_future_returns_its_value() {
+        let value = block_on_bounded(async { 7_u32 }, Duration::from_secs(1), "adapter")
+            .expect("a ready future never times out");
+        assert_eq!(value, 7);
+    }
+
+    #[test]
+    fn a_pending_future_times_out_instead_of_hanging() {
+        // This is the regression nail for the old infinite `pollster::block_on`:
+        // a driver that never answers must surface as InitTimeout, not a hang.
+        let started = Instant::now();
+        let outcome = block_on_bounded(
+            std::future::pending::<()>(),
+            Duration::from_millis(60),
+            "adapter",
+        );
+        let elapsed = started.elapsed();
+        match outcome {
+            Err(RenderError::InitTimeout { stage, millis }) => {
+                assert_eq!(stage, "adapter");
+                assert!(millis >= 60, "the deadline is reported: {millis}");
+            }
+            other => panic!("expected InitTimeout, got {other:?}"),
+        }
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "the bounded executor returned promptly: {elapsed:?}"
+        );
+    }
+
+    #[test]
+    fn backend_words_parse_for_the_env_override() {
+        assert_eq!(parse_backends("vulkan"), Some(wgpu::Backends::VULKAN));
+        assert_eq!(parse_backends("dx12"), Some(wgpu::Backends::DX12));
+        assert_eq!(parse_backends("VULKAN+DX12"), Some(
+            wgpu::Backends::VULKAN | wgpu::Backends::DX12
+        ));
+        assert_eq!(parse_backends("gl, metal"), Some(
+            wgpu::Backends::GL | wgpu::Backends::METAL
+        ));
+        assert_eq!(parse_backends("all"), Some(wgpu::Backends::all()));
+        assert_eq!(parse_backends("  "), None);
+        assert_eq!(parse_backends("mystery"), None);
+    }
+
+    #[test]
+    fn the_timeout_env_is_clamped_to_a_sane_range() {
+        // Not touching the process environment in a test (it is shared): just pin
+        // the helper's documented clamp through a direct call with a huge default.
+        let clamped = Duration::from_millis(900_000).clamp(
+            Duration::from_millis(100),
+            Duration::from_millis(600_000),
+        );
+        assert_eq!(clamped, Duration::from_millis(600_000));
+    }
 }

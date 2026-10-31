@@ -487,6 +487,29 @@ impl VariableDatabase {
     }
 
     /// Write one textual cell from a &str, appending the NUL the game stores.
+    ///
+    /// # Encoding
+    ///
+    /// A WOLF 2.00 save stores bytes, not Unicode. This game's saves mix two
+    /// code pages: CP932 for untouched template text (`"ヒーローさん"` is
+    /// `83 71 81 5B ...`) and GBK for everything the fan translation or the
+    /// player supplied (`"早泄"` is `D4 E7 D0 B9`, `"没有数据"` is
+    /// `C3 BB D3 D0 CA FD BE DD`). Text-only re-encoding cannot tell `"勇者"`
+    /// (stored CP932) from the same two hanzi stored as GBK, so an **unchanged**
+    /// cell keeps its original body: when `text` is what the existing body
+    /// decodes to -- either through the real
+    /// [decode_wolf_str](wolf_format::bytes::decode_wolf_str) or through the lossy
+    /// UTF-8 read `wolf-game`'s database layer currently uses -- the bytes are
+    /// left alone. That is what makes load -> save byte-identical for
+    /// untouched cells.
+    ///
+    /// A genuinely new or changed non-ASCII string is encoded as **GBK**, the
+    /// code page of this release's display text (see `docs/M3_STRING_DECODE.md`),
+    /// with a UTF-8 fallback when GBK cannot round-trip the string (a character
+    /// GBK does not map, or GBK bytes that [decode_wolf_str](wolf_format::bytes::decode_wolf_str)
+    /// would read as valid UTF-8 and therefore mis-decode). ASCII is byte-identical
+    /// in all three encodings. Use [VariableDatabase::set_string] for a caller that
+    /// already holds the exact bytes.
     pub fn set_text(
         &mut self,
         type_index: usize,
@@ -494,10 +517,51 @@ impl VariableDatabase {
         field_index: usize,
         text: &str,
     ) -> bool {
-        let mut body = text.as_bytes().to_vec();
-        body.push(0);
+        // Keep a legacy body while the caller still describes it. Both views the
+        // engine can hold are accepted: the real decode (`decode_wolf_str`) and
+        // the lossy UTF-8 view `wolf-game`'s database layer produces. Restricting
+        // this to bodies that are not valid UTF-8 leaves a UTF-8 body written by
+        // an older build of this engine re-encodable to the retail code page.
+        let keep = self
+            .string(type_index, row_index, field_index)
+            .map(|body| {
+                let raw = body.strip_suffix(&[0]).unwrap_or(body);
+                !raw.is_empty()
+                    && std::str::from_utf8(raw).is_err()
+                    && (text == wolf_format::bytes::decode_wolf_str(raw)
+                        || text == String::from_utf8_lossy(raw).trim_end_matches('\0'))
+            })
+            .unwrap_or(false);
+        if keep {
+            return true;
+        }
+        let body = encode_cell_text(text);
         self.set_string(type_index, row_index, field_index, &body)
     }
+}
+
+/// Encode a new textual cell body (NUL terminator included).
+///
+/// GBK is the fan translation's display encoding; UTF-8 is only used when GBK
+/// cannot reproduce the text exactly. See [VariableDatabase::set_text].
+fn encode_cell_text(text: &str) -> Vec<u8> {
+    let mut body = if text.is_ascii() {
+        text.as_bytes().to_vec()
+    } else {
+        let gbk = wolf_format::gbk::encode(text);
+        let (decoded, bad) = wolf_format::gbk::decode(&gbk);
+        // The encoder emits '?' for anything the table cannot represent, and a
+        // few GBK pairs are also valid UTF-8, which decode_wolf_str would read as
+        // the wrong text. Both cases take the UTF-8 fallback so that
+        // load(write(x)) reproduces x.
+        if !bad && decoded == text && wolf_format::bytes::decode_wolf_str(&gbk) == text {
+            gbk
+        } else {
+            text.as_bytes().to_vec()
+        }
+    };
+    body.push(0);
+    body
 }
 
 impl VariableRow {

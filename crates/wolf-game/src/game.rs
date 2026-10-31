@@ -26,7 +26,7 @@ use wolf_format::mps::Map;
 use wolf_format::tileset::TileSetData;
 use wolf_vm::{
     ChoiceReply, DbOp, DbValue, Host, LogLevel, PictureCmd, Program, ProgramSet, SaveOp,
-    SaveTarget, SoundCmd, StepReport, Vm,
+    SaveTarget, SoundCmd, StepReport, Vm, WolfRng,
 };
 
 use crate::assets::Assets;
@@ -196,6 +196,9 @@ pub enum GameError {
     Format(wolf_format::Error),
     /// The title event does not exist in this build.
     MissingEvent(u32),
+    /// No `Save/System.sav` template is available, so global settings cannot be read
+    /// from it or persisted into it.
+    MissingSettings,
 }
 
 impl fmt::Display for GameError {
@@ -204,6 +207,7 @@ impl fmt::Display for GameError {
             Self::Io { path, source } => write!(f, "cannot read {}: {source}", path.display()),
             Self::Format(err) => write!(f, "malformed game data: {err}"),
             Self::MissingEvent(id) => write!(f, "common event {id} is not in this build"),
+            Self::MissingSettings => write!(f, "no Save/System.sav to hold the global settings"),
         }
     }
 }
@@ -214,8 +218,18 @@ impl std::error::Error for GameError {
             Self::Io { source, .. } => Some(source),
             Self::Format(err) => Some(err),
             Self::MissingEvent(_) => None,
+            Self::MissingSettings => None,
         }
     }
+}
+
+/// A live system variable interpreted as a WOLF volume (0..=120).
+///
+/// Negative or out-of-range values clamp instead of wrapping, because a script can write
+/// anything into a Sys slot.
+fn volume_word(value: i32) -> u32 {
+    u32::try_from(value.clamp(0, crate::settings::VOLUME_MAX as i32))
+        .unwrap_or(crate::settings::VOLUME_MAX)
 }
 
 /// The running game.
@@ -273,6 +287,9 @@ pub struct Game {
     pub auto_choice_delay: u32,
     /// The automatic pages of the map the game booted into.
     pub runtime: MapRuntime,
+    /// The last map event started by a point-and-click action-key press (diagnostics
+    /// and tests; `None` until the player clicks a trigger-0 hotspot).
+    pub last_action_event: Option<u32>,
     /// Common events whose header says `run_condition == 2`: one coroutine each,
     /// created while the condition holds and destroyed when it fails.
     pub auto_events: AutoEvents,
@@ -288,6 +305,10 @@ pub struct Game {
     previous_keys: u32,
     /// Mouse buttons held on the previous frame, so a press can be told from a hold.
     previous_mouse_buttons: u32,
+    /// Mouse position on the previous frame, so a hover only follows the cursor when the
+    /// pointer actually moved. Without this the highlight would snap back under a parked
+    /// cursor and fight the keyboard up/down navigation.
+    previous_mouse: [i32; 2],
     /// Replaces [`ENGINE_ALWAYS`] when set, so a capture can A/B one engine event at a
     /// time without editing the constant (see `wolf-cli --engine-events`).
     pub engine_always: Option<Vec<u32>>,
@@ -304,6 +325,11 @@ pub struct Game {
     /// dynamic parts (play time, system anchor, normal variables, self variables)
     /// are copied from the live VM before writing.
     pub base_save: Option<wolf_save::SaveFile>,
+    /// The pristine `Save/System.sav` template, kept separately from [`Self::base_save`]
+    /// because the latter is replaced by every loaded numbered save. Global settings
+    /// live here: a numbered save's part 2 must not become the System.sav skeleton, and
+    /// loading a slot must not change the player's volumes.
+    pub system_save: Option<wolf_save::SaveFile>,
     root: PathBuf,
 }
 
@@ -327,23 +353,34 @@ impl Game {
         // coordinate scale, which is one 32nd of the screen width and one 24th of
         // its height (docs/OPCODE_101.md section 3.1); Game.dat owns the screen
         // size, so that value is what the database layer needs.
-        let screen = std::fs::read(root.join("Game.dat"))
+        // Game.dat carries the screen size and the retail random table. The table is
+        // what the original runtime draws from (docs/research/M7_PRNG.md): the two
+        // leading u32 words are generator outputs, not seeds, so a live LCG seeded
+        // from them cannot reproduce the stream. Keep the whole parsed file so both
+        // consumers see the same bytes.
+        let game_dat = std::fs::read(root.join("Game.dat"))
             .or_else(|_| std::fs::read(basic.join("Game.dat")))
             .ok()
-            .and_then(|bytes| GameDat::parse(&bytes).ok())
-            .map_or(crate::db::DEFAULT_SCREEN, |dat| {
-                let (width, height) = dat.screen_size();
-                (u32::from(width), u32::from(height))
-            });
+            .and_then(|bytes| GameDat::parse(&bytes).ok());
+        let screen = game_dat.as_ref().map_or(crate::db::DEFAULT_SCREEN, |dat| {
+            let (width, height) = dat.screen_size();
+            (u32::from(width), u32::from(height))
+        });
         let databases = Databases::load(&basic, screen);
         let tilesets = std::fs::read(basic.join("TileSetData.dat"))
             .ok()
             .and_then(|bytes| TileSetData::parse(&bytes).ok());
         // System.sav is a complete save file in this game: use it as the template so a
-        // brand-new game can write its first save without inventing part1/part4.
-        let base_save = crate::savegame::read_save(&root.join("Save").join("System.sav")).ok();
+        // brand-new game can write its first save without inventing part1/part4. Its
+        // variable database is empty, though (docs/M3_VARDB_BUG.md), so seed the
+        // CDataBase schema from the static table before any save can use it.
+        let system_save = crate::savegame::read_save(&root.join("Save").join("System.sav")).ok();
+        let mut base_save = system_save.clone();
+        if let Some(save) = base_save.as_mut() {
+            databases.seed_vardb(&mut save.vardb);
+        }
         let auto_events = AutoEvents::from_common_events(&events);
-        Ok(Self {
+        let mut game = Self {
             vm: Vm::new(programs),
             screen: Screen::new(),
             screen_tint: ScreenTint::new(),
@@ -365,6 +402,7 @@ impl Game {
             auto_choice: false,
             auto_choice_delay: 0,
             runtime: MapRuntime::new(),
+            last_action_event: None,
             auto_events,
             playtime_frames: 0,
             mouse: [-1, -1],
@@ -372,13 +410,49 @@ impl Game {
             choice_cursor: 0,
             previous_keys: 0,
             previous_mouse_buttons: 0,
+            previous_mouse: [-1, -1],
             engine_always: None,
             engine_events_started: false,
             save_requests: Vec::new(),
             map_requests: Vec::new(),
             base_save,
+            system_save,
             root,
-        })
+        };
+        // The retail random source is the pre-generated table in Game.dat, read
+        // verbatim (bytes masked to the editor's 7-bit output). A bare Vm keeps the
+        // synthesised editor-style table, which is only a fallback for data that has
+        // no Game.dat; every real game must use the shipped stream.
+        if let Some(dat) = &game_dat {
+            game.vm.rng = WolfRng::from_game(
+                dat.random_a,
+                dat.random_b,
+                dat.static_randoms.clone(),
+            );
+        }
+        // The retail engine loads Save/System.sav at boot and hands the stored global
+        // settings to the basic-system scripts through Sys100/101/102 and Sys52..54.
+        // Nothing else in the common events initialises them: CE48 does not touch them
+        // and CE132 only rewrites them when its reset row is chosen.
+        game.seed_live_settings();
+        Ok(game)
+    }
+
+    /// Copies the settings held by the save template into the live system variables.
+    ///
+    /// See [`crate::settings`] for the mapping and its documented uncertainties.
+    fn seed_live_settings(&mut self) {
+        let settings = self.settings();
+        self.vm.vars.set_sys(100, settings.bgm_volume as i32);
+        // CE132 mirrors BGM volume into Sys101 for its on-screen number.
+        self.vm.vars.set_sys(101, settings.bgm_volume as i32);
+        self.vm.vars.set_sys(102, settings.se_volume as i32);
+        // The file stores three (key code, flag) pairs; CE132's keyboard rows read the
+        // *codes* from Sys52..54. Pad codes (301..303) are not carried by this file
+        // version, so their Sys55..57 rows stay whatever the script/engine left there.
+        self.vm.vars.set_sys(52, settings.key_config[0] as i32);
+        self.vm.vars.set_sys(53, settings.key_config[2] as i32);
+        self.vm.vars.set_sys(54, settings.key_config[4] as i32);
     }
 
     /// The data root this game was created from.
@@ -392,6 +466,156 @@ impl Game {
     /// [`Self::new`] defaults to `None`.
     pub fn enable_audio(&mut self) {
         self.audio = Some(wolf_audio::Engine::with_asset_root(self.root.clone()));
+    }
+
+    // --- global settings (Save/System.sav part 2) --------------------------
+
+    /// The global settings the pristine `Save/System.sav` template carries.
+    ///
+    /// Falls back to [`crate::settings::GlobalSettings::default`] when this game has no
+    /// `Save/System.sav` (the retail defaults: volumes 100, CE132's key reset codes).
+    #[must_use]
+    pub fn settings(&self) -> crate::settings::GlobalSettings {
+        self.system_save
+            .as_ref()
+            .map(|save| crate::settings::GlobalSettings::from_part2(&save.part2))
+            .unwrap_or_default()
+    }
+
+    /// The settings as the running game sees them: the save values with the live
+    /// Sys100/Sys102 volumes and the Sys52..54 keyboard codes overlaid.
+    ///
+    /// CE132 edits those variables in memory; `settings()` alone would still show the
+    /// values from the last persisted `System.sav`.
+    #[must_use]
+    pub fn live_settings(&self) -> crate::settings::GlobalSettings {
+        let mut settings = self.settings();
+        settings.bgm_volume = volume_word(self.sys(100));
+        settings.se_volume = volume_word(self.sys(102));
+        // Only the three keyboard codes are carried by the six file words (see
+        // [`crate::settings::GlobalSettings::key_config`]); the flags at the odd
+        // indices stay as the file has them.
+        let keyboard = [self.sys(52), self.sys(53), self.sys(54)];
+        for (slot, code) in [0usize, 2, 4].into_iter().zip(keyboard) {
+            if code != 0 {
+                settings.key_config[slot] =
+                    u32::try_from(code).unwrap_or(crate::settings::VOLUME_MAX);
+            }
+        }
+        settings
+    }
+
+    /// Writes settings into the `System.sav` template and the live system variables, then
+    /// applies the volumes to the audio engine.
+    ///
+    /// Nothing is written to disk; call [`Self::save_system_settings`] for that.
+    pub fn set_settings(&mut self, settings: crate::settings::GlobalSettings) -> Result<(), GameError> {
+        let settings = settings.clamped();
+        let mut part2 = self
+            .system_save
+            .as_ref()
+            .ok_or(GameError::MissingSettings)?
+            .part2
+            .clone();
+        settings.write_part2(&mut part2);
+        self.system_save
+            .as_mut()
+            .expect("checked above")
+            .set_part2(&part2)
+            .map_err(GameError::Format)?;
+
+        let [bgm, cancel, sub] = [
+            settings.key_config[0],
+            settings.key_config[2],
+            settings.key_config[4],
+        ];
+        self.vm.vars.set_sys(100, settings.bgm_volume as i32);
+        self.vm.vars.set_sys(101, settings.bgm_volume as i32);
+        self.vm.vars.set_sys(102, settings.se_volume as i32);
+        self.vm.vars.set_sys(52, bgm as i32);
+        self.vm.vars.set_sys(53, cancel as i32);
+        self.vm.vars.set_sys(54, sub as i32);
+        self.apply_settings();
+        Ok(())
+    }
+
+    /// Copies the live Sys100/101/102 volumes and Sys52..54 keyboard codes into the
+    /// `System.sav` template's part 2, without touching the disk.
+    ///
+    /// This is the bridge CE132's in-memory edits need before
+    /// [`Self::save_system_settings`] can persist them.
+    pub fn sync_live_settings(&mut self) -> Result<(), GameError> {
+        let settings = self.live_settings();
+        let mut part2 = self
+            .system_save
+            .as_ref()
+            .ok_or(GameError::MissingSettings)?
+            .part2
+            .clone();
+        settings.write_part2(&mut part2);
+        self.system_save
+            .as_mut()
+            .expect("checked above")
+            .set_part2(&part2)
+            .map_err(GameError::Format)?;
+        Ok(())
+    }
+
+    /// Applies the live volumes to the audio engine, when one is installed.
+    ///
+    /// A no-op with no audio engine (the headless/test default). WOLF's 0..=120 scale
+    /// maps 100 to unity; values above 100 saturate because the mixer clamps to 0..=1.
+    pub fn apply_settings(&mut self) {
+        let settings = self.live_settings();
+        if let Some(audio) = self.audio.as_mut() {
+            audio.set_bgm_volume(settings.bgm_gain());
+            audio.set_se_volume(settings.se_gain());
+        }
+    }
+
+    /// True when the live volumes differ from the last persisted template.
+    #[must_use]
+    pub fn settings_dirty(&self) -> bool {
+        let persisted = self.settings();
+        persisted.bgm_volume != volume_word(self.sys(100))
+            || persisted.se_volume != volume_word(self.sys(102))
+    }
+
+    /// Persists the live settings to `Save/System.sav`, atomically (`.new` then rename).
+    ///
+    /// The retail engine stores settings when the player leaves the settings screen or
+    /// the game; this method is that write, exposed for the settings UI and the exit
+    /// path. It never touches numbered save slots.
+    pub fn save_system_settings(&mut self) -> Result<(), GameError> {
+        self.sync_live_settings()?;
+        let path = self.root.join("Save").join("System.sav");
+        self.write_system_settings(&path)
+    }
+
+    /// Writes the `System.sav` template's settings to `path` (`.new` then rename).
+    ///
+    /// Split from [`Self::save_system_settings`] so tests can exercise the format on a
+    /// temporary copy without touching the data root.
+    pub fn write_system_settings(&self, path: &std::path::Path) -> Result<(), GameError> {
+        let save = self.system_save.as_ref().ok_or(GameError::MissingSettings)?;
+        let bytes = save.to_bytes().map_err(GameError::Format)?;
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|source| GameError::Io {
+                path: parent.to_path_buf(),
+                source,
+            })?;
+        }
+        let mut temp = path.as_os_str().to_owned();
+        temp.push(".new");
+        let temp = std::path::PathBuf::from(temp);
+        std::fs::write(&temp, &bytes).map_err(|source| GameError::Io {
+            path: temp.clone(),
+            source,
+        })?;
+        std::fs::rename(&temp, path).map_err(|source| GameError::Io {
+            path: path.to_path_buf(),
+            source,
+        })
     }
 
     /// Installs real glyph advances for text-picture layout. Returns false when the blob
@@ -467,6 +691,9 @@ impl Game {
 
         // Runtime 250 writes live in the database layer, not in the interpreter banks, so
         // they have to be folded into the save variable database before the file is built.
+        // A template without a schema (System.sav) gets the static CDataBase one first;
+        // this also covers a base_save replaced by something other than a retail save.
+        self.databases.seed_vardb(&mut save.vardb);
         let (written, missed) = self.databases.write_into(&mut save.vardb);
         if missed > 0 {
             let text = format!(
@@ -962,6 +1189,50 @@ impl Game {
         self.choice_cursor = index;
     }
 
+    /// Activates the map event under the pointer (WOLF trigger 0, `ActionKey`).
+    ///
+    /// The shipped game has no walking player: it is a fixed-screen point-and-click
+    /// UI. This is the missing input bridge that lets a fresh left click (or the
+    /// confirm key while the pointer hovers the map) run the trigger-0 page under
+    /// that screen point - the save button, the day menu, the deep-night end prompt
+    /// and the sister's click handlers all live only in map events.
+    ///
+    /// Gating, measured against the shipped map:
+    /// * only a fresh press counts; hovering alone never activates;
+    /// * a visible message or an open opcode-102 choice owns the press, so the same
+    ///   click cannot both advance a conversation and open a map event;
+    /// * the event's own activation conditions still select the page, and a page
+    ///   that is already running is not restarted (`MapRuntime::action_key_at`).
+    ///
+    /// Residual overlap (documented, not worked around): the deep-night interface's
+    /// parallel pages poll the mouse themselves (op124/op123), and during that
+    /// state a click that lands in both a trigger-0 hotspot and one of those
+    /// picture hit boxes reaches both. The data gates most of them (v176/v238/v100
+    /// conditions), but the daytime sister hotspots (ev1-4) remain selected while
+    /// v100 == 1. That does not affect the mapped controls (save, status, menu,
+    /// end button); see `tests/m3_map_click.rs` for the measured points.
+    fn handle_action_key_input(&mut self) {
+        if !self.messages.is_empty() || self.choices.is_some() {
+            return;
+        }
+        let fresh_click = self.mouse_buttons & 1 != 0 && self.previous_mouse_buttons & 1 == 0;
+        let fresh_ok = self.key_bits & !self.previous_keys & crate::key::OK != 0;
+        if !fresh_click && !fresh_ok {
+            return;
+        }
+        let [x, y] = self.mouse;
+        if x < 0
+            || y < 0
+            || x >= crate::picture::SCREEN_W as i32
+            || y >= crate::picture::SCREEN_H as i32
+        {
+            return;
+        }
+        if let Some(id) = self.runtime.action_key_at(&mut self.vm, x, y) {
+            self.last_action_event = Some(id);
+        }
+    }
+
     /// Applies this frame's key state to the open choice prompt, if there is one.
     ///
     /// WOLF's runtime owns choice navigation: opcode 102 hands the runtime a list of
@@ -985,6 +1256,24 @@ impl Game {
                 self.reply(ChoiceReply::Index(row));
                 self.choice_cursor = 0;
                 return;
+            }
+        }
+        // A right click cancels, exactly like the keyboard CANCEL key. The night menus open
+        // their prompt through opcode 102 (their own loop drives rows with key_code 123),
+        // so this is the only path a right click has to leave such a choice open. Like the
+        // keyboard, only a fresh press edge counts, not a held button.
+        let right_clicked = self.mouse_buttons & 2 != 0 && self.previous_mouse_buttons & 2 == 0;
+        if right_clicked {
+            self.reply(ChoiceReply::Cancel);
+            self.choice_cursor = 0;
+            return;
+        }
+        // Hover highlight: when the pointer moved this frame and lands on a row, follow it so
+        // the highlighted option sits under the mouse. Gated on an actual move so a parked
+        // cursor never overrides the keyboard up/down navigation below.
+        if self.mouse != self.previous_mouse && self.mouse[0] >= 0 && self.mouse[1] >= 0 {
+            if let Some(row) = self.choice_row_at(self.mouse[0], self.mouse[1]) {
+                self.choice_cursor = row.min(count - 1);
             }
         }
         // Only fresh presses count: holding a key must not scroll a menu at 60 steps a
@@ -1015,6 +1304,10 @@ impl Game {
         // restart a coroutine that already ended on its own.
         self.auto_events.sync(&mut self.vm);
         self.handle_choice_input();
+        // A fresh press can also be an action-key activation of the map event under
+        // the pointer. Run it before the VM step so the started page executes this
+        // same frame, exactly like an automatic page restarted at the frame's end.
+        self.handle_action_key_input();
         let mut report = self.vm.step_frame(&mut GameHost {
             screen: &mut self.screen,
             screen_tint: &mut self.screen_tint,
@@ -1134,6 +1427,7 @@ impl Game {
         // parallel page that just ended comes back on the next tick.
         self.runtime.start_pending(&mut self.vm);
         self.previous_mouse_buttons = self.mouse_buttons;
+        self.previous_mouse = self.mouse;
         self.stats.frames += 1;
         self.stats.instructions += report.steps as u64;
         self.stats.peak_instances = self.stats.peak_instances.max(report.running);
@@ -1318,12 +1612,28 @@ impl crate::textpic::Cells for PictureCells<'_> {
         self.databases
             .text(crate::db::Container::CData, ty, row, column)
             .map(str::to_owned)
+            .or_else(|| {
+                // Numeric-only cells have no string counterpart: a status picture that
+                // reads 行動力 or 精力 out of the variable database gets its number in the
+                // same column the text side cannot answer (CE242 re-paints slots 230/240
+                // this way). Falling back to the number keeps the digits visible instead
+                // of rendering an empty run.
+                self.databases
+                    .num(crate::db::Container::CData, ty, row, column)
+                    .map(|value| value.to_string())
+            })
     }
 
     fn udb(&self, ty: i32, row: i32, column: i32) -> Option<String> {
         self.databases
             .text(crate::db::Container::Data, ty, row, column)
             .map(str::to_owned)
+            .or_else(|| {
+                // See cdb: numeric-only variable-table cells render as their number.
+                self.databases
+                    .num(crate::db::Container::Data, ty, row, column)
+                    .map(|value| value.to_string())
+            })
     }
 }
 
@@ -1634,11 +1944,29 @@ impl Host for GameHost<'_> {
                 .unwrap_or(0);
             return Some(DbValue::Num(row));
         }
+        if column == crate::db::ROW_NAME_COLUMN {
+            // CE265/CE267 read the editor name of one row, not a field: type 26 is
+            // メッセージウィンドウ種類 and type 24 is 顔グラフィック名, and the
+            // destination is an event self variable (e.g. 1_600_007), which the VM
+            // can hold as a string. The name comes from the .project companion (the
+            // .dat carries no labels), so a table built without one answers empty
+            // rather than a wrong value. Always a Str: the cell is a name; the VM
+            // stores it with store_str, which a numeric-only destination ignores.
+            let name = self
+                .databases
+                .row_name(container, db_type, row)
+                .unwrap_or_default()
+                .to_owned();
+            return Some(DbValue::Str(name));
+        }
         if column < 0 {
-            // -3 is unverified (CE265/CE267 appear to use it as a row-name lookup). Do
-            // not clamp a negative column onto a real field; answer empty and say so.
+            // Any other negative column is still unverified. Do not clamp a negative
+            // column onto a real field; answer empty and say so.
             self.note(format!(
-                "250 DatabaseAccess: {container:?} ({db_type}, {row}, {column}) negative column not modelled"
+                "250 DatabaseAccess: {container:?} ({db_type}, {row}, {column}) flags {:#x} labels {:?}/{:?} negative column not modelled",
+                op.flags,
+                op.type_label.as_deref().unwrap_or(""),
+                op.field_label.as_deref().unwrap_or("")
             ));
             return Some(if wants_text {
                 DbValue::Str(String::new())
@@ -1722,6 +2050,11 @@ impl Host for GameHost<'_> {
         None
     }
 
+    /// 201 SetMoveRoute. Marked dead on purpose: every one of this game's five registered
+    /// maps is a single fixed screen (docs/HANDOFF_M0.md section 4), so there is no scrolling
+    /// map layer for a route to move through. The only shipped uses are the title/menu
+    /// background walk, which draws no map layer and is not visible. The note is kept (not
+    /// swallowed) so an unexpected map command would still surface in diagnostics.
     fn move_route(&mut self, target: i32, route: &[wolf_format::command::RouteCommand]) {
         let _ = target;
         self.note(format!(
@@ -1767,6 +2100,10 @@ impl Host for GameHost<'_> {
         }
     }
 
+    /// 270 Party. Marked dead on purpose: this game has no party/combat system to model
+    /// (docs/HANDOFF_M0.md section 4 - battle tables are template residue), and the shipped
+    /// calls only reconfigure an unseen roster before a screen-fixed map. Arguments are
+    /// counted in the note so an unexpected data change would still be visible.
     fn party(&mut self, args: &[i32]) {
         self.note(format!(
             "270 Party: {} argument(s) recorded only",
@@ -1784,12 +2121,24 @@ impl Host for GameHost<'_> {
     fn effect(&mut self, kind: i32, duration: i32, args: &[i32]) {
         // Colour effects belong to the picture store, not to the interpreter, because they
         // outlive the instruction: a type 5 flash keeps cycling for as long as the picture
-        // exists. Everything else is recorded but not drawn - see Screen::effect.
+        // exists. Every kind this game ships (0,1,2,3,4,5,7,8,9,10) is handled there - see
+        // Screen::effect. A false here therefore means either an unsupported kind (never
+        // present in the shipped data) or, far more often, that the instruction's target
+        // picture range holds no live picture yet, which the real engine treats as a no-op
+        // too. Only the first case is a real gap; keep them apart rather than silently
+        // swallowing either.
         if !self.screen.effect(kind, duration, args) {
-            self.note(format!(
-                "290 Effect: kind {kind} for {duration} frame(s) ({} args) not drawn yet",
-                args.len()
-            ));
+            if crate::picture::Screen::effect_kind_supported(kind) {
+                self.note(format!(
+                    "290 Effect: kind {kind} for {duration} frame(s) ({} args) has no live picture in its range (no-op)",
+                    args.len()
+                ));
+            } else {
+                self.note(format!(
+                    "290 Effect: kind {kind} for {duration} frame(s) ({}) is not modelled (template residue; zero uses in this game)",
+                    args.len()
+                ));
+            }
         }
     }
 
@@ -1843,6 +2192,9 @@ impl Host for GameHost<'_> {
         self.note(format!("211 Reserve: event {event} not scheduled yet"));
     }
 
+    /// 106 ShowDebugMessage. Benign on purpose: this is the script's own debug print, not a
+    /// missing feature. It is recorded under `diagnostics` (never `warnings`), so it can be
+    /// inspected during a smoke run without being mistaken for an unmodelled instruction.
     fn debug_message(&mut self, text: &str) {
         *self
             .diagnostics
@@ -2440,6 +2792,118 @@ mod tests {
         assert_eq!(
             host(&mut game).key_code_auto(17, 0),
             crate::key::CODE_CANCEL
+        );
+    }
+
+    /// A right mouse press cancels an open choice exactly like the keyboard CANCEL key.
+    #[test]
+    fn a_right_click_cancels_an_open_choice() {
+        let Some(root) = have_data() else { return };
+        let mut game = Game::new(&root).expect("game");
+        game.choices = Some(Choices {
+            options: vec!["one".to_owned(), "two".to_owned(), "three".to_owned()],
+            frames: 0,
+        });
+        game.mouse_buttons = 2;
+        game.previous_mouse_buttons = 0;
+        game.handle_choice_input();
+        assert_eq!(game.replies.back(), Some(&ChoiceReply::Cancel));
+        assert_eq!(game.choice_cursor(), 0);
+    }
+
+    /// Hovering the pointer over a row moves the highlight there, but a parked cursor must
+    /// not override the keyboard up/down navigation.
+    #[test]
+    fn a_hover_follows_the_pointer_without_fighting_the_keyboard() {
+        let Some(root) = have_data() else { return };
+        let mut game = Game::new(&root).expect("game");
+        let options = vec!["one".to_owned(), "two".to_owned(), "three".to_owned()];
+        game.choices = Some(Choices {
+            options: options.clone(),
+            frames: 0,
+        });
+        let (ax, ay) = game.choice_anchor();
+        let layout = crate::choice::layout_at_sized(&options, 0, ax, ay, game.font_px())
+            .expect("choice layout");
+        let centre = |row: usize| {
+            let line = layout.lines[row];
+            [
+                (line[0] + line[2] / 2.0) as i32,
+                (line[1] + line[3] / 2.0) as i32,
+            ]
+        };
+
+        // Pointer moves onto row 1: the highlight follows it.
+        game.mouse = centre(1);
+        game.previous_mouse = [-1, -1];
+        game.mouse_buttons = 0;
+        game.previous_mouse_buttons = 0;
+        game.key_bits = 0;
+        game.previous_keys = 0;
+        game.handle_choice_input();
+        assert_eq!(game.choice_cursor(), 1);
+
+        // Pointer parked over row 0 while the keyboard presses DOWN: keyboard wins,
+        // cursor steps 1 -> 2 rather than snapping back to the parked row.
+        game.mouse = centre(0);
+        game.previous_mouse = centre(0);
+        game.key_bits = crate::key::DOWN;
+        game.previous_keys = 0;
+        game.handle_choice_input();
+        assert_eq!(game.choice_cursor(), 2);
+    }
+
+    /// A numeric-only picture cell renders as its number (CE242 action/stamina digits).
+    #[test]
+    fn picture_cells_render_numeric_only_cells_as_their_number() {
+        use crate::textpic::Cells as _;
+        let mut databases = crate::db::Databases::default();
+        databases.set_num(crate::db::Container::CData, 3, 2, 1, 60);
+        let cells = PictureCells {
+            databases: &databases,
+        };
+        // CData side answers the number; the Data side has no such cell.
+        assert_eq!(cells.cdb(3, 2, 1), Some("60".to_owned()));
+        assert_eq!(cells.udb(3, 2, 1), None);
+
+        // A string cell still wins when both sides exist.
+        databases.set_text(crate::db::Container::CData, 3, 2, 1, "sixty");
+        let cells = PictureCells {
+            databases: &databases,
+        };
+        assert_eq!(cells.cdb(3, 2, 1), Some("sixty".to_owned()));
+
+        // The variable container has its own numeric fallback.
+        databases.set_num(crate::db::Container::Data, 5, 0, 2, 65);
+        let cells = PictureCells {
+            databases: &databases,
+        };
+        assert_eq!(cells.udb(5, 0, 2), Some("65".to_owned()));
+    }
+
+    #[test]
+    fn a_negative_name_column_reads_the_row_name_into_a_string_variable() {
+        // CE265 reads Data (26, 0, -3) and CE267 reads Sys (24, 0, -3) into string
+        // variables; column -3 is the row's editor name ([crate::db::ROW_NAME_COLUMN]),
+        // not a field. Regression: this used to answer "" and blank the face/window.
+        let Some(root) = have_data() else { return };
+        let mut game = Game::new(&root).expect("game");
+        let read = wolf_vm::DbDirection::Read;
+        let data = DbOp {
+            container: wolf_vm::DbContainer::Data,
+            ..op(read, 26, 0, -3, 0x11200, None, Some(1_600_007))
+        };
+        assert_eq!(
+            cell(&mut game, &data),
+            Some(DbValue::Str("まる（妹）".to_owned()))
+        );
+        let sys = DbOp {
+            container: wolf_vm::DbContainer::Sys,
+            ..op(read, 24, 0, -3, 0x11100, None, Some(1_600_007))
+        };
+        assert_eq!(
+            cell(&mut game, &sys),
+            Some(DbValue::Str("ウィンドウ表示なし".to_owned()))
         );
     }
 

@@ -80,14 +80,23 @@ pub fn load_into(game: &mut Game, path: &Path) -> Result<LoadedSave, String> {
 pub fn apply(game: &mut Game, save: &SaveFile) -> LoadedSave {
     let mut loaded = LoadedSave::default();
 
-    // Normal variables: Part3 row 0 is the 800-word block for 2000000+n. The engine's
-    // Variables bank stores normal variables at index 0, not at the 2_000_000 magic base
-    // (measured: the opening HUD reads var 7 = 2409 and SaveData01 row0[7] = 7586).
-    let normal = &save.part3.row_words[..save.part3.row_words.len().min(800)];
-    for (index, value) in normal.iter().enumerate() {
-        game.vm.vars.set(index, *value as i32);
+    // Keep the save we loaded from as the template for the next save_to: it carries the
+    // full runtime variable database (vardb, ~84 KB in SaveData01) plus the current map
+    // snapshot / object tables. Without this, save_to would rebuild from System.sav and
+    // drop the whole vardb overlay, drifting every runtime-250 database cell on reload.
+    game.base_save = Some(save.clone());
+
+    // Normal variables: Part3 row 0 is the block for 2000000+n. Use the row-span API
+    // (SavePart3::normal_var) rather than the flattened row_words run: row_words packs
+    // every row back to back, so walking it would spill the first words of rows 1..N
+    // into variable indices past row 0's length. The engine's Variables bank stores
+    // normal variables at index 0, not at the 2_000_000 magic base.
+    let mut index = 0;
+    while let Some(value) = save.part3.normal_var(index) {
+        game.vm.vars.set(index, value);
+        index += 1;
     }
-    loaded.normal_vars = normal.len();
+    loaded.normal_vars = index;
 
     // The variable database travels inside the save. Character creation writes the
     // player name into CDataBase type 0 row 12, and the HUD reads it back through
@@ -122,13 +131,23 @@ pub fn apply(game: &mut Game, save: &SaveFile) -> LoadedSave {
 #[must_use]
 pub fn picture_from_record(record: &SavePart5_1) -> Option<Picture> {
     let number = record.var1 as i32;
-    let name = String::from_utf8_lossy(strip_nul(&record.md1)).into_owned();
+    let name = {
+        // File / window names are ASCII paths in every shipped save, but the Chinese
+        // fan translation stores display strings in GBK, so decode defensively.
+        let (decoded, _bad) = wolf_format::gbk::decode(strip_nul(&record.md1));
+        decoded
+    };
     let mut picture = Picture::new(number);
 
     // var5 is the text flag and var6 the window flag in every record of all nine saves.
     if record.var5 == 1 {
         picture.kind = PictureKind::Text;
         picture.text = decode_picture_text(&record.md1);
+        // Keep the stream the text came from. Retail saves contain escape spellings
+        // the canonical encoder does not emit (`01 02 20`, two spellings of a font
+        // size), so an untouched picture must be written back verbatim; see
+        // picture_to_record.
+        picture.retained_text = Some((picture.text.clone(), record.md1.clone()));
     } else {
         // A FileString / WindowString picture takes its name from a string variable;
         // when that variable is empty the record carries an empty name. Keep the
@@ -177,6 +196,12 @@ pub fn picture_from_record(record: &SavePart5_1) -> Option<Picture> {
     }
     picture.anchor = record.var4 as u8;
 
+    // Keep the whole record as well as the decoded fields. `Picture` cannot represent
+    // var2/var3, vals1, vars19_36, the trailing tables and the unused scale words, so an
+    // untouched picture has to be written back from the original record; see
+    // picture_to_record.
+    picture.retained_record = Some(record.clone());
+
     Some(picture)
 }
 
@@ -185,15 +210,50 @@ pub fn picture_from_record(record: &SavePart5_1) -> Option<Picture> {
 /// This is the inverse of [`picture_from_record`]. It only has to cover the fields the
 /// save format actually stores: the picture number, kind flags, name/text, position,
 /// sprite-sheet grid, scale, opacity, blend, anchor and the last fade length.
+///
+/// A picture that came from a save and has not been repainted is written back from the
+/// record it was decoded from (see [`Picture::retained_record`]). The canonical encoder
+/// below only knows the geometry the renderer uses, while a retail record also carries
+/// script state - `var2`/`var3`, `vals1`, `vars19_36`, the per-kind trailing tables,
+/// `vars55_60`, `vars61_63`, the unused `vars7_18[7]`, the last fade length in
+/// `vars7_18[8]`, the second scale word `vars7_18[10]` and the reserved word `[11]`.
+/// Those cannot be reconstructed, so an unchanged picture hands the original record
+/// back verbatim. Reuse is decided by comparing canonical records, so as soon as any
+/// field the encoder owns changes, the canonical record differs and the encoder below
+/// is used instead: an edited picture never inherits stale numeric state.
 #[must_use]
 pub fn picture_to_record(picture: &Picture) -> SavePart5_1 {
+    if let Some(retained) = &picture.retained_record {
+        let canonical = canonical_record(picture);
+        // The baseline is what the canonical encoder would have written for the picture
+        // this record decoded to. Recomputing it (rather than storing it beside the
+        // record) keeps `Picture` compact and guarantees both sides use one encoder.
+        if let Some(loaded) = picture_from_record(retained) {
+            if canonical_record(&loaded) == canonical {
+                return retained.clone();
+            }
+        }
+        return canonical;
+    }
+    canonical_record(picture)
+}
+
+/// The record the canonical encoder produces from the live fields alone.
+fn canonical_record(picture: &Picture) -> SavePart5_1 {
     let mut record = SavePart5_1::default();
     record.var1 = picture.number as u32;
     record.var4 = u16::from(picture.anchor);
     record.var5 = u8::from(picture.kind.is_text());
     record.var6 = u8::from(picture.kind.is_window());
     record.md1 = if picture.kind.is_text() {
-        encode_picture_text(&picture.text)
+        // A picture loaded from a save keeps its original byte stream while the text is
+        // untouched. The encoder below only covers the canonical spellings; the shipped
+        // saves also use `01 02 20` control escapes and a second font-size form, and a
+        // load -> save must not rewrite them.
+        match &picture.retained_text {
+            Some((text, raw)) if *text == picture.text => raw.clone(),
+            _ => encode_picture_text(&picture.text),
+        }
     } else {
         let mut bytes = picture.file.as_bytes().to_vec();
         bytes.push(0);
@@ -242,22 +302,31 @@ pub fn part5_from_screen(screen: &Screen) -> SavePart5 {
 /// The inverse of [`decode_picture_text`] for the escapes the retail saves use:
 /// `\E` (outline), `\f[n]` (font size) and `\c[n]` (palette index). Other escapes are
 /// left literal, which is harmless: the save is a snapshot of already-expanded text.
+/// Plain text is written as GBK, matching how the Chinese fan translation stores it.
 #[must_use]
 pub fn encode_picture_text(text: &str) -> Vec<u8> {
     let chars: Vec<char> = text.chars().collect();
     let mut out = Vec::new();
+    let mut pending = String::new();
     let mut index = 0;
     while index < chars.len() {
         if chars[index] == '\\' {
             if let Some((consumed, bytes)) = encode_escape(&chars[index..]) {
+                if !pending.is_empty() {
+                    // The Chinese fan translation stores display strings in GBK.
+                    out.extend_from_slice(&wolf_format::gbk::encode(&pending));
+                    pending.clear();
+                }
                 out.extend_from_slice(&bytes);
                 index += consumed;
                 continue;
             }
         }
-        let mut buffer = [0u8; 4];
-        out.extend_from_slice(chars[index].encode_utf8(&mut buffer).as_bytes());
+        pending.push(chars[index]);
         index += 1;
+    }
+    if !pending.is_empty() {
+        out.extend_from_slice(&wolf_format::gbk::encode(&pending));
     }
     out.push(0);
     out
@@ -298,7 +367,7 @@ fn encode_escape(chars: &[char]) -> Option<(usize, Vec<u8>)> {
 
 /// Decodes the picture-string byte stream stored in \`SavePart5_1::md1\`.
 ///
-/// The stream is UTF-8 text interleaved with \`0x01 <total_len> <payload>\` escapes.
+/// The stream is GBK text interleaved with \`0x01 <total_len> <payload>\` escapes.
 /// The four escapes that occur in the retail saves decode as:
 ///
 /// * \`01 02 05\` - \`\E\` (outline on).
@@ -315,10 +384,16 @@ pub fn decode_picture_text(bytes: &[u8]) -> String {
             break;
         }
         if byte != 1 {
-            let len = char_len(byte);
-            let end = (i + len).min(bytes.len());
-            out.push_str(&String::from_utf8_lossy(&bytes[i..end]));
-            i = end;
+            // The Chinese fan translation stores display strings in GBK, so gather
+            // the whole text run up to the next 0x01 escape / 0x00 terminator and
+            // decode it as GBK. GBK trailing bytes never fall in 0x00..=0x01, so the
+            // delimiters are unambiguous.
+            let start = i;
+            while i < bytes.len() && bytes[i] != 0 && bytes[i] != 1 {
+                i += 1;
+            }
+            let (text, _bad) = wolf_format::gbk::decode(&bytes[start..i]);
+            out.push_str(&text);
             continue;
         }
         if i + 2 > bytes.len() {
@@ -376,15 +451,6 @@ fn strip_nul(bytes: &[u8]) -> &[u8] {
     }
 }
 
-fn char_len(first: u8) -> usize {
-    match first {
-        0x00..=0x7f => 1,
-        0xc0..=0xdf => 2,
-        0xe0..=0xef => 3,
-        _ => 4,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -437,10 +503,10 @@ mod tests {
 
     #[test]
     fn a_saved_text_picture_decodes_colour_outline_and_multiple_runs() {
-        // SaveData01 picture 6210: \c[0] \f[18] 周六.
+        // SaveData01 picture 6210: \c[0] \f[18] 周六 (stored as GBK D6DC D2BB).
         let bytes = [
-            0x01, 0x06, 0x02, 0x0e, 0x0e, 0x0f, 0x01, 0x01, 0x05, 0x03, 0x0e, 0x20, 0x01, 0xe5,
-            0x91, 0xa8, 0xe5, 0x85, 0xad, 0x00,
+            0x01, 0x06, 0x02, 0x0e, 0x0e, 0x0f, 0x01, 0x01, 0x05, 0x03, 0x0e, 0x20, 0x01, 0xd6,
+            0xdc, 0xc1, 0xf9, 0x00,
         ];
         assert_eq!(decode_picture_text(&bytes), "\\c[0]\\f[18]周六");
     }
@@ -451,7 +517,7 @@ mod tests {
         path.pop();
         path.pop();
         path.push("work");
-        path.push("retail_backup");
+        path.push("Data");
         path.push("Save");
         path.push("SaveData01.sav");
         let Ok(save) = read_save(&path) else { return };
@@ -528,4 +594,5 @@ mod tests {
         assert_eq!(picture.window, Some((150, 14)));
         assert_eq!(picture.scale, 62);
     }
+
 }

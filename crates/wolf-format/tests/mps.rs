@@ -156,12 +156,9 @@ fn every_map_parses_to_its_baseline_numbers() {
         assert_eq!(map.version_header, 0x00, "{}: version header", expect.file);
         assert_eq!(map.version, 0x65, "{}: version", expect.file);
         assert_eq!(map.footer, 0x66, "{}: footer", expect.file);
-        // Map names are Shift-JIS and this game's reader decodes them lossily.
-        assert_eq!(
-            map.name, "\u{FFFD}\u{202}\u{FFFD}",
-            "{}: map name",
-            expect.file
-        );
+        // Every shipped map carries the editor's placeholder name "なし"; the
+        // reader decodes it as CP932 once the GBK/CP932 heuristic is in place.
+        assert_eq!(map.name, "なし", "{}: map name", expect.file);
         assert_eq!(map.width, expect.width, "{}: width", expect.file);
         assert_eq!(map.height, expect.height, "{}: height", expect.file);
         assert_eq!(

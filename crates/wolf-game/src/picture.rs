@@ -766,6 +766,25 @@ pub struct Picture {
     /// picture all have to agree on where it is. The destination travels in `to` and only
     /// reaches the fields when the slide lands.
     pub transition: Option<Transition>,
+    /// Raw save `md1` text stream and the text it decoded to, when this picture came
+    /// from a save record. The loader keeps the original bytes so an unchanged picture
+    /// is written back byte-for-byte - the canonical encoder cannot reproduce every
+    /// retail escape spelling (e.g. the `01 02 20` control escape). `picture_to_record`
+    /// only reuses them while `text` still equals the retained decoding; an event that
+    /// rewrites the text falls back to the encoder.
+    pub(crate) retained_text: Option<(String, Vec<u8>)>,
+    /// The save record this picture was decoded from, kept so an untouched picture is
+    /// written back with the numeric payload the retail record carried.
+    ///
+    /// `picture_to_record` rebuilds a record from the live fields, but the format stores
+    /// far more than the renderer needs: `var2`/`var3`, `vals1`, `vars19_36`,
+    /// `vars55_60`, `vars61_63`, the per-kind trailing tables and the second scale
+    /// word. Those are script state, not picture geometry, so a canonical encoder
+    /// cannot invent them. Keeping the decoded record lets `picture_to_record` hand
+    /// back the original bytes while every field it *does* own still matches; as soon
+    /// as an event repaints the picture it falls back to the canonical encoder (see
+    /// `savegame::picture_to_record`).
+    pub(crate) retained_record: Option<wolf_save::part5::SavePart5_1>,
 }
 
 impl Picture {
@@ -799,6 +818,8 @@ impl Picture {
             pattern: None,
             hidden: false,
             transition: None,
+            retained_text: None,
+            retained_record: None,
         }
     }
 
@@ -1157,6 +1178,34 @@ impl Screen {
 
     /// Applies one 290 effect command, returning false when the type or the range is unusable.
     ///
+    /// True when `kind` names a 290 effect this store knows how to apply.
+    ///
+    /// Every kind the shipped data uses is handled by the match below; a false return
+    /// therefore means either an out-of-range/unsupported kind (never present in this
+    /// game) or that the instruction's target picture range holds no live picture yet.
+    /// The interpreter uses this to tell a real missing feature apart from a genuine
+    /// engine no-op instead of lumping both under one "not drawn" note.
+    #[must_use]
+    pub fn effect_kind_supported(kind: i32) -> bool {
+        matches!(u8::try_from(kind), Ok(k) if Self::effect_kind_supported_u8(k))
+    }
+
+    fn effect_kind_supported_u8(kind: u8) -> bool {
+        matches!(
+            kind,
+            EFFECT_FLASH
+                | EFFECT_COLOR_CORRECT
+                | EFFECT_SHIFT
+                | EFFECT_SHAKE
+                | EFFECT_ZOOM
+                | EFFECT_BLINK
+                | EFFECT_BREATH
+                | EFFECT_PATTERN_ONCE
+                | EFFECT_PATTERN_LOOP
+                | EFFECT_PATTERN_PINGPONG
+        )
+    }
+
     /// args is the interpreter raw argument list: args 0 is the head word (its high nibble is
     /// already decoded into `kind` by the caller), args 1 the action time, args 2 and 3 the
     /// ends of ONE CLOSED picture range, and args 4..6 three values whose meaning depends on
@@ -1170,20 +1219,7 @@ impl Screen {
         let Ok(kind) = u8::try_from(kind) else {
             return false;
         };
-        let known = matches!(
-            kind,
-            EFFECT_FLASH
-                | EFFECT_COLOR_CORRECT
-                | EFFECT_SHIFT
-                | EFFECT_SHAKE
-                | EFFECT_ZOOM
-                | EFFECT_BLINK
-                | EFFECT_BREATH
-                | EFFECT_PATTERN_ONCE
-                | EFFECT_PATTERN_LOOP
-                | EFFECT_PATTERN_PINGPONG
-        );
-        if !known {
+        if !Self::effect_kind_supported_u8(kind) {
             return false;
         }
         let Some((lo, hi)) = effect_range(args) else {
@@ -1618,6 +1654,19 @@ fn take(args: &[i32], index: usize) -> Option<i32> {
 mod tests {
     use super::*;
     use wolf_vm::PictureCmd;
+
+    #[test]
+    fn every_effect_kind_the_game_ships_is_supported() {
+        // 0,1,2,3,4,5,7,8,9,10 all occur in the data and are handled by Screen::effect.
+        for kind in [0, 1, 2, 3, 4, 5, 7, 8, 9, 10] {
+            assert!(Screen::effect_kind_supported(kind), "kind {kind} should be supported");
+        }
+        // Type 6 (the second blink variant) has zero uses and stays unhandled on purpose;
+        // out-of-range values are likewise rejected rather than guessed at.
+        for kind in [6, -1, 11, 999] {
+            assert!(!Screen::effect_kind_supported(kind), "kind {kind} should be unsupported");
+        }
+    }
 
     /// Builds a command the way the interpreter does: args start at raw arg[2].
     fn cmd(

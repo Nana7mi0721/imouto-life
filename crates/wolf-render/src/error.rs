@@ -1,9 +1,11 @@
 //! Renderer error type.
 //!
 //! `Renderer::new` is a *synchronous* constructor (see docs/ARCHITECTURE.md §3.4): every
-//! async wgpu entry point is driven to completion with `pollster::block_on`, so failures
-//! surface as values instead of being threaded through an `async` signature. That keeps
-//! the caller (the winit `resumed` callback, which is sync) free of executor plumbing.
+//! async wgpu entry point is driven to completion by a bounded executor, so failures
+//! surface as values instead of being threaded through an `async` signature. The
+//! deadline matters: a wedged driver must not hang a headless capture forever (see
+//! [`RenderError::InitTimeout`]). That keeps the caller (the winit `resumed`
+//! callback, which is sync) free of executor plumbing.
 //!
 //! wgpu's own error types are `#[non_exhaustive]` and change shape between minors, so the
 //! public API only ever exposes strings and our own variants.
@@ -20,6 +22,20 @@ pub enum RenderError {
     },
     /// `Adapter::request_device` failed.
     DeviceRequest(String),
+    /// An async wgpu bring-up step did not finish inside its deadline.
+    ///
+    /// Adapter enumeration and device creation are driver calls that can block
+    /// indefinitely on a wedged or memory-starved GPU (this machine has seen a
+    /// headless capture hang at exactly that point). The constructor drives them
+    /// with a bounded executor instead of `block_on`, so a stuck driver becomes
+    /// this error instead of a hung process. `stage` names the step ("adapter",
+    /// "device") and `millis` is the deadline that expired.
+    InitTimeout {
+        /// Which async step timed out.
+        stage: &'static str,
+        /// The deadline in milliseconds.
+        millis: u64,
+    },
     /// `Instance::create_surface` failed (usually: the window has no usable handle).
     CreateSurface(String),
     /// The surface reports no compatible default configuration for this adapter.
@@ -49,6 +65,11 @@ impl fmt::Display for RenderError {
                 write!(f, "no compatible GPU adapter found (backends: {backends})")
             }
             Self::DeviceRequest(e) => write!(f, "failed to request a wgpu device: {e}"),
+            Self::InitTimeout { stage, millis } => write!(
+                f,
+                "GPU {stage} request did not finish within {millis} ms; the driver may be wedged \
+                 (set WOLF_RENDER_TIMEOUT_MS to wait longer)"
+            ),
             Self::CreateSurface(e) => write!(f, "failed to create a window surface: {e}"),
             Self::UnsupportedSurface => {
                 write!(f, "adapter reports no default surface configuration")

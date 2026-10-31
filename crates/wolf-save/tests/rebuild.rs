@@ -450,6 +450,10 @@ fn a_mutated_vardb_number_survives_a_full_rebuild() {
 }
 
 /// A textual cell edit survives a write, NUL terminator included.
+///
+/// `VariableDatabase::text` is the lossy UTF-8 view of the body (the live game
+/// layer's contract); the bytes are written in this release's GBK display
+/// encoding, so the comparison goes through the real WOLF decoder.
 #[test]
 fn a_mutated_vardb_text_survives_a_full_rebuild() {
     let saves = all_saves();
@@ -474,12 +478,14 @@ fn a_mutated_vardb_text_survives_a_full_rebuild() {
     );
     let bytes = save.to_bytes_rebuilt().expect("rebuild after vardb text");
     let fresh = SaveFile::parse(&bytes).expect("reparse after vardb text");
+    let written = fresh
+        .vardb
+        .string(type_index, row_index, field_index)
+        .expect("cell");
+    let raw = written.strip_suffix(&[0]).unwrap_or(written);
     assert_eq!(
-        fresh
-            .vardb
-            .text(type_index, row_index, field_index)
-            .as_deref(),
-        Some("書き込みテスト"),
+        wolf_format::bytes::decode_wolf_str(raw),
+        "書き込みテスト",
         "{name}: edited text"
     );
     assert!(fresh.checksum_ok(), "{name}: checksum after vardb text");

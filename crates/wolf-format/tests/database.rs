@@ -129,9 +129,9 @@ fn data_base_type_zero_has_the_documented_field_table() {
     assert_eq!(first.fields[2], FieldKind::Num(0));
     assert_eq!(first.fields[17], FieldKind::Num(12));
 
-    // Measured first row, §6.3. The string cells hold Shift-JIS names that the
-    // reader decodes lossily to U+FFFD, so only the numeric columns are asserted
-    // exactly.
+    // Measured first row, §6.3. The string cells are CP932 Japanese; the
+    // reader's UTF-8/CP932/GBK heuristic now decodes them without replacement
+    // characters, so the one non-empty cell is pinned exactly.
     let row = &first.rows[0];
     assert_eq!(
         row.numbers,
@@ -142,9 +142,9 @@ fn data_base_type_zero_has_the_documented_field_table() {
         "type 0 row 0 numeric columns"
     );
     assert_eq!(row.strings.len(), 5, "type 0 row 0 string columns");
-    assert!(
-        row.strings[0].contains('\u{FFFD}'),
-        "string 0 is a lossy name"
+    assert_eq!(
+        row.strings[0], "通常攻撃（技能側）",
+        "string 0 is the first skill's editor name"
     );
     assert_eq!(row.strings[1], "", "string 1 empty");
     assert_eq!(row.strings[2], "", "string 2 empty");

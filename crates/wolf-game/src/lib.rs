@@ -32,6 +32,7 @@ pub mod map_runtime;
 pub mod message;
 pub mod picture;
 pub mod savegame;
+pub mod settings;
 pub mod sysgraphic;
 pub mod textpic;
 pub mod tilemap;

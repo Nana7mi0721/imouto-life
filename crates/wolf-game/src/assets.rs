@@ -18,7 +18,7 @@
 //! Decoding yields premultiplied-free RGBA8 in sRGB space, which is exactly what the
 //! renderer uploads as `Rgba8UnormSrgb`.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -187,6 +187,11 @@ impl std::error::Error for AssetError {
 pub struct Assets {
     root: PathBuf,
     cache: HashMap<String, Arc<ImageData>>,
+    /// Names that are not files (built-in `<SHAPE>` system graphics) or whose
+    /// resolution failed. The picture layer asks for a size on every draw, and a
+    /// repeated miss costs a case-insensitive directory walk each time; remembering
+    /// it turns the per-frame probe into a hash lookup (see docs/M4_PERF.md §6.1).
+    missing: HashSet<String>,
     /// Asset names that were resolved through a fallback alias (currently the
     /// `Picture/word_effect* -> hword/` author typo). The game layer drains these into
     /// its diagnostics so a silent path fix stays visible.
@@ -200,6 +205,7 @@ impl Assets {
         Self {
             root: root.into(),
             cache: HashMap::new(),
+            missing: HashSet::new(),
             fallbacks: Vec::new(),
         }
     }
@@ -366,12 +372,22 @@ impl Assets {
         if name.is_empty() {
             return None;
         }
+        // Built-in system graphics are never files; answering here avoids the
+        // directory walk below on every draw (docs/M4_PERF.md §6.1).
+        if crate::sysgraphic::parse(name).is_some() {
+            return None;
+        }
+        if self.missing.contains(name) {
+            return None;
+        }
         match self.load(name) {
             Ok(image) => Some(image.size()),
             Err(err) => {
                 // Not a warning per call: the picture layer re-asks every frame and the
-                // same missing background would bury the log.
+                // same missing background would bury the log. Remember the miss so the
+                // next frame does not repeat the filesystem probe.
                 let _ = err;
+                self.missing.insert(name.to_owned());
                 None
             }
         }

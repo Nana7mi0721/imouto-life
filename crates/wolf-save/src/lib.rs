@@ -923,6 +923,12 @@ pub(crate) fn strip_nul(bytes: &[u8]) -> &[u8] {
 
 /// A `MemData` body decoded as text the way the game displays it.
 ///
+/// This is the **lossy UTF-8 view** the live game layer currently uses: bytes
+/// that are not valid UTF-8 (CP932 template text, GBK translated text) become
+/// U+FFFD. [VariableDatabase::text](crate::vardb::VariableDatabase::text) keeps
+/// that contract; callers that want the real text use
+/// [decode_wolf_str](wolf_format::bytes::decode_wolf_str) on
+/// [VariableDatabase::string](crate::vardb::VariableDatabase::string) instead.
 /// WolfSave returns an empty string for bodies of length 0 or 1, because those
 /// hold at most a bare terminator.
 #[must_use]

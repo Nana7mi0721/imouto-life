@@ -294,3 +294,62 @@ WOLF_DATA_ROOT="$PWD/work/Data" ./target/debug/wolf-cli.exe verify | tail -20
   * **验收**：默认 `cargo test -q --workspace` **exit 0**（39 target 全 ok）；`WOLF_DATA_ROOT=work/Data cargo test -q -p wolf-game --test m2_input|m2_daily_loop|m2_hud_events` = **5/4/4 passed**；`--lib` **229 passed**；`wolf-cli verify` **PASS 64 / 1 SKIP(dxarchive.header)**。
   * **文档**：新增 `docs/M2_SLICE.md`（范围、读档状态、CE245/CE251/CE242/CE243/CE244/CE256 实测、鼠标契约与坑、验收命令）；新增仓库根 `AGENTS.md`（子代理并行、写作用域、环境/数据/提交/内容安全约定）。清理 M2 临时探针（dayprobe*.rs、cmddump/mapsum/refs examples），不提交。
   * **已知非 M2 遗留**：`WOLF_DATA_ROOT=work/Data` 跑整个 `-p wolf-game` 时，姊妹作 `m6_night_menu` 等 M6 用例仍失败（本作 day-loop 语义不同，M6 按本作重写）；默认无 env 时按设计跳过。headless capture 的 wgpu 离屏初始化仍卡死（渲染阶段处理）。
+* 2026-10-31（M3 完整运行时，进行中）：
+  * **测试基架**：按本作数据重写 m3 系列，不复用姊妹作 M6 期望值。已完成并通过的测试文件与用例：
+    * `crates/wolf-game/tests/m3_week_loop.rs`（6）：读档 HUD 19:30/周一/5466円，v99=1（日计数）/v6=0（星期）/v4=19/v5=30/v7=15466/v20=25；CE245 恰 6 项；就寝→00:00；CE251 干净态 400 帧=9 msgs/74 pics/6 sounds、08:30、日菜单 5 项；连跑 3 日 v99+1/v6+1/v14 重置 4；周末切 CE259 休日菜单。
+    * `crates/wolf-game/tests/m3_night_actions.rs`（14）：CE245 六项/茶 8 饮品/泡澡 CE249/购物 CE250（3 商品 20000/100000/15000、余额不足文案、var15 复位）/就寝确认/CE246-250；坑：FrameOutcome.idle 等待 choice 时也为 true，不能当结束判据。
+    * `crates/wolf-game/tests/m3_ui_screens.rs`（13）：CE237/238/239/240/241/242/243/244/296/297/301/302/303 的槽位与资源名、相册 var238、CANCEL 24 帧关闭。
+    * `crates/wolf-game/tests/m3_save_load.rs`（9，0 ignored）：SaveData01 50图/playtime16/vars7=10000/vars8=23/19:30；SaveData02 51/273/8000/24/18:00；save_to→初读严格比图/文本图/0..302 vars/playtime/anchor；opcode220/222 真实 dispatch；vardb 往返（84602→85537B）DB 零差异；vars302..336 全 0；SaveData09 缺失显式 skip。
+    * `crates/wolf-game/tests/m3_visual_text.rs`（7）：CE264 消息窗口 13 pictures（12001 WindowBase_amania、text 12010=1/12014 HP&50/12018 SP&20）、CE230 打字、wrap、CE231-235 惰性、CE265-271；对话走第三方吹き出し插件，真值看 picture/text_quads，不看 game.messages；卧室常驻实例 [48,271,63,98]。
+    * `crates/wolf-game/tests/m3_audio_settings.rs`（4）：BGM 27 音频+1 .url、SE214；代表解码；CE297/CE251 SoundCmd resolve；System.sav version0x80/7段/part2 vars72_74=[100,100,100]/RGBA[160,68,75,200]/按键 vars64_69。
+    * `crates/wolf-game/tests/m3_menu_screens.rs`（3）：CE131 存档网格（槽1..4/「没有数据」/无 choice）、CE132 システム設定（帮助行随 DOWN 变）、CE14 dispatcher [14,131]；全程不按保存、Save 指纹不变。
+    * `crates/wolf-game/tests/m3_event_smoke.rs`（1，表驱动，12.25s）＋ `docs/M3_EVENT_MAP.md`：CE212..303 共 92 个，91 独立冒烟（started/frames>0/warnings0；71 自然结束、20 常驻等待），CE212 标 context-dependent（opcode170 循环+opcode112 比 self1600006/1600008，带参气泡辅助）。
+    * `crates/wolf-game/tests/m3_map_events.rs`（4）＋ `docs/M3_MAP_EVENTS.md`：5 注册图尺寸/事件/页/槽；读档上下文 active_page_index 零 panic；SampleMapA 35 事件 120 帧隔离冒烟 warnings0；新游戏 Map003→SampleMapA teleport。坑：v7=10000 非 HUD 5466（金钱走 DB）；start_map_event_by_name 会带起 event0 开场白污染，改用 start_map_event(&map,id)；Map024/031 第0层填充 id100000 但 has_tile_data=true。
+    * `crates/wolf-format/tests/m3_asset_refs.rs`（2）＋ `docs/M3_ASSET_REFS.md`：扫描 1,364 文件、图片引用 2433/去重661、音频161/去重34；音频 0 缺失；8 个未解析图片引用全部为 WOLF 出厂示例残留/放错目录，已用 KNOWN_UNSHIPPED 白名单放行并据实记录。
+    * `crates/wolf-game/tests/m3_mouse_menu.rs`（8）：choice_anchor=(512,230)、font_px=20、行距=LINE_HEIGHT(30)；逐行中心 choice_row_at 命中；左键 6 行分别进 CE246/茶8项/CE249/CE250(var15=1)/就寝确认/退出；CANCEL 各级关闭。**已知缺口：右键不能取消 op102 choice，hover 不移动 choice_cursor**（已转 task-24 修，task-26 回归）。
+  * **引擎修复（已落地，工作树未提交）**：`crates/wolf-format/src/gbk.rs` 新增 `pub fn encode`；`crates/wolf-game/src/savegame.rs` 文本图 decode/encode 改 GBK、picture 文件名 GBK；`savegame.rs` apply 开头 `game.base_save = Some(save.clone())` 修 vardb 丢失；apply 改用 `save.part3.normal_var(index)` 逐行 span 修 vars302..336 污染。真实 SaveData01 文本解码恢复为 #200 \f[24]19:30 / #210 \c[0]\f[18]周一 / #220 早泄 强壮 哥哥（学生）/ #230 行动力60/65 / #251 10000円 / #252 同居1天。
+  * **CE250 乱码结论**：源数据损坏，非引擎 bug。坏串 rawlen=30 hex=`d1c6c1e5 a1a1a1a1a1a1a1 20*11 32 30 30 30 30 83d2 20`，d1c6c1e5=GBK「哑铃」，随后 7 个 0xA1（奇数个，GBK 非法尾），Python gbk/gb18030 同拒绝；CP932 把 0xA1..0xDF 当半角片假名 → 显示 ﾑﾆﾁ蝪…20000υ。全 event 扫 gb_bad&&!cp_bad 共 138 条、136+ 为正常日文 CP932，故不能改 decode_wolf_str 判据；不伪造修复，记入文档。
+  * **当前任务板**：completed=7,8,9,10,11,12,13,14,15,16,17,18,20；in_progress=19(m2-hud 状态面板联动)、21(verify-baseline 说明书核对)、22(ver6 全数据字符串审计)、23(m2-loop 存档 UI 端到端)、24(m3-fixer 未建模诊断+右键/悬停修复)、25(test-adapt 新游戏跨日持久化)、27(m2-input 标题鼠标)；pending task-26（依赖 24，修后 m3_mouse_menu 右键/悬停回归）。
+  * **验收基线保持**：默认 `cargo test -q --workspace` exit0、`WOLF_DATA_ROOT=work/Data ./target/debug/wolf-cli.exe verify` PASS 64 / 1 SKIP（dxarchive.header）；`-p wolf-game --lib` 229 passed。全部 m3 测试完成后统一复跑并提交。
+
+* 2026-10-31（M3 集成：并行工作流收口）：
+  * **PRNG 实证纠正**：Game.dat 的 static-random 块是预生成表，`random_a/b` 是生成器输出
+    K1/K2（不是种子）。`WolfRng` 改为「表 + 游标」；`Game::new` 解析 Game.dat 并
+    `from_game(a,b,table)` 接入真实零售表。证据链：docs/research/M7_PRNG.md（姊妹作
+    28,936/28,936 字节全等；本作前 1,055 字节全等，之后是汉化补丁改写/损坏，按原字节消费）。
+    注意：`wolf-cli run` / `run --map` 的裸 Vm 也已通过 `install_retail_rng` 接上
+    Game.dat 表；只有数据缺 Game.dat 时才回退合成表。
+  * **随机派生值不再可 pin**：读档收敛期的工资/新游戏零花钱/CE250 商品分支都由随机表决定；
+    相关测试改为区间/形状断言，CE250 测试按实际菜单价格动态选择买/不买。
+  * **设置 API**：`crate::settings::GlobalSettings` + `Game::{settings, live_settings,
+    set_settings, sync_live_settings, apply_settings, save_system_settings}`；System.sav
+    part2 原子写回（.new+rename），play.rs 启动/F12/退出时应用与落盘；`Game::system_save`
+    与 `base_save` 分离，读档槽不会污染全局设置模板。m3_settings_persist 10 条。
+  * **存档编码**：官方存档 vardb 文本 = CP932 模板 + GBK 汉化混排，无 UTF-8。`set_text`
+    未修改保留原字节、新文本 GBK（不可往返时 UTF-8 回退）；`db.rs::apply_saved_database`
+    改 `decode_wolf_str`。vardb 段 load→save 0 字节差、44 个非 ASCII cell 不再重编码；
+    SavePart5 数字字段也改为保留原记录（m3_save_byte_fidelity 4 条），因此
+    `Game::load_save → save_to` 对 SaveData01/02 现在**逐字节完全相等**
+    （293,742 / 294,130 B，含 header checksum），二次往返稳定。
+    新增 wolf-save/tests/vardb_encoding.rs（9 条）。
+  * **文本图保真**：Picture 保留原始 md1，未修改文本图 70/70 逐字节写回
+    （m3_save_text_fidelity 4 条）。
+  * **新游戏 vardb**：`Databases::seed_vardb` 补全空模板（30 类/1052 配置），
+    m3_vardb_cdata_roundtrip 3 条。
+  * **离屏截图可用**：wolf-render 有界初始化/回读 + backend/adapter 覆盖；`wolf-cli
+    capture` 稳定出 1024x576 PNG。字体发现改为本作 `07やさしさゴシックボールド.ttf`
+    优先 + *.ttf/*.otf/*.ttc 回退；`capture --map` 黑屏根因是 ev0 开场
+    `cg/blackscreen.jpg`，CLI 侧停掉一次性 autorun 页后 SampleMapA 0%→92.8% 非黑。
+  * **音频**：修 one-shot SE 的 DC 尾巴；wolf-audio 15 条离线契约测试。
+  * **F12**：play.rs 重建 Game 并 boot。
+  * **测试**：删除姊妹作 m6_night_menu/m6_training_menu/time_system；新增
+    m3_endings(6)、m3_night_interaction_e2e(6)、m3_save_text_fidelity(4)、
+    m3_perf_baseline、m3_map_click。
+  * **地图 ActionKey 点击层已实现**：`MapRuntime::action_key_at`（事件 tile+collision
+    命中、最小面积优先、跳过运行中页）＋ Game 在无消息/无 choice 时把新左键或悬停处 OK
+    路由过去；ev5 保存、ev10 状态、ev21 夜间结束已端到端（m3_map_click 7 条）。
+    PlayerTouch 仍在定屏地图上不支持。已知残余重叠：夜间 UI 的 parallel 页自行轮询
+    鼠标，ev1-4 的 trig0 命中区可能与图片热区同时收到一次点击（数据条件已 gate 大部分）。
+  * **字体/截图**：system Microsoft YaHei（msyhbd.ttc）优先，`capture` 已重新出图。
+  * **其他后续**：`capture --map` 的负层 z-order 观察（-1 blackscreen 在 -10 背景之上，
+    属预期淡入层）；tile quad 缓存（性能候选 2）。

@@ -4,6 +4,14 @@
 //! chunk of interleaved f32 output, so it can be unit-tested offline and also drives the cpal
 //! callback. Sample-rate conversion is done per voice with linear interpolation, so sources whose
 //! sample rate differs from the output device mix correctly.
+//!
+//! Contract (pinned by `tests/mixer_contract.rs`):
+//! * per-voice volume and the master BGM/SE volumes multiply, and both are clamped to 0..=1;
+//! * BGM is a single replaceable voice; a non-looping voice ends and is dropped;
+//! * a fading BGM ramps monotonically to silence and is then dropped;
+//! * once a voice reports `done` inside a render chunk it contributes silence for the rest of
+//!   that chunk (a finished one-shot SE must not hold its last sample as a DC tail);
+//! * output samples are clamped to [-1.0, 1.0]; mono sources fan out to all output channels.
 
 use std::sync::Arc;
 
@@ -214,23 +222,31 @@ impl Mixer {
             let base = f * ch;
 
             if let Some(voice) = self.bgm.as_mut() {
-                let fade_gain = match voice.fade.as_mut() {
-                    Some(fade) => fade.next_gain(),
-                    None => 1.0,
-                };
-                let gain = voice.volume * bgm_volume * fade_gain;
-                for c in 0..ch {
-                    out[base + c] += voice.sample(c) * gain;
-                }
-                if !voice.advance(out_rate) {
-                    voice.done = true;
-                }
-                if voice.fade.as_ref().map_or(false, |fade| fade.is_done()) {
-                    voice.done = true;
+                if !voice.done {
+                    let fade_gain = match voice.fade.as_mut() {
+                        Some(fade) => fade.next_gain(),
+                        None => 1.0,
+                    };
+                    let gain = voice.volume * bgm_volume * fade_gain;
+                    for c in 0..ch {
+                        out[base + c] += voice.sample(c) * gain;
+                    }
+                    if !voice.advance(out_rate) {
+                        voice.done = true;
+                    }
+                    if voice.fade.as_ref().is_some_and(|fade| fade.is_done()) {
+                        voice.done = true;
+                    }
                 }
             }
 
             for voice in self.ses.iter_mut() {
+                // A voice that ended earlier in this chunk must not hold its clamped last
+                // sample for the rest of the buffer: that would emit a DC tail (up to a
+                // whole callback) after a one-shot SE has finished.
+                if voice.done {
+                    continue;
+                }
                 let gain = voice.volume * se_volume;
                 for c in 0..ch {
                     out[base + c] += voice.sample(c) * gain;
@@ -245,7 +261,7 @@ impl Mixer {
             }
         }
 
-        if self.bgm.as_ref().map_or(false, |v| v.done) {
+        if self.bgm.as_ref().is_some_and(|v| v.done) {
             self.bgm = None;
         }
         self.ses.retain(|v| !v.done);

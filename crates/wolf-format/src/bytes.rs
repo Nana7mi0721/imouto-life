@@ -239,31 +239,100 @@ impl<'a> Reader<'a> {
 
 /// Decode a WOLF string payload, which may be UTF-8, CP932 (Shift-JIS) or GBK.
 ///
-/// UTF-8 is tried first (2.10 generation). Otherwise both CP932 and GBK are
-/// decoded and scored: the Chinese translation's GBK bytes decode to plausible
-/// hanzi under GBK but to halfwidth katakana under CP932, while untranslated
-/// Japanese decodes to kana/hanzi under CP932 and to junk under GBK.
+/// All three candidates are scored rather than trusting UTF-8 blindly: a handful
+/// of GBK byte pairs (for example the fan translation's C7 BF D7 B3 = "强壮")
+/// are also *valid* UTF-8, spelling unrelated code points ("ǿ׳"). UTF-8 gets a
+/// bonus per multibyte sequence so genuine UTF-8 (Chinese, Japanese, emoji, an
+/// older engine's fallback text) still wins, while a GBK reading that scores much
+/// higher takes the collision back. CP932 and GBK remain scored against each
+/// other as before: GBK display text decodes to plausible hanzi under GBK but to
+/// halfwidth katakana under CP932, while untranslated Japanese does the reverse.
 #[must_use]
 pub fn decode_wolf_str(raw: &[u8]) -> String {
+    let (best, best_total) = cp932_gbk_reading(raw);
     if let Ok(text) = std::str::from_utf8(raw) {
-        return text.to_owned();
+        let utf8_total = score_utf8_chars(text) + score_utf8_bytes(raw);
+        if utf8_total + 2 >= best_total {
+            return text.to_owned();
+        }
     }
+    best
+}
+
+/// Character plausibility for a *valid* UTF-8 payload. Unlike [score_chars], a
+/// real Greek/Cyrillic/accented letter is not evidence of a misread GBK pair, so
+/// it earns a small positive score instead of a penalty. CJK and kana still
+/// weigh more, and Hebrew is penalised because the retail collision `C7 BF D7 B3`
+/// spells U+01FF U+05F3 under UTF-8.
+fn score_utf8_chars(text: &str) -> i32 {
+    let mut score = 0;
+    for ch in text.chars() {
+        let c = u32::from(ch);
+        if ch == '\u{FFFD}' {
+            score -= 30;
+        } else if (0x3040..=0x30FF).contains(&c) {
+            score += 3;
+        } else if (0x4E00..=0x9FFF).contains(&c) {
+            score += 2;
+        } else if (0x0590..=0x05FF).contains(&c) {
+            score -= 10;
+        } else if c >= 0x80 {
+            score += 1;
+        }
+    }
+    score
+}
+
+/// Pick the best CP932-or-GBK reading of a byte payload, plus its score.
+///
+/// This is the pre-existing heuristic, unchanged: a clean reading beats a
+/// replacement-bearing one, and otherwise the two are scored with a two-point
+/// margin that favours CP932 on near-ties (the common case for Japanese UI
+/// labels). UTF-8 is handled by the caller.
+fn cp932_gbk_reading(raw: &[u8]) -> (String, i32) {
     let cp = crate::dxarchive::decode_cp932(raw);
     let (gb, gb_bad) = crate::gbk::decode(raw);
     let cp_bad = cp.contains('\u{FFFD}');
-    if gb_bad && !cp_bad {
-        return cp;
-    }
-    if cp_bad && !gb_bad {
-        return gb;
-    }
     let cp_total = score_cp932_bytes(raw) + score_chars(&cp);
     let gb_total = score_gbk_bytes(raw) + score_chars(&gb);
-    if gb_total > cp_total + 2 {
-        gb
-    } else {
-        cp
+    if gb_bad && !cp_bad {
+        return (cp, cp_total);
     }
+    if cp_bad && !gb_bad {
+        return (gb, gb_total);
+    }
+    if gb_total > cp_total + 2 {
+        (gb, gb_total)
+    } else {
+        (cp, cp_total)
+    }
+}
+
+/// Score valid UTF-8 multibyte sequences: +3 each. Only called after
+/// std::str::from_utf8 accepted the whole payload, so lengths are trustworthy.
+fn score_utf8_bytes(raw: &[u8]) -> i32 {
+    let mut score = 0;
+    let mut i = 0;
+    while i < raw.len() {
+        let b = raw[i];
+        if b < 0x80 {
+            i += 1;
+            continue;
+        }
+        let len = match b {
+            0xC2..=0xDF => 2,
+            0xE0..=0xEF => 3,
+            0xF0..=0xF4 => 4,
+            _ => 1,
+        };
+        if len > 1 && i + len <= raw.len() {
+            score += 3;
+            i += len;
+        } else {
+            i += 1;
+        }
+    }
+    score
 }
 
 /// Score how much a byte payload looks like GB2312/GBK hanzi: lead 0xB0..=0xF7

@@ -157,6 +157,33 @@ impl Engine {
         self.lock().play_bgm(audio, looping, volume);
     }
 
+    /// Start (replace) the BGM from a path with a linear fade-in of `fade_frames` game frames
+    /// (0 = immediate, the historical behaviour).
+    pub fn play_bgm_with_fade(
+        &mut self,
+        file: &str,
+        looping: bool,
+        volume: f32,
+        fade_frames: u32,
+    ) -> Result<(), AudioError> {
+        let audio = self.load(file)?;
+        self.lock()
+            .play_bgm_with_fade(audio, looping, volume, fade_frames);
+        Ok(())
+    }
+
+    /// Play an already-decoded BGM buffer with a linear fade-in of `fade_frames` game frames.
+    pub fn play_bgm_audio_with_fade(
+        &mut self,
+        audio: DecodedAudio,
+        looping: bool,
+        volume: f32,
+        fade_frames: u32,
+    ) {
+        self.lock()
+            .play_bgm_with_fade(audio, looping, volume, fade_frames);
+    }
+
     /// Stop the BGM. `fade_frames` is in game frames (60 fps); 0 stops immediately.
     pub fn stop_bgm(&mut self, fade_frames: u32) {
         self.lock().stop_bgm(fade_frames);
@@ -182,6 +209,29 @@ impl Engine {
     /// Play an already-decoded SE buffer.
     pub fn play_se_audio(&mut self, audio: DecodedAudio, volume: f32) {
         self.lock().play_se(audio, volume);
+    }
+
+    /// Start a one-shot SE from a path after a `delay_frames` game-frame start delay
+    /// (0 = immediate, the historical behaviour).
+    pub fn play_se_with_delay(
+        &mut self,
+        file: &str,
+        volume: f32,
+        delay_frames: u32,
+    ) -> Result<(), AudioError> {
+        let audio = self.load(file)?;
+        self.lock().play_se_delayed(audio, volume, delay_frames);
+        Ok(())
+    }
+
+    /// Play an already-decoded SE buffer after a `delay_frames` game-frame start delay.
+    pub fn play_se_audio_with_delay(
+        &mut self,
+        audio: DecodedAudio,
+        volume: f32,
+        delay_frames: u32,
+    ) {
+        self.lock().play_se_delayed(audio, volume, delay_frames);
     }
 
     pub fn stop_all_se(&mut self) {
@@ -211,23 +261,29 @@ impl Engine {
 
     /// Translate a VM [`SoundCmd`] (opcode 140 `Sound`) into play/stop calls.
     ///
-    /// * BGM Play  -> `play_bgm(file, looping = true)`
-    /// * BGM Stop  -> `stop_bgm(frames)` (fade length in game frames)
-    /// * SE  Play  -> `play_se(file)` (concurrent)
+    /// * BGM Play  -> `play_bgm_with_fade(file, looping = true, frames)`
+    /// * BGM Stop  -> `stop_bgm(frames)` (fade-out length in game frames)
+    /// * SE  Play  -> `play_se_with_delay(file, frames)` (concurrent; frames = start delay)
     /// * SE  Stop  -> `stop_all_se()`
+    ///
+    /// `SoundCmd.frames` (opcode 140 intArgs[1], the "fade time / delay" slot) is now honoured
+    /// on Play as well as Stop: a BGM Play fades in linearly over that many game frames and an
+    /// SE Play stays silent for that many game frames first. `frames == 0` reproduces the old
+    /// immediate-start behaviour.
     pub fn apply_sound_cmd(&mut self, cmd: &SoundCmd) {
         let volume = (cmd.volume.clamp(0, 100) as f32) / 100.0;
+        let frames = cmd.frames.max(0) as u32;
         match (cmd.channel, cmd.action) {
             (SoundChannel::Bgm, SoundAction::Play) => {
-                if let Err(err) = self.play_bgm_with_volume(&cmd.file, true, volume) {
+                if let Err(err) = self.play_bgm_with_fade(&cmd.file, true, volume, frames) {
                     self.warn_once(&cmd.file, &err);
                 }
             }
             (SoundChannel::Bgm, SoundAction::Stop) => {
-                self.stop_bgm(cmd.frames.max(0) as u32);
+                self.stop_bgm(frames);
             }
             (SoundChannel::Se, SoundAction::Play) => {
-                if let Err(err) = self.play_se_with_volume(&cmd.file, volume) {
+                if let Err(err) = self.play_se_with_delay(&cmd.file, volume, frames) {
                     self.warn_once(&cmd.file, &err);
                 }
             }

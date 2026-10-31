@@ -543,7 +543,9 @@ fn condition_value(magic: u32, self_vars: Option<&SelfVars>, vars: &Variables) -
         MagicKind::SelfVar => self_vars
             .map(|self_vars| self_vars.get(magic.index() as usize))
             .unwrap_or(0),
-        MagicKind::StrVar | MagicKind::Literal | MagicKind::Opaque => magic.raw(),
+        MagicKind::StrVar | MagicKind::Literal | MagicKind::DbCell | MagicKind::Opaque => {
+            magic.raw()
+        }
     }
 }
 

@@ -80,3 +80,15 @@ wolf-cli capture --event 238 --frames 60 --out work/out/shots/status.png
   `Game::load_save → save_to` 对官方 SaveData01/02 现在 **0 个差异字节**（含
   header checksum），二次往返稳定。
 - **性能基线**：m3_perf_baseline + docs/M4_PERF.md（5 场景，非门限）。
+
+## 8. 2026-10-31 M4 状态（更新）
+
+- **已完成**：tile quad 缓存（task-44）、SoundCmd.frames 淡入/延迟（task-45）、
+  100 日长链永久测试（m4_long_chain）、v8 语义审计（docs/M4_V8_AUDIT.md）、
+  发布打包（tools/package.*、docs/PACKAGING.md）、负号图片固定屏修复、
+  decode_wolf_str GBK/UTF-8 冲突修复、读档前 CE48 初始化（prime_engine）、
+  数据库值 magic/op121 DB 写入（详见 docs/M4_HUD.md）。
+- **验收**：workspace 全绿；verify PASS 64/1 SKIP；verify --wolf 72/0；
+  读档截图 HUD 与实机参考一致（work/out/shots/bedroom_hudfix.png）。
+- **仍未做**：capture 的 status/夜菜单静态截图需要先合成点击/输入（面板会滑入）；
+  可视设置界面与键位重绑定；msyhbd.ttc TTC 字体加载支持确认。

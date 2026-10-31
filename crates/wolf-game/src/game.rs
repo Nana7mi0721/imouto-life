@@ -58,6 +58,9 @@ pub const BOOT_EVENT: u32 = 2;
 /// Order matters: 48 fills the system variables; 261 must precede 270 (270 reads
 /// `2700000..2700005`); 269 must precede 270 (270 tests the flag `1600099` that 269
 /// sets).
+/// Common event that performs the one-shot engine initialisation.
+pub const ENGINE_INIT_EVENT: u32 = 48;
+
 pub const ENGINE_ALWAYS: &[u32] = &[
     48,  // X[共]基本ｼｽﾃﾑ自動初期化 - system variables first
     261, // ×◆座標変数初期化      - writes 2700000..2700005 for 270
@@ -424,11 +427,8 @@ impl Game {
         // synthesised editor-style table, which is only a fallback for data that has
         // no Game.dat; every real game must use the shipped stream.
         if let Some(dat) = &game_dat {
-            game.vm.rng = WolfRng::from_game(
-                dat.random_a,
-                dat.random_b,
-                dat.static_randoms.clone(),
-            );
+            game.vm.rng =
+                WolfRng::from_game(dat.random_a, dat.random_b, dat.static_randoms.clone());
         }
         // The retail engine loads Save/System.sav at boot and hands the stored global
         // settings to the basic-system scripts through Sys100/101/102 and Sys52..54.
@@ -509,7 +509,10 @@ impl Game {
     /// applies the volumes to the audio engine.
     ///
     /// Nothing is written to disk; call [`Self::save_system_settings`] for that.
-    pub fn set_settings(&mut self, settings: crate::settings::GlobalSettings) -> Result<(), GameError> {
+    pub fn set_settings(
+        &mut self,
+        settings: crate::settings::GlobalSettings,
+    ) -> Result<(), GameError> {
         let settings = settings.clamped();
         let mut part2 = self
             .system_save
@@ -597,7 +600,10 @@ impl Game {
     /// Split from [`Self::save_system_settings`] so tests can exercise the format on a
     /// temporary copy without touching the data root.
     pub fn write_system_settings(&self, path: &std::path::Path) -> Result<(), GameError> {
-        let save = self.system_save.as_ref().ok_or(GameError::MissingSettings)?;
+        let save = self
+            .system_save
+            .as_ref()
+            .ok_or(GameError::MissingSettings)?;
         let bytes = save.to_bytes().map_err(GameError::Format)?;
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|source| GameError::Io {
@@ -754,6 +760,35 @@ impl Game {
         started
     }
 
+    /// Runs the one-shot engine initialisation before a save is loaded.
+    ///
+    /// Common event 48 (X[共]基本ｼｽﾃﾑ自動初期化) is an ENGINE_ALWAYS coroutine, but
+    /// it only does its work on the first pass and then parks on a one-million-frame
+    /// wait.  A save load that happens before that first pass finishes is overwritten
+    /// a few frames later: CE48 calls CE70 with +999999 and CE124, which reset the
+    /// loaded HP/stamina/action cells back to their initial values.  The real engine
+    /// has already finished this pass before the title menu appears, so load paths
+    /// must do the same.
+    ///
+    /// Starts the engine coroutines and runs frames until CE48 has ended (measured:
+    /// 138 frames on this title).  Returns the number of frames driven so callers can
+    /// log it; the normal path never needs more than the 600-frame safety bound.
+    pub fn prime_engine(&mut self) -> usize {
+        self.start_engine_events();
+        for frame in 0..600 {
+            if !self
+                .vm
+                .instances()
+                .iter()
+                .any(|instance| instance.event == ENGINE_INIT_EVENT)
+            {
+                return frame;
+            }
+            self.frame();
+        }
+        600
+    }
+
     /// Boots the game the way the original does: the autorun event on the title map.
     ///
     /// Common event 42 is *not* the entry point. The measured boot chain is
@@ -804,12 +839,16 @@ impl Game {
     /// tile data and for a game whose TileSetData.dat is absent, which keeps headless
     /// event-only runs working exactly as before.
     pub fn tile_quads(&mut self, atlas: &mut Atlas) -> Vec<SpriteQuad> {
-        let Some(tilemap) = self.tilemap.as_ref() else {
+        let Some(tilemap) = self.tilemap.as_mut() else {
             return Vec::new();
         };
         // The camera is fixed at the map origin: all playable maps in this game fit the
         // 1024x576 viewport at their origin, and Sys 104/105 are engine scroll *outputs*
         // with no script state behind them (docs/HANDOFF_M3.md section 5).
+        //
+        // `quads` caches the drawn list against this map plus the autotile animation
+        // phase (playtime_frames % period), so a static map is built once and every later
+        // draw is a clone. The screen tint is applied to the clone, never cached.
         let mut quads = tilemap.quads(
             atlas,
             &mut self.assets,
@@ -1839,6 +1878,39 @@ impl Host for GameHost<'_> {
         if let Some(audio) = self.audio.as_mut() {
             audio.apply_sound_cmd(cmd);
         }
+    }
+
+    fn database_cell(
+        &mut self,
+        container: wolf_vm::DbContainer,
+        db_type: i32,
+        row: i32,
+        column: i32,
+    ) -> Option<i32> {
+        let container = crate::db::Container::from(container);
+        self.databases
+            .engine_num(container, db_type, row, column)
+            .or_else(|| {
+                self.databases
+                    .row_exists(container, db_type, row)
+                    .then(|| self.databases.num(container, db_type, row, column))
+                    .flatten()
+            })
+    }
+
+    fn set_database_cell(
+        &mut self,
+        container: wolf_vm::DbContainer,
+        db_type: i32,
+        row: i32,
+        column: i32,
+        value: i32,
+    ) -> bool {
+        let container = crate::db::Container::from(container);
+        self.databases
+            .set_num(container, db_type, row, column, value);
+        self.stats.database_writes += 1;
+        true
     }
 
     fn database(&mut self, op: &DbOp) -> Option<DbValue> {

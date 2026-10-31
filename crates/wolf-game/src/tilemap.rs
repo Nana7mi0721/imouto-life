@@ -45,6 +45,59 @@ pub struct TileMap {
     base_image: String,
     /// Autotile slot names; index 0 is autotile id 1.
     autotiles: Vec<String>,
+    /// Autotile slots that actually occur in this map's layers, deduplicated.
+    ///
+    /// Only these slots can make the tile quads animate, so the animation period is
+    /// computed from them alone. A map that uses no animated autotile therefore has
+    /// period 1 and its quad list is rebuilt exactly once (see [`TileMap::quads`]).
+    used_autotile_slots: Vec<usize>,
+    /// Steady-state cache of the drawn quad list (see [`TileMap::quads`]).
+    cache: TileQuadCache,
+}
+
+/// Cached tile-layer quads plus the key that produced them.
+///
+/// The list depends only on the decoded map, the atlas layout and the autotile
+/// animation phase, all of which are stable between frames, so one slot covers the
+/// whole steady state. Every draw is a `clone` of [`Self::quads`]; the screen tint is
+/// never baked in here, it is applied by the caller after the clone.
+#[derive(Clone, Debug, Default)]
+struct TileQuadCache {
+    /// True once [`Self::quads`] holds a build for the current key.
+    valid: bool,
+    /// Camera origin the cached quads were culled for.
+    camera: [i32; 2],
+    /// Viewport size the cached quads were culled for.
+    screen: [u32; 2],
+    /// Autotile animation phase (frame % period) the cached quads were built at.
+    phase: u32,
+    /// Animation period the phase was taken modulo by.
+    period: u32,
+    /// Base-sheet atlas rect the cached UVs assume (`None` when the sheet is absent).
+    base: Option<AtlasRect>,
+    /// Autotile atlas rects the cached UVs assume, one per slot.
+    auto_rects: Vec<Option<AtlasRect>>,
+    /// The cached quad list itself.
+    quads: Vec<SpriteQuad>,
+    /// Full builds since this map was created (diagnostics / tests).
+    builds: u64,
+    /// Cache hits since this map was created (diagnostics / tests).
+    hits: u64,
+}
+
+/// Snapshot of a [`TileMap`]'s quad cache, for diagnostics and tests.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TileCacheStats {
+    /// How many times the full quad list was (re)built.
+    pub builds: u64,
+    /// How many calls were served from the cached list.
+    pub hits: u64,
+    /// Autotile animation phase of the cached list.
+    pub phase: u32,
+    /// Animation period (1 when the map has no animated autotile in use).
+    pub period: u32,
+    /// Quad count of the cached list.
+    pub quads: usize,
 }
 
 impl TileMap {
@@ -59,11 +112,25 @@ impl TileMap {
         for index in 0..slots {
             autotiles.push(tileset.autotiles.get(index).cloned().unwrap_or_default());
         }
-        let layers = map
+        let layers: Vec<Vec<Tile>> = map
             .layers
             .iter()
             .map(|layer| layer.iter().map(|raw| decode_tile(*raw)).collect())
             .collect();
+        // Which autotile slots the map actually paints. Only these can animate, so the
+        // cache period is derived from them and a static map is never rebuilt per frame.
+        let mut used: Vec<usize> = Vec::new();
+        for layer in &layers {
+            for tile in layer {
+                if let Tile::Autotile { id, .. } = tile {
+                    let slot = (*id as usize).saturating_sub(1);
+                    if !used.contains(&slot) {
+                        used.push(slot);
+                    }
+                }
+            }
+        }
+        used.sort_unstable();
         Self {
             width: map.width as i32,
             height: map.height as i32,
@@ -71,6 +138,8 @@ impl TileMap {
             layers,
             base_image: tileset.base_image.clone(),
             autotiles,
+            used_autotile_slots: used,
+            cache: TileQuadCache::default(),
         }
     }
 
@@ -94,24 +163,28 @@ impl TileMap {
 
     /// Builds the quads for everything inside the camera window.
     ///
+    /// The list is cached. It only changes when the decoded map (a fresh [`TileMap`]),
+    /// the atlas layout, the camera, or the autotile animation phase changes, so a
+    /// static map pays for exactly one build and every later draw is a `clone`. The
+    /// caller applies the screen tint after the clone; the tint is never cached.
+    ///
     /// camera is the logical pixel offset of the map origin, i.e. the map pixel shown
     /// at the top-left of the screen. Cells outside the window are skipped, which is
     /// what makes the 70x170 map affordable: only about 64x36 cells survive the cull.
     pub fn quads(
-        &self,
+        &mut self,
         atlas: &mut Atlas,
         assets: &mut Assets,
         camera: [i32; 2],
         screen: [u32; 2],
         frame: u32,
     ) -> Vec<SpriteQuad> {
-        let mut out = Vec::new();
-        let [atlas_w, atlas_h] = atlas.size();
-        let (cols, rows) = cull_range([self.width, self.height], camera, screen, TILE_PX);
-        // Pack the base sheet once per call; absent art is a skip, never a panic.
+        // Pack (or look up) every layer image first. Both the UVs below and the autotile
+        // frame counts need the art to already be in the atlas, so the cache is only
+        // built after this pass (docs/M4_PERF.md section 7, candidate 2).
         let base = atlas.add_asset(assets, &self.base_image);
         let base_size = atlas.source_size(&self.base_image).unwrap_or([0, 0]);
-        let autotile_rects: Vec<Option<AtlasRect>> = self
+        let auto_rects: Vec<Option<AtlasRect>> = self
             .autotiles
             .iter()
             .map(|name| {
@@ -122,7 +195,7 @@ impl TileMap {
                 }
             })
             .collect();
-        let autotile_sizes: Vec<[u32; 2]> = self
+        let auto_sizes: Vec<[u32; 2]> = self
             .autotiles
             .iter()
             .map(|name| {
@@ -134,6 +207,81 @@ impl TileMap {
             })
             .collect();
 
+        // The only frame-to-frame change is the autotile animation phase. The period is
+        // the lcm of the frame counts of the slots the map actually uses, so a map with
+        // no animated autotile has period 1 and never rebuilds after the first draw.
+        let period = self.animation_period(&auto_sizes);
+        let phase = frame % period;
+
+        if self.cache.valid
+            && self.cache.phase == phase
+            && self.cache.period == period
+            && self.cache.camera == camera
+            && self.cache.screen == screen
+            && self.cache.base == base
+            && self.cache.auto_rects == auto_rects
+        {
+            self.cache.hits += 1;
+            return self.cache.quads.clone();
+        }
+
+        let quads = self.build_quads(
+            atlas,
+            camera,
+            screen,
+            frame,
+            base,
+            base_size,
+            &auto_rects,
+            &auto_sizes,
+        );
+        self.cache = TileQuadCache {
+            valid: true,
+            camera,
+            screen,
+            phase,
+            period,
+            base,
+            auto_rects,
+            quads: quads.clone(),
+            builds: self.cache.builds + 1,
+            hits: self.cache.hits,
+        };
+        quads
+    }
+
+    /// Autotile animation period: the lcm of the frame counts of the used slots.
+    ///
+    /// A slot with an absent/empty image counts as one frame, so a map that only uses
+    /// static autotiles (or none at all) gets period 1 and its cache never rebuilds.
+    fn animation_period(&self, sizes: &[[u32; 2]]) -> u32 {
+        let mut period = 1u32;
+        for &slot in &self.used_autotile_slots {
+            let Some([sheet_w, _]) = sizes.get(slot).copied() else {
+                continue;
+            };
+            let frames = (sheet_w / TILE_PX).max(1);
+            period = lcm(period, frames);
+        }
+        period.max(1)
+    }
+
+    /// Uncached quad build; only runs on a cache miss.
+    #[allow(clippy::too_many_arguments)]
+    fn build_quads(
+        &self,
+        atlas: &Atlas,
+        camera: [i32; 2],
+        screen: [u32; 2],
+        frame: u32,
+        base: Option<AtlasRect>,
+        base_size: [u32; 2],
+        autotile_rects: &[Option<AtlasRect>],
+        autotile_sizes: &[[u32; 2]],
+    ) -> Vec<SpriteQuad> {
+        let mut out = Vec::new();
+        let [atlas_w, atlas_h] = atlas.size();
+        let (cols, rows) = cull_range([self.width, self.height], camera, screen, TILE_PX);
         for (layer_index, layer) in self.layers.iter().enumerate() {
             let number = TILE_NUMBER + layer_index as i32;
             for y in rows.clone() {
@@ -195,6 +343,36 @@ impl TileMap {
         }
         out
     }
+
+    /// Snapshot of the quad cache counters (diagnostics and tests).
+    #[must_use]
+    pub fn cache_stats(&self) -> TileCacheStats {
+        TileCacheStats {
+            builds: self.cache.builds,
+            hits: self.cache.hits,
+            phase: self.cache.phase,
+            period: self.cache.period,
+            quads: self.cache.quads.len(),
+        }
+    }
+}
+
+/// Greatest common divisor, used only by the autotile animation-period computation.
+fn gcd(mut a: u32, mut b: u32) -> u32 {
+    while b != 0 {
+        let t = a % b;
+        a = b;
+        b = t;
+    }
+    a
+}
+
+/// Least common multiple, used to combine autotile frame counts into one period.
+fn lcm(a: u32, b: u32) -> u32 {
+    if a == 0 || b == 0 {
+        return 0;
+    }
+    a / gcd(a, b) * b
 }
 
 /// Turns a base chip index into a source rectangle inside the tileset base image.

@@ -21,7 +21,13 @@
 //! A right-button press cancels an open 102-choice prompt, matching the manual's
 //! cancel contract (right click = cancel). It is edge-triggered like the keyboard
 //! CANCEL key: a held button does not repeat, and the prompt's event unwinds as if
-//! CANCEL had been pressed (the night menu drops CE245 outright).
+//! CANCEL had been pressed (the night menu drops CE245 outright, and the CE246 /
+//! CE249 / CE250 sub-menus unwind the same way).
+//!
+//! Moving the pointer over a row moves the highlight (choice_cursor) under it, so
+//! the menu can be driven by hover alone; the highlight does not move on a frame
+//! where the pointer is parked or off the panel, and a left click still confirms
+//! the row under the pointer.
 //!
 //! Every step must keep stats.warnings at zero and must not touch the save file.
 //! Data-missing runs skip with a message and exit 0.
@@ -103,7 +109,10 @@ fn row_rects(game: &Game) -> Vec<[f32; 4]> {
 }
 
 fn row_centre(line: &[f32; 4]) -> (i32, i32) {
-    ((line[0] + line[2] * 0.5) as i32, (line[1] + line[3] * 0.5) as i32)
+    (
+        (line[0] + line[2] * 0.5) as i32,
+        (line[1] + line[3] * 0.5) as i32,
+    )
 }
 
 /// Hovers the centre of row row, then holds the left button long enough that a
@@ -128,6 +137,22 @@ fn press_cancel(game: &mut Game) {
     game.key_bits = key::CANCEL;
     game.frame();
     game.key_bits = 0;
+}
+
+/// One fresh right-button press (edge-triggered inside handle_choice_input). The
+/// pointer is parked off the panel first so the press is a clean edge and never a
+/// hover that has to settle first.
+fn press_right(game: &mut Game) {
+    game.mouse = [20, 20];
+    game.frame(); // settle the pointer so the press is a clean edge
+    game.mouse_buttons = 2;
+    for _ in 0..24 {
+        game.frame();
+    }
+    game.mouse_buttons = 0;
+    for _ in 0..4 {
+        game.frame();
+    }
 }
 
 fn live_events(game: &Game) -> Vec<u32> {
@@ -217,6 +242,73 @@ fn hover_hit_test_matches_anchor_row_pitch_and_padding() {
 }
 
 #[test]
+fn hover_moves_the_highlight_and_left_click_still_hits() {
+    let Some(mut game) = open_loaded_bedroom() else {
+        return;
+    };
+    open_night_menu(&mut game);
+    let lines = row_rects(&game);
+    assert_eq!(lines.len(), 6, "six option rows");
+
+    // Start on a non-zero row so a follow can be told apart from "stayed put".
+    game.set_choice_cursor(5);
+    // Move to the centre of each row in turn; the highlight follows the pointer.
+    for row in 0..6usize {
+        let (x, y) = row_centre(&lines[row]);
+        game.mouse = [x, y];
+        game.frame();
+        assert_eq!(
+            game.choice_cursor(),
+            row,
+            "moving onto row {row} highlights row {row}"
+        );
+        assert!(
+            is_six_row_night_menu(&game),
+            "hovering hides nothing and picks no row ({row})"
+        );
+    }
+
+    // A move that lands off the panel leaves the highlight where it was.
+    let (ax, ay) = game.choice_anchor();
+    let before = game.choice_cursor();
+    game.mouse = [ax - 40, ay - 40];
+    game.frame();
+    assert_eq!(
+        game.choice_cursor(),
+        before,
+        "moving off the panel leaves the highlight unchanged"
+    );
+
+    // Moving back onto a row resumes the follow.
+    let (x, y) = row_centre(&lines[2]);
+    game.mouse = [x, y];
+    game.frame();
+    assert_eq!(
+        game.choice_cursor(),
+        2,
+        "moving back onto row 2 highlights row 2 again"
+    );
+
+    // A left click on a row still confirms it: row 2 (泡澡) opens CE249.
+    game.mouse = [x, y];
+    game.frame(); // park on the row so the press is a clean edge
+    game.mouse_buttons = 1;
+    for _ in 0..24 {
+        game.frame();
+    }
+    game.mouse_buttons = 0;
+    for _ in 0..4 {
+        game.frame();
+    }
+    assert!(
+        live_events(&game).contains(&249),
+        "a left click still hits the row under the pointer (CE249), events {:?}",
+        live_events(&game)
+    );
+    assert_eq!(game.stats.warnings, 0, "hover + left click is warning-free");
+}
+
+#[test]
 fn left_click_hits_each_night_action() {
     // Row -> what the click must reach. Checked one fresh game per row so earlier
     // clicks cannot mutate the state a later row is judged in.
@@ -225,7 +317,10 @@ fn left_click_hits_each_night_action() {
             return;
         };
         open_night_menu(&mut game);
-        assert!(is_six_row_night_menu(&game), "row {row}: starts on the menu");
+        assert!(
+            is_six_row_night_menu(&game),
+            "row {row}: starts on the menu"
+        );
 
         click_row(&mut game, row);
 
@@ -245,7 +340,10 @@ fn left_click_hits_each_night_action() {
                 // 泡茶 opens the eight-row drink submenu.
                 let options = trimmed_options(&game);
                 assert_eq!(options.len(), 8, "row 1 opens the 8-drink submenu");
-                assert!(options[0].starts_with("绿茶"), "drink submenu starts with 绿茶");
+                assert!(
+                    options[0].starts_with("绿茶"),
+                    "drink submenu starts with 绿茶"
+                );
             }
             2 => {
                 // 泡澡 launches CE249.
@@ -261,7 +359,11 @@ fn left_click_hits_each_night_action() {
                 // shop offers is branch/RNG-dependent (one shipped row is also a known
                 // corrupted string), so only the count and the live event are pinned.
                 let options = trimmed_options(&game);
-                assert_eq!(options.len(), 3, "row 3 opens the three-item shop menu: {options:?}");
+                assert_eq!(
+                    options.len(),
+                    3,
+                    "row 3 opens the three-item shop menu: {options:?}"
+                );
                 assert!(live_events(&game).contains(&250), "CE250 is running");
                 assert_eq!(game.vm.vars.get(15), 1, "the shop flag var15 is set");
             }
@@ -335,8 +437,14 @@ fn cancel_key_returns_from_ce246_to_parent_menu() {
         "cancelling CE246 returns to the parent CE245 menu, got {:?}",
         trimmed_options(&game)
     );
-    assert!(live_events(&game).contains(&245), "CE245 is still the parent");
-    assert_eq!(game.stats.warnings, 0, "returning from CE246 is warning-free");
+    assert!(
+        live_events(&game).contains(&245),
+        "CE245 is still the parent"
+    );
+    assert_eq!(
+        game.stats.warnings, 0,
+        "returning from CE246 is warning-free"
+    );
 }
 
 #[test]
@@ -418,9 +526,106 @@ fn right_button_cancels_the_night_menu() {
         !live_events(&game).contains(&245),
         "cancelling unwinds CE245 itself, not just its prompt"
     );
-    assert_eq!(game.vm.vars.get(7), 10000, "a right-click cancel spends no money");
+    assert_eq!(
+        game.vm.vars.get(7),
+        10000,
+        "a right-click cancel spends no money"
+    );
     assert_eq!(game.vm.vars.get(15), 0, "the shop flag stays clear");
     assert_eq!(game.stats.warnings, 0, "right-click cancel is warning-free");
+}
+
+#[test]
+fn right_button_returns_from_ce246_to_parent_menu() {
+    let Some(mut game) = open_loaded_bedroom() else {
+        return;
+    };
+    open_night_menu(&mut game);
+    click_row(&mut game, 0); // 开始交流 -> CE246
+    assert_eq!(
+        trimmed_options(&game),
+        ["说话", "看看电视吧", "玩游戏吧", "鸡鸡伸展！"]
+            .map(str::to_owned)
+            .to_vec(),
+        "CE246 menu is open before right-clicking"
+    );
+
+    press_right(&mut game);
+    for _ in 0..6 {
+        game.frame();
+    }
+
+    assert!(
+        is_six_row_night_menu(&game),
+        "a right click cancels CE246 back to the parent CE245 menu, got {:?}",
+        trimmed_options(&game)
+    );
+    assert!(
+        live_events(&game).contains(&245),
+        "CE245 is the parent after unwinding CE246"
+    );
+    assert_eq!(
+        game.stats.warnings, 0,
+        "right-click from CE246 is warning-free"
+    );
+}
+
+#[test]
+fn right_button_closes_ce249_bath_without_starting_it() {
+    let Some(mut game) = open_loaded_bedroom() else {
+        return;
+    };
+    open_night_menu(&mut game);
+    click_row(&mut game, 2); // 泡澡 -> CE249
+    assert_eq!(
+        trimmed_options(&game),
+        ["一个人洗", "两个人洗"].map(str::to_owned).to_vec(),
+        "CE249 bath menu is open before right-clicking"
+    );
+
+    press_right(&mut game);
+    for _ in 0..30 {
+        game.frame();
+    }
+
+    assert!(game.choices.is_none(), "a right click closes the bath menu");
+    assert!(
+        live_events(&game).is_empty(),
+        "a right click starts no bath action, events {:?}",
+        live_events(&game)
+    );
+    assert!(
+        game.messages.is_empty(),
+        "a right click leaves no bath message"
+    );
+    assert_eq!(
+        game.stats.warnings, 0,
+        "right-clicking CE249 is warning-free"
+    );
+}
+
+#[test]
+fn right_button_closes_ce250_shop_without_buying() {
+    let Some(mut game) = open_loaded_bedroom() else {
+        return;
+    };
+    open_night_menu(&mut game);
+    click_row(&mut game, 3); // 网上购物 -> CE250
+    assert_eq!(trimmed_options(&game).len(), 3, "CE250 shop menu is open");
+    assert_eq!(game.vm.vars.get(15), 1, "shop flag set on entry");
+
+    press_right(&mut game);
+    for _ in 0..30 {
+        game.frame();
+    }
+
+    assert!(game.choices.is_none(), "a right click closes the shop menu");
+    assert_eq!(game.vm.vars.get(7), 10000, "a right click spends no money");
+    assert_eq!(game.vm.vars.get(15), 0, "the shop flag resets on close");
+    assert_eq!(
+        game.stats.warnings, 0,
+        "right-clicking CE250 is warning-free"
+    );
 }
 
 #[test]
@@ -451,6 +656,10 @@ fn full_mouse_run_leaves_the_save_file_untouched() {
         before, after,
         "the mouse menu run must not rewrite SaveData01.sav"
     );
-    assert_eq!(before.len(), after.len(), "the save file keeps its byte length");
+    assert_eq!(
+        before.len(),
+        after.len(),
+        "the save file keeps its byte length"
+    );
     assert_eq!(game.stats.warnings, 0, "the full run is warning-free");
 }

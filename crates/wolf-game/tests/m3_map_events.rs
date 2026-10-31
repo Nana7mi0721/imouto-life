@@ -90,7 +90,11 @@ fn registered_map_metadata_matches_shipped_data() {
         let stats = map.stats();
         assert_eq!(stats.slots, slots, "{file} stats slot count");
         assert_eq!(stats.blank(), blank, "{file} blank (NOP) slots");
-        assert_eq!(stats.blank() + stats.real(), slots, "{file} blank+real=total");
+        assert_eq!(
+            stats.blank() + stats.real(),
+            slots,
+            "{file} blank+real=total"
+        );
 
         // Every shipped map carries a tile layer. Map024/Map031 fill layer 0 with a
         // single filler id (100000) rather than drawing a real room, but the block is
@@ -138,7 +142,7 @@ fn every_event_selects_a_page_under_a_loaded_save_without_panicking() {
                 4 => sys4,
                 _ => 0,
             },
-            MagicKind::SelfVar | MagicKind::StrVar | MagicKind::Opaque => 0,
+            MagicKind::SelfVar | MagicKind::StrVar | MagicKind::DbCell | MagicKind::Opaque => 0,
         }
     };
 
@@ -178,7 +182,9 @@ fn every_event_selects_a_page_under_a_loaded_save_without_panicking() {
 
 #[test]
 fn samplemapa_event_pages_run_bounded_without_warnings() {
-    let Some(map) = read_map("SampleMapA.mps") else { return };
+    let Some(map) = read_map("SampleMapA.mps") else {
+        return;
+    };
 
     // Events whose first page produces no message, no text picture and no menu in
     // isolation are the ones that need live context (a player key press, a menu that
@@ -261,7 +267,9 @@ fn title_new_game_map_switch_reaches_sample_map_a() {
     // m1 already asserts this end to end; this test additionally checks it from the
     // .mps side (Map003 event 1 must carry the 130 teleport), so the map file and the
     // runtime diagnosis cannot drift apart.
-    let Some(map003) = read_map("Map003.mps") else { return };
+    let Some(map003) = read_map("Map003.mps") else {
+        return;
+    };
     let hook = map003
         .events
         .iter()
@@ -304,8 +312,14 @@ fn title_new_game_map_switch_reaches_sample_map_a() {
         }
     }
 
-    assert!(reached, "the new-game path reached SampleMapA within 3200 frames");
-    assert_eq!(game.stats.warnings, 0, "the new-game map switch is warning-free");
+    assert!(
+        reached,
+        "the new-game path reached SampleMapA within 3200 frames"
+    );
+    assert_eq!(
+        game.stats.warnings, 0,
+        "the new-game map switch is warning-free"
+    );
     assert!(
         game.screen.len() > 30,
         "the SampleMapA room and HUD are drawn: {} pictures",

@@ -184,7 +184,7 @@ pub fn eval_magic<L: VarLookup + ?Sized>(magic: Magic, lookup: &L) -> i32 {
         MagicKind::Var => lookup.lookup_num(EscapeBank::Var, magic.index() as usize),
         MagicKind::SysVar => lookup.lookup_num(EscapeBank::SysVar, magic.index() as usize),
         // A string bank read in an integer context is a data error; WOLF yields 0.
-        MagicKind::StrVar | MagicKind::Opaque => 0,
+        MagicKind::StrVar | MagicKind::DbCell | MagicKind::Opaque => 0,
     }
 }
 

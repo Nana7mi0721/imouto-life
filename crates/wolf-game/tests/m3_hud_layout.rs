@@ -46,7 +46,10 @@ fn open_loaded(slot: u32) -> Option<Game> {
     let mut game = match Game::new(data_root()) {
         Ok(game) => game,
         Err(err) => {
-            eprintln!("skipping: cannot open data root {}: {err}", data_root().display());
+            eprintln!(
+                "skipping: cannot open data root {}: {err}",
+                data_root().display()
+            );
             return None;
         }
     };
@@ -116,7 +119,6 @@ fn slot_file(game: &Game, number: i32) -> String {
 fn squash(text: &str) -> String {
     text.split_whitespace().collect()
 }
-
 
 /// 纹理尺寸（真实像素），用于断言资源 id 与尺寸。
 fn tex_size(game: &mut Game, name: &str) -> Option<(u32, u32)> {
@@ -220,7 +222,6 @@ fn assert_save_unchanged(before: &[(String, u64, u128)], after: &[(String, u64, 
     assert_eq!(before, after, "Save 目录在测试期间被改动");
 }
 
-
 #[test]
 fn hud_stable_snapshot_layers_and_hidden_state() {
     let before = fingerprint();
@@ -235,7 +236,10 @@ fn hud_stable_snapshot_layers_and_hidden_state() {
         game.frame();
     }
     let snap_late = sig(&game);
-    assert_eq!(snap_early, snap_late, "HUD 在 1600→4800 帧之间发生变化，非稳定态");
+    assert_eq!(
+        snap_early, snap_late,
+        "HUD 在 1600→4800 帧之间发生变化，非稳定态"
+    );
 
     assert_eq!(game.stats.warnings, 0, "HUD 稳定帧出现 warnings");
     assert!(game.messages.is_empty(), "稳定 HUD 不应有消息");
@@ -262,14 +266,22 @@ fn hud_stable_snapshot_layers_and_hidden_state() {
         100000,
     ];
     for w in order.windows(2) {
-        assert!(pos(w[0]) < pos(w[1]), "层级错误：槽 {} 应在槽 {} 之前", w[0], w[1]);
+        assert!(
+            pos(w[0]) < pos(w[1]),
+            "层级错误：槽 {} 应在槽 {} 之前",
+            w[0],
+            w[1]
+        );
     }
 
     // 未开启元素不应出现（相册/立绘/存档屏/CE237/CE244）。
     for absent in [
         10, 114, 115, 116, 900, 901, 902, 903, 12000, 12001, 1992, 1995, 2000, 110,
     ] {
-        assert!(game.screen.get(absent).is_none(), "槽 {absent} 不应出现在稳定 HUD");
+        assert!(
+            game.screen.get(absent).is_none(),
+            "槽 {absent} 不应出现在稳定 HUD"
+        );
     }
 
     // 全屏背景与图标。
@@ -301,10 +313,12 @@ fn hud_stable_snapshot_layers_and_hidden_state() {
         assert_eq!((mask.x, mask.y), (0, 36));
     }
 
-
     // ── HUD 文本内容与 vars 对齐 ──
     let vars = |game: &Game, n: usize| game.vm.vars.get(n);
-    assert_eq!(slot_text(&game, 200), format!("{}:{:02}", vars(&game, 4), vars(&game, 5)));
+    assert_eq!(
+        slot_text(&game, 200),
+        format!("{}:{:02}", vars(&game, 4), vars(&game, 5))
+    );
     {
         let p = game.screen.get(200).unwrap();
         assert_eq!((p.x, p.y), (100, 7));
@@ -325,33 +339,48 @@ fn hud_stable_snapshot_layers_and_hidden_state() {
         assert_eq!(p.window, Some((1, 1)));
     }
 
-    // 行动力 / 精力：数字显示受 numeric cdb 引擎缺口影响为空，但图片确实引用对应 cdb 单元，
-    // 且数据库数值正确。此处断言 DB 与引用关系，不断言被吞掉的数字。
+    // 行动力 / 精力：图片文本引用对应 cdb 单元；DB 数值必须与 SaveData01 一致
+    // （精力上限 3，不是旧引擎把 DB value magic 误当原始数值时写出的 9）。
     let raw230 = game.screen.get(230).unwrap().text.clone();
-    assert!(slot_visible(&game, 230).starts_with("行动力"), "槽230 应以 行动力 开头");
+    assert!(
+        slot_visible(&game, 230).starts_with("行动力"),
+        "槽230 应以 行动力 开头"
+    );
     assert!(raw230.contains("cdb[0:12:8]"), "槽230 应引用 cdb[0:12:8]");
     assert!(raw230.contains("cdb[0:12:9]"), "槽230 应引用 cdb[0:12:9]");
     assert_eq!(game.screen.get(230).unwrap().x, 640);
     let raw240 = game.screen.get(240).unwrap().text.clone();
-    assert!(slot_visible(&game, 240).starts_with("精力"), "槽240 应以 精力 开头");
+    assert!(
+        slot_visible(&game, 240).starts_with("精力"),
+        "槽240 应以 精力 开头"
+    );
     assert!(raw240.contains("cdb[0:12:6]"), "槽240 应引用 cdb[0:12:6]");
     assert!(raw240.contains("cdb[0:12:7]"), "槽240 应引用 cdb[0:12:7]");
     assert_eq!(game.screen.get(240).unwrap().x, 760);
     assert_eq!(game.databases.num(Container::CData, 0, 12, 8), Some(60));
     assert_eq!(game.databases.num(Container::CData, 0, 12, 9), Some(65));
     assert_eq!(game.databases.num(Container::CData, 0, 12, 6), Some(3));
-    assert_eq!(game.databases.num(Container::CData, 0, 12, 7), Some(9));
+    assert_eq!(game.databases.num(Container::CData, 0, 12, 7), Some(3));
 
     // 金钱与同居天数。
     assert_eq!(slot_text(&game, 250), "持有金钱");
-    assert_eq!((game.screen.get(250).unwrap().x, game.screen.get(250).unwrap().y), (840, 12));
+    assert_eq!(
+        (
+            game.screen.get(250).unwrap().x,
+            game.screen.get(250).unwrap().y
+        ),
+        (840, 12)
+    );
     assert_eq!(slot_text(&game, 251), format!("{}円", vars(&game, 7)));
     {
         let p = game.screen.get(251).unwrap();
         assert_eq!((p.x, p.y), (1000, 12));
         assert_eq!(p.anchor, 3);
     }
-    assert_eq!(squash(&slot_text(&game, 252)), format!("同居{}天", vars(&game, 99)));
+    assert_eq!(
+        squash(&slot_text(&game, 252)),
+        format!("同居{}天", vars(&game, 99))
+    );
     {
         let p = game.screen.get(252).unwrap();
         assert_eq!((p.x, p.y), (1000, 50));
@@ -365,7 +394,10 @@ fn hud_stable_snapshot_layers_and_hidden_state() {
         assert_eq!((p.x, p.y), (-305, 0));
         assert_eq!(p.opacity, 255);
     }
-    assert_eq!(tex_size(&mut game, "Picture/status01.png"), Some((330, 576)));
+    assert_eq!(
+        tex_size(&mut game, "Picture/status01.png"),
+        Some((330, 576))
+    );
     assert_eq!(slot_text(&game, 321), vars(&game, 20).to_string());
     assert_eq!(slot_text(&game, 322), vars(&game, 21).to_string());
     assert_eq!(slot_text(&game, 323), "普通");
@@ -377,7 +409,10 @@ fn hud_stable_snapshot_layers_and_hidden_state() {
         let p = game.screen.get(2300).unwrap();
         assert_eq!((p.x, p.y), (-305, 0));
     }
-    assert_eq!(tex_size(&mut game, "Picture/itemlist.png"), Some((330, 576)));
+    assert_eq!(
+        tex_size(&mut game, "Picture/itemlist.png"),
+        Some((330, 576))
+    );
     for n in 2301..=2319 {
         assert!(
             slot_text(&game, n).parse::<i32>().is_ok(),
@@ -392,7 +427,9 @@ fn hud_stable_snapshot_layers_and_hidden_state() {
             assert_eq!(p.opacity, 0, "槽 {} 应隐藏（opacity=0）", p.number);
         }
     }
-    for n in [36000, 36002, 36008, 36009, 36010, 36011, 36012, 36013, 36014, 36016, 36020, 100000] {
+    for n in [
+        36000, 36002, 36008, 36009, 36010, 36011, 36012, 36013, 36014, 36016, 36020, 100000,
+    ] {
         assert!(game.screen.get(n).is_some(), "稳定 HUD 应存在槽 {n}");
     }
     assert_eq!(
@@ -403,7 +440,6 @@ fn hud_stable_snapshot_layers_and_hidden_state() {
 
     assert_save_unchanged(&before, &fingerprint());
 }
-
 
 /// CE242 / CE243：在稳定 HUD 上触发，只原位刷新既有槽，不增删槽（增量覆盖回归）。
 #[test]
@@ -424,7 +460,11 @@ fn hud_events_rewrite_slots_without_layout_change() {
         }
         assert!(!running(&game, 242), "CE242 应在有限帧内结束");
         assert_eq!(game.stats.warnings, 0, "CE242 出现 warnings");
-        assert_eq!(sig(&game), base, "CE242 重绘后 HUD 全槽签名应保持不变（原位覆盖）");
+        assert_eq!(
+            sig(&game),
+            base,
+            "CE242 重绘后 HUD 全槽签名应保持不变（原位覆盖）"
+        );
         assert_eq!(numbers(&game), base_nums, "CE242 不应增删槽");
         for n in [220, 230, 240, 250, 251, 252] {
             assert!(game.screen.get(n).is_some(), "CE242 后槽 {n} 应仍在");
@@ -454,7 +494,6 @@ fn hud_events_rewrite_slots_without_layout_change() {
 
     assert_save_unchanged(&before, &fingerprint());
 }
-
 
 /// CE244 行动力变动：临时新增一个增量文本槽 110，事件结束后回收，HUD 恢复基线。
 #[test]
@@ -498,7 +537,10 @@ fn hud_event_244_delta_slot_is_transient() {
         .copied()
         .filter(|n| !during.contains(n))
         .collect();
-    assert!(removed.is_empty(), "CE244 运行期不应删除 HUD 槽：{removed:?}");
+    assert!(
+        removed.is_empty(),
+        "CE244 运行期不应删除 HUD 槽：{removed:?}"
+    );
 
     // 事件结束后增量槽回收，HUD 槽集合恢复基线。
     for _ in 0..300 {
@@ -508,10 +550,12 @@ fn hud_event_244_delta_slot_is_transient() {
         game.frame();
     }
     assert!(!running(&game, 244), "CE244 应在有限帧内结束");
-    assert!(game.screen.get(110).is_none(), "CE244 结束后槽 110 应被回收");
+    assert!(
+        game.screen.get(110).is_none(),
+        "CE244 结束后槽 110 应被回收"
+    );
     assert_eq!(numbers(&game), base_nums, "CE244 结束后 HUD 槽应恢复基线");
     assert_eq!(game.stats.warnings, 0, "CE244 结束后出现 warnings");
 
     assert_save_unchanged(&before, &fingerprint());
 }
-

@@ -2774,6 +2774,9 @@ fn run_capture(
         }
         Entry::Save(path) => {
             let label = format!("save file {}", path.display());
+            // Finish CE48 before restoring: otherwise its first pass rewrites the
+            // loaded status cells (see Game::prime_engine).
+            game.prime_engine();
             match game.load_save(path) {
                 Ok(loaded) => {
                     println!(
@@ -3063,6 +3066,13 @@ fn run_capture_map(
         game.set_choice_cursor(index);
         game.auto_choice = true;
         game.auto_choice_delay = answers.delay;
+    }
+    // Run CE48's one-shot initialisation before loading: loading first lets that
+    // engine coroutine overwrite the restored HP/stamina/action cells a few frames
+    // later (see Game::prime_engine).  Real boot finishes it before the title menu.
+    let primed = game.prime_engine();
+    if primed > 0 {
+        eprintln!("  primed    : engine initialisation ran {primed} frame(s) before load");
     }
     if let Some(path) = load_save {
         match game.load_save(path) {

@@ -79,14 +79,14 @@
 //! colour-effect clock; the host calls both once per frame. A finished slide is dropped and the
 //! picture then draws exactly the fields the command asked for.
 //!
-//! # Negative numbers are whole-screen layers
+//! # Negative numbers are fixed-screen layers
 //!
-//! Picture numbers below zero are the screen-level pictures. Every instance in this game
-//! draws a 1024x576 image with x=y=0 and scale=100, which is exactly the game's logical
-//! screen (see GameDat::screen_size), so they are treated as full-screen layers and their
-//! position/scale fields are ignored. This is hypothesis H-PIC-1 in docs/UNVERIFIED.md: it
-//! must be confirmed against the retail game before M2 assets are considered final,
-//! because if it is wrong the title screen renders at the wrong size rather than not at all.
+//! Picture numbers below zero are the screen-fixed pictures: their x/y are not affected by
+//! the map camera. They are *not* implicitly 1024x576. Retail data refutes the old
+//! "whole-screen layer" shortcut (H-PIC-1 in docs/UNVERIFIED.md): slot -5 is the 48x64
+//! save icon at (10,510) and slot -4 the data icon at (925,507), while the title and CG
+//! backdrops happen to be 1024x576 at (0,0). Every negative picture therefore uses the same
+//! native-size/scale/anchor placement law as a positive one; only its panning is fixed.
 
 use std::collections::BTreeMap;
 
@@ -1319,18 +1319,6 @@ impl Screen {
             if picture.kind.is_window() && crate::sysgraphic::parse(&picture.file).is_none() {
                 continue;
             }
-            // Whole-screen layers ignore x/y/scale entirely: whichever way a negative-number
-            // picture is anchored, it must cover the logical screen.
-            if picture.is_screen_layer() {
-                let src = picture_frame(picture, &mut tex_size)
-                    .map_or([0, 0, SCREEN_W, SCREEN_H], |(src, _)| src);
-                out.push(ScreenQuad::from(
-                    picture,
-                    src,
-                    [0.0, 0.0, SCREEN_W as f32, SCREEN_H as f32],
-                ));
-                continue;
-            }
             let (src, dst) = if picture.kind.is_text() {
                 // Text boxes carry their own metrics and have never been scaled by the 150
                 // percent slot, so they keep the plain placement law and only gain the
@@ -1659,12 +1647,18 @@ mod tests {
     fn every_effect_kind_the_game_ships_is_supported() {
         // 0,1,2,3,4,5,7,8,9,10 all occur in the data and are handled by Screen::effect.
         for kind in [0, 1, 2, 3, 4, 5, 7, 8, 9, 10] {
-            assert!(Screen::effect_kind_supported(kind), "kind {kind} should be supported");
+            assert!(
+                Screen::effect_kind_supported(kind),
+                "kind {kind} should be supported"
+            );
         }
         // Type 6 (the second blink variant) has zero uses and stays unhandled on purpose;
         // out-of-range values are likewise rejected rather than guessed at.
         for kind in [6, -1, 11, 999] {
-            assert!(!Screen::effect_kind_supported(kind), "kind {kind} should be unsupported");
+            assert!(
+                !Screen::effect_kind_supported(kind),
+                "kind {kind} should be unsupported"
+            );
         }
     }
 
@@ -1850,7 +1844,7 @@ mod tests {
     }
 
     #[test]
-    fn a_screen_layer_fills_the_logical_screen_whatever_the_texture_size_is() {
+    fn a_screen_layer_uses_its_native_size_and_position() {
         let mut screen = Screen::new();
         screen.apply(&title_background());
         let quads = screen.quads(|_| Some((1024, 576)));
@@ -1858,14 +1852,24 @@ mod tests {
         assert_eq!(quads[0].src, [0, 0, 1024, 576]);
         assert_eq!(quads[0].dst, [0.0, 0.0, 1024.0, 576.0]);
 
-        // Same picture, undersized texture: still covers the screen (scaled up).
-        let quads = screen.quads(|_| Some((512, 288)));
-        assert_eq!(quads[0].dst, [0.0, 0.0, 1024.0, 576.0]);
-
-        // Unknown texture: fall back to the logical screen rather than dropping the layer.
-        let quads = screen.quads(|_| None);
+        // A fixed-screen HUD icon is also a negative slot, but it is 48x64 at (10,510):
+        // the old full-screen shortcut drew it stretched across the whole viewport.
+        let mut screen = Screen::new();
+        screen.apply(&cmd(
+            -5,
+            0,
+            PictureAction::Draw,
+            "Picture/icon01.png",
+            "",
+            &[0, 1, 1, 1, 255, 10, 510, 100, 0],
+        ));
+        let quads = screen.quads(|_| Some((48, 64)));
         assert_eq!(quads.len(), 1);
-        assert_eq!(quads[0].src, [0, 0, 1024, 576]);
+        assert_eq!(quads[0].dst, [10.0, 510.0, 48.0, 64.0]);
+
+        // Undersized files keep their own size too; scale, not the viewport, decides.
+        let quads = screen.quads(|_| Some((512, 288)));
+        assert_eq!(quads[0].dst, [10.0, 510.0, 512.0, 288.0]);
     }
 
     #[test]

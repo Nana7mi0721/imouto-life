@@ -34,6 +34,17 @@ pub const VAR_BASE: i32 = 2_000_000;
 pub const STR_BASE: i32 = 3_000_000;
 /// Base of the system-variable bank.
 pub const SYS_BASE: i32 = 9_000_000;
+/// Base of the `250`-style database-value magic bank.
+///
+/// The interpreter also uses a magic number to address one database cell
+/// directly in a condition or an assignment target.  Every observed operand is
+/// `1_100_000_000 + row*100 + column` (CDataBase type 0, 可変DB[0]).  This was
+/// measured on the HUD status event CE242: `1_100_001_207` is CDataBase
+/// type 0 row 12 column 7 (stamina maximum), and `1_100_001_209` is row 12
+/// column 9 (action maximum).  See docs/HANDOFF_M0.md and the M4 HUD notes.
+pub const DB_VALUE_BASE: i32 = 1_100_000_000;
+/// Number of columns in a database table, used by [`DB_VALUE_BASE`].
+pub const DB_VALUE_STRIDE: i32 = 100;
 /// Slots per self-variable group (docs/OPCODE_SPEC.md §2.2).
 pub const SELF_GROUP_STRIDE: usize = 100_000;
 /// Number of slots inside one self-variable group.
@@ -67,6 +78,11 @@ pub enum MagicKind {
     StrVar,
     /// A system variable.
     SysVar,
+    /// One database cell addressed directly as a magic number.
+    ///
+    /// The current title only uses this for CDataBase type 0 (可変DB[0]); the
+    /// row and column live in [`Magic::index`] as `row*100 + column`.
+    DbCell,
     /// Out of range, negative, or carrying unresolved flag bits: use the raw
     /// value and do not try to dereference it.
     Opaque,
@@ -88,6 +104,16 @@ impl Magic {
     /// Decode one raw instruction argument.
     #[must_use]
     pub fn decode(raw: i32) -> Self {
+        // Database-value magic is a positive value in its own bank, not a
+        // flagged operand: 0x4190_AB00 + row*100 + column.  Check it before
+        // the generic flag handling, because the top nibble is 4.
+        if (DB_VALUE_BASE..DB_VALUE_BASE + 1_000_000).contains(&raw) {
+            return Self {
+                raw,
+                kind: MagicKind::DbCell,
+                index: (raw - DB_VALUE_BASE) as u32,
+            };
+        }
         // Flags live in the top nibble (docs/OPCODE_SPEC.md §2.3). Masking them
         // off before classifying is what lets the flagged 112 operands still
         // resolve to a real variable; the flag itself is kept in `raw`.
@@ -120,6 +146,18 @@ impl Magic {
     #[must_use]
     pub const fn index(self) -> u32 {
         self.index
+    }
+
+    /// The database row of a [`MagicKind::DbCell`] operand.
+    #[must_use]
+    pub const fn db_row(self) -> i32 {
+        (self.index / DB_VALUE_STRIDE as u32) as i32
+    }
+
+    /// The database column of a [`MagicKind::DbCell`] operand.
+    #[must_use]
+    pub const fn db_column(self) -> i32 {
+        (self.index % DB_VALUE_STRIDE as u32) as i32
     }
 
     /// The unresolved flag nibble (docs/OPCODE_SPEC.md §2.3).
@@ -200,6 +238,25 @@ mod tests {
         // Group 6: the most frequent self bank in this game (1_600_000..1_600_099).
         assert_eq!(Magic::decode(1_600_000).index(), 600);
         assert_eq!(Magic::decode(1_600_099).index(), 699);
+    }
+
+    #[test]
+    fn database_cells_decode_by_row_and_column() {
+        // CE242: stamina maximum is CDataBase type 0 row 12 column 7.
+        let m = Magic::decode(1_100_001_207);
+        assert_eq!(m.kind(), MagicKind::DbCell);
+        assert_eq!(m.db_row(), 12);
+        assert_eq!(m.db_column(), 7);
+        // CE242: action maximum is row 12 column 9.
+        let m = Magic::decode(1_100_001_209);
+        assert_eq!(m.kind(), MagicKind::DbCell);
+        assert_eq!(m.db_row(), 12);
+        assert_eq!(m.db_column(), 9);
+        // The bare base addresses cell 0:0.
+        let m = Magic::decode(DB_VALUE_BASE);
+        assert_eq!(m.kind(), MagicKind::DbCell);
+        assert_eq!(m.db_row(), 0);
+        assert_eq!(m.db_column(), 0);
     }
 
     #[test]

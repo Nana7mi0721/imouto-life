@@ -547,6 +547,40 @@ pub trait Host {
         None
     }
 
+    /// Reads one cell addressed by a database-value magic operand (the
+    /// `1_100_000_000 + row*100 + column` bank used by CE242/CE250/CE251/CE258).
+    ///
+    /// This is deliberately separate from [`Host::database`]: that call carries
+    /// editor labels and statistics, while a condition operand only needs the
+    /// current numeric value.  The default `None` gives the same result as an
+    /// empty cell, so headless hosts keep working unchanged.
+    fn database_cell(
+        &mut self,
+        container: DbContainer,
+        db_type: i32,
+        row: i32,
+        column: i32,
+    ) -> Option<i32> {
+        let _ = (container, db_type, row, column);
+        None
+    }
+
+    /// Writes one cell addressed by a database-value magic operand.
+    ///
+    /// Returns whether the write landed.  The default `false` keeps hosts that
+    /// do not own a database unchanged.
+    fn set_database_cell(
+        &mut self,
+        container: DbContainer,
+        db_type: i32,
+        row: i32,
+        column: i32,
+        value: i32,
+    ) -> bool {
+        let _ = (container, db_type, row, column, value);
+        false
+    }
+
     /// `201 SetMoveRoute`.
     fn move_route(&mut self, target: i32, route: &[RouteCommand]) {
         let _ = (target, route);
@@ -1299,6 +1333,10 @@ fn eval_num(raw: i32, inst: &Instance, vars: &Variables) -> i32 {
         MagicKind::SysVar => vars.get_sys(magic.index() as usize),
         // A string bank read as a number is 0 (the editor never does this).
         MagicKind::StrVar => 0,
+        // Database cells need a host to read; callers that can resolve them use
+        // `eval_num_host`.  Keeping the raw value is the least surprising
+        // fallback for the few generic call sites that never see this bank.
+        MagicKind::DbCell => raw,
         // "Opaque" is not a bank at all: it is the negative-sentinel space
         // (-1 keep, -2 whole screen, -1_000_000 unchanged) plus anything above
         // the system bank. Those values are literals and must survive, otherwise
@@ -1319,6 +1357,22 @@ fn eval_num(raw: i32, inst: &Instance, vars: &Variables) -> i32 {
 /// not occur on any of the 2,663 address operands (docs/OPCODE_250.md section 2).
 fn eval_address(raw: i32, inst: &Instance, vars: &Variables) -> i32 {
     eval_num(raw, inst, vars)
+}
+
+/// Read a database-value magic operand from the host, if it is one.
+fn database_value(raw: i32, host: &mut dyn Host) -> Option<i32> {
+    let magic = Magic::decode(raw);
+    if magic.kind() != MagicKind::DbCell {
+        return None;
+    }
+    // Every database-value operand measured in this title is CDataBase type 0
+    // (可変DB[0]); the magic carries only row and column.
+    host.database_cell(DbContainer::CData, 0, magic.db_row(), magic.db_column())
+}
+
+/// Read one magic operand, resolving database cells through the host.
+fn eval_num_host(raw: i32, inst: &Instance, vars: &Variables, host: &mut dyn Host) -> i32 {
+    database_value(raw, host).unwrap_or_else(|| eval_num(raw, inst, vars))
 }
 
 /// One of the label strings a `250` carries, when it is non-empty.
@@ -1344,7 +1398,7 @@ fn eval_str(raw: i32, inst: &Instance, vars: &Variables) -> String {
         // editor's `cself[n]` expansion does.
         MagicKind::Literal => magic.index().to_string(),
         MagicKind::Var => vars.get(magic.index() as usize).to_string(),
-        MagicKind::Opaque => String::new(),
+        MagicKind::DbCell | MagicKind::Opaque => String::new(),
     }
 }
 
@@ -1356,7 +1410,7 @@ fn store_num(inst: &mut Instance, vars: &mut Variables, raw: i32, value: i32) {
         MagicKind::Var => vars.set(magic.index() as usize, value),
         MagicKind::SysVar => vars.set_sys(magic.index() as usize, value),
         // Writing to a literal or a sentinel is a no-op in every WOLF build.
-        MagicKind::Literal | MagicKind::StrVar | MagicKind::Opaque => {}
+        MagicKind::Literal | MagicKind::StrVar | MagicKind::DbCell | MagicKind::Opaque => {}
     }
 }
 
@@ -1367,7 +1421,7 @@ fn store_str(inst: &mut Instance, vars: &mut Variables, raw: i32, value: &str) {
         MagicKind::StrVar => vars.set_str(magic.index() as usize, value),
         MagicKind::SelfVar => inst.self_vars.set_str(magic.index() as usize, value),
         MagicKind::SysVar => vars.set_sys_str(magic.index() as usize, value),
-        MagicKind::Literal | MagicKind::Var | MagicKind::Opaque => {}
+        MagicKind::Literal | MagicKind::Var | MagicKind::DbCell | MagicKind::Opaque => {}
     }
 }
 
@@ -1683,11 +1737,40 @@ fn execute(
                 } else {
                     binary_op(bin, a, b)
                 };
-                let current = eval_num(target, inst, vars);
-                let value = compound((bits & 0x0FFF) as i32, current, result);
-                store_num(inst, vars, target, value);
-                inst.pc += 1;
-                None
+                // A database-value target is written as `[base, value, bin,
+                // bits, type, row, column]`: the base alone is not the cell, so
+                // the row and column are the trailing operands.  CE242 pc17 uses
+                // `[1_100_000_000, 99, 0, 0, 0, 12, 9]` to set the action maximum,
+                // and CE259/CE284/CE298 write stamina/action the same way.
+                if target == crate::magic::DB_VALUE_BASE && argc(cmd) >= 7 {
+                    let db_type = eval_num(arg(cmd, 4), inst, vars);
+                    let row = eval_num(arg(cmd, 5), inst, vars);
+                    let column = eval_num(arg(cmd, 6), inst, vars);
+                    let current = host
+                        .database_cell(DbContainer::CData, db_type, row, column)
+                        .unwrap_or(0);
+                    let value = compound((bits & 0x0FFF) as i32, current, result);
+                    host.set_database_cell(DbContainer::CData, db_type, row, column, value);
+                    inst.pc += 1;
+                    None
+                } else {
+                    let current = eval_num_host(target, inst, vars, host);
+                    let value = compound((bits & 0x0FFF) as i32, current, result);
+                    if Magic::decode(target).kind() == MagicKind::DbCell {
+                        let magic = Magic::decode(target);
+                        host.set_database_cell(
+                            DbContainer::CData,
+                            0,
+                            magic.db_row(),
+                            magic.db_column(),
+                            value,
+                        );
+                    } else {
+                        store_num(inst, vars, target, value);
+                    }
+                    inst.pc += 1;
+                    None
+                }
             }
             122 => {
                 let target = arg(cmd, 0);
@@ -2219,9 +2302,9 @@ fn enter_block(
                 // self variable (CE79 pc85 compares self621 with self616), and
                 // reading it raw turned a six-iteration loop into a 1.6-million
                 // iteration one that never returned.
-                let value = eval_num(arg(cmd, 2 + 3 * i), inst, vars);
+                let value = eval_num_host(arg(cmd, 2 + 3 * i), inst, vars, host);
                 let operator = arg(cmd, 3 + 3 * i);
-                let lhs = eval_num(var, inst, vars);
+                let lhs = eval_num_host(var, inst, vars, host);
                 if compare(lhs, value, operator) {
                     matched = Some((i + 1) as i32);
                     break;

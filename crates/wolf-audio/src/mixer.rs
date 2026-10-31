@@ -8,6 +8,9 @@
 //! Contract (pinned by `tests/mixer_contract.rs`):
 //! * per-voice volume and the master BGM/SE volumes multiply, and both are clamped to 0..=1;
 //! * BGM is a single replaceable voice; a non-looping voice ends and is dropped;
+//! * a BGM started with a fade-in ramps monotonically from near-silence up to full gain and
+//!   then stays there; an SE started with a delay stays silent (and does not advance its
+//!   source cursor) until the delay elapses;
 //! * a fading BGM ramps monotonically to silence and is then dropped;
 //! * once a voice reports `done` inside a render chunk it contributes silence for the rest of
 //!   that chunk (a finished one-shot SE must not hold its last sample as a DC tail);
@@ -20,6 +23,14 @@ use crate::decode::DecodedAudio;
 /// The rate at which WOLF RPG Editor advances game frames. Used to translate `SoundCmd.frames`
 /// (a fade length in game frames) into output samples.
 pub const GAME_FPS: f32 = 60.0;
+
+/// Translate a length in game frames (60 fps) to output frames at `out_rate` Hz.
+///
+/// Returns at least 1 so a non-zero fade/delay is always observable.
+fn game_frames_to_output(game_frames: u32, out_rate: u32) -> u32 {
+    let total = ((game_frames as f64 * out_rate as f64) / GAME_FPS as f64).round() as u32;
+    total.max(1)
+}
 
 struct FadeOut {
     frames_left: u32,
@@ -44,6 +55,34 @@ impl FadeOut {
     }
 }
 
+/// Linear fade-in envelope for a BGM voice. One step per output frame so it reaches full
+/// gain exactly after `frames_total` output frames (a SoundCmd fade length in game frames,
+/// converted by the mixer when the voice is created).
+struct FadeIn {
+    frames_left: u32,
+    frames_total: u32,
+}
+
+impl FadeIn {
+    /// Consume one output frame, returning the gain to apply to it. The first sample is
+    /// `1/total` and the value climbs to `1.0` on the final sample, so the envelope is
+    /// strictly monotonic and never exceeds unity.
+    fn next_gain(&mut self) -> f32 {
+        if self.frames_total == 0 {
+            return 1.0;
+        }
+        let gain = (self.frames_total - self.frames_left + 1) as f32 / self.frames_total as f32;
+        if self.frames_left > 0 {
+            self.frames_left -= 1;
+        }
+        gain
+    }
+
+    fn is_done(&self) -> bool {
+        self.frames_left == 0
+    }
+}
+
 struct Voice {
     audio: Arc<DecodedAudio>,
     /// Playback position in source frames (fractional for resampling).
@@ -51,6 +90,11 @@ struct Voice {
     looping: bool,
     volume: f32,
     fade: Option<FadeOut>,
+    /// BGM fade-in envelope (None = play at full gain immediately).
+    fade_in: Option<FadeIn>,
+    /// SE start delay in output frames: the voice emits silence and does not advance while
+    /// this is non-zero (0 = start immediately).
+    delay_left: u32,
     done: bool,
 }
 
@@ -62,6 +106,8 @@ impl Voice {
             looping,
             volume: volume.clamp(0.0, 1.0),
             fade: None,
+            fade_in: None,
+            delay_left: 0,
             done: false,
         }
     }
@@ -154,14 +200,49 @@ impl Mixer {
         self.out_channels
     }
 
-    /// Start (or replace) the single BGM voice.
+    /// Start (or replace) the single BGM voice at full gain immediately.
     pub fn play_bgm(&mut self, audio: DecodedAudio, looping: bool, volume: f32) {
-        self.bgm = Some(Voice::new(audio, looping, volume));
+        self.play_bgm_with_fade(audio, looping, volume, 0);
+    }
+
+    /// Start (or replace) the single BGM voice with an optional linear fade-in.
+    ///
+    /// `fade_frames` is a length in game frames (60 fps), matching `SoundCmd.frames`; 0 plays
+    /// at full gain immediately (the historical behaviour).
+    pub fn play_bgm_with_fade(
+        &mut self,
+        audio: DecodedAudio,
+        looping: bool,
+        volume: f32,
+        fade_frames: u32,
+    ) {
+        let mut voice = Voice::new(audio, looping, volume);
+        if fade_frames > 0 {
+            let total = game_frames_to_output(fade_frames, self.out_rate);
+            voice.fade_in = Some(FadeIn {
+                frames_left: total,
+                frames_total: total,
+            });
+        }
+        self.bgm = Some(voice);
     }
 
     /// Start a new SE voice; multiple SE voices play concurrently.
     pub fn play_se(&mut self, audio: DecodedAudio, volume: f32) {
-        self.ses.push(Voice::new(audio, false, volume));
+        self.play_se_delayed(audio, volume, 0);
+    }
+
+    /// Start a new SE voice that stays silent for `delay_frames` game frames before it begins.
+    ///
+    /// `delay_frames` is the `SoundCmd.frames` start delay in game frames (60 fps); 0 starts
+    /// immediately (the historical behaviour). The source cursor is not advanced while the
+    /// voice is still delayed, so no audio is skipped.
+    pub fn play_se_delayed(&mut self, audio: DecodedAudio, volume: f32, delay_frames: u32) {
+        let mut voice = Voice::new(audio, false, volume);
+        if delay_frames > 0 {
+            voice.delay_left = game_frames_to_output(delay_frames, self.out_rate);
+        }
+        self.ses.push(voice);
     }
 
     /// Stop the BGM. `fade_frames` is a length in game frames (60 fps); 0 stops immediately.
@@ -227,7 +308,14 @@ impl Mixer {
                         Some(fade) => fade.next_gain(),
                         None => 1.0,
                     };
-                    let gain = voice.volume * bgm_volume * fade_gain;
+                    let mut fade_in_gain = 1.0f32;
+                    if let Some(fade_in) = voice.fade_in.as_mut() {
+                        fade_in_gain = fade_in.next_gain();
+                    }
+                    if voice.fade_in.as_ref().is_some_and(|fade| fade.is_done()) {
+                        voice.fade_in = None;
+                    }
+                    let gain = voice.volume * bgm_volume * fade_gain * fade_in_gain;
                     for c in 0..ch {
                         out[base + c] += voice.sample(c) * gain;
                     }
@@ -245,6 +333,11 @@ impl Mixer {
                 // sample for the rest of the buffer: that would emit a DC tail (up to a
                 // whole callback) after a one-shot SE has finished.
                 if voice.done {
+                    continue;
+                }
+                // A delayed SE stays silent and does not move its source cursor.
+                if voice.delay_left > 0 {
+                    voice.delay_left -= 1;
                     continue;
                 }
                 let gain = voice.volume * se_volume;

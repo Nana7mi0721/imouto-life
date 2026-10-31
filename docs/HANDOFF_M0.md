@@ -375,3 +375,29 @@ WOLF_DATA_ROOT="$PWD/work/Data" ./target/debug/wolf-cli.exe verify | tail -20
   * Lead 复验：默认与 `WOLF_DATA_ROOT=work/Data` 的 `cargo test -q --workspace` 均 exit 0（各 **75 target**，0 failed）；`verify` **PASS 64 / 1 SKIP**；`verify --wolf` **PASS 72 / 0 pending**（1,361/1,361）。
   * 已推送 `origin/master`：`c167c85..7c79d77`，工作树干净。
   * **下一步**：按 `docs/M4_PARITY.md` / `docs/M4_PERF.md` 推进 M4（设置 UI、tile quad 缓存、SoundCmd.frames、ActionKey 命中框、v8 命名审计、100 日长链与打包）。
+
+* 2026-10-31（M4 对等打磨：HUD/读档/渲染修复 + 收口）：
+  * **M4 已完成项**：tile quad 缓存（`crates/wolf-game/src/tilemap.rs`，A 0.430→0.070ms、
+    E 帧 0.202→0.173ms，`m4_tile_cache` 3 条）；SoundCmd.frames 的 BGM 淡入/SE 延迟
+    （`crates/wolf-audio/src/{mixer,engine}.rs`，`m4_soundcmd` 11 条）；100 日长链
+    （`crates/wolf-game/tests/m4_long_chain.rs`，v99==100、HAPPYEND 选项与 v201=1）；
+    v8 语义审计（`docs/M4_V8_AUDIT.md` + `m4_v8_semantics` 5 条：v8=夜间可活动上限
+    23..26，不是行动力）；发布打包（`tools/package.ps1` / `tools/package.sh` /
+    `docs/PACKAGING.md`，产物 work/out/dist，不提交二进制）。
+  * **本轮修复四个玩家可见缺陷**（详见 `docs/M4_HUD.md`）：
+    1) 负号图片被误当全屏层（`crates/wolf-game/src/picture.rs`），HUD 保存/数据图标
+       不再放大、status01 不再拉成黑罩；`m4_screen_layers` 2 条。
+    2) `decode_wolf_str`（`crates/wolf-format/src/bytes.rs:251`）把 GBK「强壮」
+       `C7 BF D7 B3` 误判为合法 UTF-8，姓名乱码；改为 UTF-8/CP932/GBK 打分候选；
+       `vardb_encoding` 10 条。
+    3) 读档前未跑完 CE48 初始化，行动力/精力被 CE70/CE124 清零；新增
+       `Game::prime_engine`（`crates/wolf-game/src/game.rs:776`），capture 与
+       Entry::Save 先 prime 再 load；`m4_hud_status` 2 条。
+    4) 数据库值 magic `1_100_000_000 + row*100 + col` 未解码，CE242 把精力上限写成 9；
+       `crates/wolf-vm/src/magic.rs` 新增 DbCell，exec op111/op121 走 host DB 读写，
+       `crates/wolf-game/src/game.rs:1883/1901` 实现。HUD 恢复「行动力60/65 精力 3/3」。
+  * **验收**：`WOLF_DATA_ROOT=work/Data cargo test -q --workspace` exit 0；
+    `verify` PASS 64 / 1 SKIP；`verify --wolf` PASS 72 / 0 pending（1,361/1,361）。
+    读档截图 `work/out/shots/bedroom_hudfix.png` 94.1% 非黑，HUD 与实机参考一致。
+  * **仍待办（M4 收尾）**：`capture --event 238` 状态面板需点击/输入才滑入（capture
+    需补触发路径）；设置 UI 与键位重绑定尚未做可视界面；msyhbd.ttc（TTC）字体支持待确认。

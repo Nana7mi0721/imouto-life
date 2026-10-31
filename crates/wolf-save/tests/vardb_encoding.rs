@@ -10,15 +10,17 @@
 //!   `97 45 8E D2 00` = `"勇者"`, `8B 5A 94 5C 00` = `"技能"`.
 //! * 1 was written by character creation in GBK: `D4 E7 D0 B9 20 00` =
 //!   `"早泄 "`. Its sibling cell `C7 BF D7 B3 20 00` is the GBK spelling of
-//!   `"强壮 "`, which happens to also be valid UTF-8 (`"ǿ׳ "`) -- a real
-//!   collision the decode heuristic resolves as UTF-8.
+//!   `"强壮 "`, which also happens to be valid UTF-8 (`"ǿ׳ "`). The decoder
+//!   now scores the UTF-8 and GBK readings instead of trusting UTF-8 blindly,
+//!   so this real collision decodes as `"强壮 "` while genuine UTF-8 text
+//!   (Chinese, Japanese, an older build's fallback) still wins.
 //!
 //! The same save's runtime strings in `SavePart3` are GBK
 //! (`"没有数据"` = `C3 BB D3 D0 CA FD BE DD 00`), which is what the fan
 //! translation's script text uses. Text-only re-encoding cannot tell a CP932
 //! `"勇者"` from a GBK `"勇者"`, so [VariableDatabase::set_text] keeps an
 //! existing legacy body while the caller's text still describes it, and encodes
-//! a genuinely new non-ASCII string as GBK with a UTF-8 fallback.
+//! a genuinely new non-ASCII string as GBK when that round-trips, else UTF-8.
 //!
 //! Everything skips cleanly when work/Data is absent, so the default workspace
 //! run stays exit 0.
@@ -159,8 +161,8 @@ fn retail_vardb_strings_come_from_two_code_pages() {
             "{name}: the name cell is GBK text"
         );
 
-        // The GBK spelling of "强壮" is also valid UTF-8, so the decoder (which
-        // tries UTF-8 first) reads it as "ǿ׳". The bytes are still GBK and the
+        // The GBK spelling of "强壮" is also valid UTF-8 ("ǿ׳"). The scored
+        // decoder must recover the GBK reading; the bytes are still GBK and the
         // writer must not corrupt them.
         let collision = cell(&save.vardb, 0, 12, 1);
         assert_eq!(collision, &[0xC7, 0xBF, 0xD7, 0xB3, 0x20, 0][..]);
@@ -173,6 +175,11 @@ fn retail_vardb_strings_come_from_two_code_pages() {
             wolf_format::gbk::decode(strip_nul(collision)).0,
             "强壮 ",
             "{name}: the same bytes are GBK text"
+        );
+        assert_eq!(
+            wolf_format::bytes::decode_wolf_str(strip_nul(collision)),
+            "强壮 ",
+            "{name}: the scored decoder recovers the GBK reading"
         );
     }
 }
@@ -286,16 +293,17 @@ fn a_new_chinese_string_is_stored_as_gbk() {
 
 /// Text GBK cannot represent is kept self-consistent as UTF-8.
 ///
-/// `"强壮"` is the collision case: its retail GBK bytes are valid UTF-8, so
-/// writing GBK would make the decoder read back `"ǿ׳"`. A character absent from
-/// the GBK table would become `?`. Both take the UTF-8 fallback; the retail
-/// `Game.exe` would not render those, but the engine's own round trip is exact.
+/// A character absent from the GBK table would become `?`, so those strings take
+/// the UTF-8 fallback; the retail `Game.exe` would not render them, but the
+/// engine's own round trip is exact. (The old `"强壮"` collision is no longer in
+/// this list: its bytes are valid GBK and the scored decoder recovers them; see
+/// `a_gbk_string_whose_bytes_are_valid_utf8_round_trips_as_gbk`.)
 #[test]
 fn text_gbk_cannot_round_trip_falls_back_to_utf8() {
     let Some((_original, save)) = read(FILES[0]) else {
         return;
     };
-    for text in ["强壮", "🎮", "Ω≈ç√∫"] {
+    for text in ["🎮", "Ω≈ç√∫"] {
         let mut db = save.vardb.clone();
         assert!(db.set_text(0, 0, 0, text), "{text:?} writes");
         let body = cell(&db, 0, 0, 0);
@@ -314,6 +322,26 @@ fn text_gbk_cannot_round_trip_falls_back_to_utf8() {
             "{text:?} must not be lossy-encoded to '?'"
         );
     }
+}
+
+/// A GBK body whose bytes also spell valid UTF-8 is written as GBK and read
+/// back as the GBK text, thanks to the scored decoder.
+#[test]
+fn a_gbk_string_whose_bytes_are_valid_utf8_round_trips_as_gbk() {
+    let Some((_original, save)) = read(FILES[0]) else {
+        return;
+    };
+    let mut db = save.vardb.clone();
+    assert!(db.set_text(0, 0, 0, "强壮"));
+    assert_eq!(
+        cell(&db, 0, 0, 0),
+        &[0xC7, 0xBF, 0xD7, 0xB3, 0][..],
+        "the collision string is written as GBK, not UTF-8"
+    );
+    assert_eq!(
+        wolf_format::bytes::decode_wolf_str(strip_nul(cell(&db, 0, 0, 0))),
+        "强壮"
+    );
 }
 
 /// A new Japanese string keeps its text even though only a GBK encoder exists.

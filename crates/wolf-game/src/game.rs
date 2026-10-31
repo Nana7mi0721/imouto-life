@@ -1159,24 +1159,23 @@ impl Game {
             if !picture.kind.is_text() || picture.hidden || picture.text.is_empty() {
                 continue;
             }
+            // Text pictures obey the same `290` positional effects as sprites. CE95, the
+            // settings-screen renderer, draws all ten row labels at one base (x,y) and
+            // separates them purely with a `290` type-2 coordinate shift per row; ignoring
+            // the shift stacks every row on top of the first.
+            //
+            // CE95 also works in tenths of a character cell, so its whole block is scaled
+            // back to pixels here (see Screen::ui_scale_for). Dividing the base and the
+            // shift together keeps every row in the same frame.
+            let (dx, dy) = picture.effect_offset();
+            let ui = self.screen.ui_scale_for(picture.number);
+            let x = (picture.x as f32 + dx) / ui;
+            let y = (picture.y as f32 + dy) / ui;
             let runs = if let Some(metrics) = &self.font_metrics {
                 let advance = |ch: char, px: f32| metrics.advance(ch, px);
-                crate::textpic::layout_with(
-                    &picture.text,
-                    picture.x as f32,
-                    picture.y as f32,
-                    picture.anchor,
-                    &ctx,
-                    &advance,
-                )
+                crate::textpic::layout_with(&picture.text, x, y, picture.anchor, &ctx, &advance)
             } else {
-                crate::textpic::layout(
-                    &picture.text,
-                    picture.x as f32,
-                    picture.y as f32,
-                    picture.anchor,
-                    &ctx,
-                )
+                crate::textpic::layout(&picture.text, x, y, picture.anchor, &ctx)
             };
             let alpha = picture.alpha();
             for run in runs {

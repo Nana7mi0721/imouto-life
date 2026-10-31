@@ -115,9 +115,16 @@ fn message_window_interface_paints_frame_and_text() {
         .map(|p| p.number)
         .collect();
     numbers.sort_unstable();
-    assert_eq!(numbers.len(), 13, "CE264 should paint 13 pictures, got {numbers:?}");
+    assert_eq!(
+        numbers.len(),
+        13,
+        "CE264 should paint 13 pictures, got {numbers:?}"
+    );
     for expected in [12000, 12001, 12010, 12014, 12018, 16000, 16001] {
-        assert!(numbers.contains(&expected), "CE264 missing picture {expected} in {numbers:?}");
+        assert!(
+            numbers.contains(&expected),
+            "CE264 missing picture {expected} in {numbers:?}"
+        );
     }
 
     let frame = game
@@ -132,7 +139,11 @@ fn message_window_interface_paints_frame_and_text() {
     );
 
     let texts = on_screen_texts(&game);
-    assert_eq!(texts.len(), 3, "CE264 should paint exactly 3 text pictures, got {texts:?}");
+    assert_eq!(
+        texts.len(),
+        3,
+        "CE264 should paint exactly 3 text pictures, got {texts:?}"
+    );
     let text_of = |number: i32| {
         texts
             .iter()
@@ -142,14 +153,28 @@ fn message_window_interface_paints_frame_and_text() {
     };
     assert_eq!(text_of(12010).trim(), "1", "number popup 12010");
     let hp = text_of(12014);
-    assert!(hp.contains("HP") && hp.contains("/50"), "HP readout 12014 = {hp:?}");
+    assert!(
+        hp.contains("HP") && hp.contains("/50"),
+        "HP readout 12014 = {hp:?}"
+    );
     let sp = text_of(12018);
-    assert!(sp.contains("SP") && sp.contains("/20"), "SP readout 12018 = {sp:?}");
+    assert!(
+        sp.contains("SP") && sp.contains("/20"),
+        "SP readout 12018 = {sp:?}"
+    );
 
     let quads = game.text_quads();
-    assert_eq!(quads.len(), 5, "CE264 should emit 5 text quads");
-    assert!(quads.iter().any(|q| q.text.contains("/50")), "a quad carries /50");
-    assert!(quads.iter().any(|q| q.text.contains("/20")), "a quad carries /20");
+    // 12010 is one run; 12014 and 12018 each split into three style runs (HP, name,
+    // /50) once the 290 shift is applied in the same tenth-of-a-cell unit as the panel.
+    assert_eq!(quads.len(), 7, "CE264 should emit 7 text quads");
+    assert!(
+        quads.iter().any(|q| q.text.contains("/50")),
+        "a quad carries /50"
+    );
+    assert!(
+        quads.iter().any(|q| q.text.contains("/20")),
+        "a quad carries /20"
+    );
 
     assert_eq!(game.stats.warnings, warnings_before, "CE264 must not warn");
 }
@@ -198,7 +223,10 @@ fn story_message_types_out() {
     // Reveal count only ever grows, and starts from zero.
     assert_eq!(series.first().map(|s| s.0), Some(0), "starts fully hidden");
     for pair in series.windows(2) {
-        assert!(pair[1].0 >= pair[0].0, "typed count is monotonic: {series:?}");
+        assert!(
+            pair[1].0 >= pair[0].0,
+            "typed count is monotonic: {series:?}"
+        );
     }
 }
 
@@ -250,10 +278,7 @@ fn word_effect_events_are_inert_without_a_bubble() {
             "CE{id} should stay inert (no text pictures), got {:?}",
             on_screen_texts(&game)
         );
-        assert_eq!(
-            game.stats.warnings, warnings_before,
-            "CE{id} must not warn"
-        );
+        assert_eq!(game.stats.warnings, warnings_before, "CE{id} must not warn");
     }
 }
 
@@ -288,8 +313,16 @@ fn message_window_sub_events_and_always_events_run() {
             return;
         }
     };
-    let ids: Vec<u32> = game.vm.instances().iter().map(|instance| instance.event).collect();
-    assert!(ids.contains(&271), "auto-skip CE271 should be resident, got {ids:?}");
+    let ids: Vec<u32> = game
+        .vm
+        .instances()
+        .iter()
+        .map(|instance| instance.event)
+        .collect();
+    assert!(
+        ids.contains(&271),
+        "auto-skip CE271 should be resident, got {ids:?}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -305,12 +338,19 @@ fn screen_transition_and_tint_state_machines() {
 
     transition.start(0, 10);
     assert!(transition.is_active());
-    assert!((transition.brightness() - 1.0).abs() < 1e-6, "starts bright");
+    assert!(
+        (transition.brightness() - 1.0).abs() < 1e-6,
+        "starts bright"
+    );
     for _ in 0..5 {
         transition.tick();
     }
     assert!(transition.progress() >= 0.5 - 1e-6);
-    assert!(transition.brightness() < 0.05, "midpoint black: {}", transition.brightness());
+    assert!(
+        transition.brightness() < 0.05,
+        "midpoint black: {}",
+        transition.brightness()
+    );
     assert!(transition.alpha() > 0.95);
     for _ in 0..5 {
         transition.tick();
@@ -356,11 +396,19 @@ fn screen_transition_and_tint_state_machines() {
         flash.tick();
     }
     let peak = flash.rgb();
-    assert!(peak[2] > 1.9, "flash peaks near 2.0 at midpoint, got {:?}", peak);
+    assert!(
+        peak[2] > 1.9,
+        "flash peaks near 2.0 at midpoint, got {:?}",
+        peak
+    );
     for _ in 0..5 {
         flash.tick();
     }
-    assert!(flash.is_neutral(), "flash returns to neutral, got {:?}", flash.rgb());
+    assert!(
+        flash.is_neutral(),
+        "flash returns to neutral, got {:?}",
+        flash.rgb()
+    );
 }
 
 // ---------------------------------------------------------------------------

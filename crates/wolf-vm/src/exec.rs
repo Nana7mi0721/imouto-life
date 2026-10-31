@@ -239,6 +239,11 @@ pub struct PictureCmd {
     pub anchor: u8,
     /// Trailing animation slots for the long form (docs/OPCODE_SPEC.md §5.31).
     pub animate: Vec<i32>,
+    /// Bit 0x400000 of the head word asks the draw to inherit the slot's existing
+    /// draw-coordinate shift instead of resetting it. Common event 95's settings screen
+    /// redraws its help text with head 0x411f20, x=y=0 and relies on the shift that a
+    /// preceding 290 left on the slot; without this the text lands at the screen origin.
+    pub keep_shift: bool,
 }
 
 /// The `cmd` nibble of a `150 Picture` instruction.
@@ -2508,6 +2513,10 @@ fn decode_picture(inst: &Instance, vars: &Variables, cmd: &Command) -> PictureCm
     // group sits on x=512 / y=288 (the logical screen centre), and the retail title hint
     // banner only lines up when its 606x35 image is centred on (512, 520).
     let anchor = ((head >> 12) & 0x07) as u8;
+    // Bit 22 asks the redraw to keep the slot's current draw-coordinate shift. It is
+    // common on moving/drawing commands (188 of 5,433 retail op150s) and the settings
+    // screen's help text depends on it.
+    let keep_shift = head & 0x0040_0000 != 0;
     let action = match head & 0x0F {
         0 => PictureAction::Draw,
         1 => PictureAction::Move,
@@ -2552,6 +2561,7 @@ fn decode_picture(inst: &Instance, vars: &Variables, cmd: &Command) -> PictureCm
         args,
         anchor,
         animate,
+        keep_shift,
     }
 }
 

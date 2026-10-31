@@ -5,7 +5,9 @@
 - 本文档：`docs/M3_STRING_DECODE.md`
 
 本作是汉化版：绝大多数显示文本被替换成 GBK 字节，而引擎/模板文本仍是 CP932。所有 `t_str` 都经过
-`wolf_format::bytes::decode_wolf_str` 的「UTF-8 → CP932/GBK 启发式」解码。本任务把全部字符串容器解析一遍，
+`wolf_format::bytes::decode_wolf_str` 的 UTF-8 / CP932 / GBK 候选打分解码（M4 补：GBK「强壮」
+字节 `C7 BF D7 B3` 也恰好是合法 UTF-8，旧实现无条件先选 UTF-8 会解成 U+01FF/U+05F3；现在
+按 CJK/kana 加权与 UTF-8 字节奖励综合选分最高者）。本任务把全部字符串容器解析一遍，
 统计可疑串，钉住若干正确的中文串，并把 CE250 / CE257 的乱码定性为**源数据损坏**而非解码器缺陷。
 
 ## 运行

@@ -1033,6 +1033,42 @@ impl Screen {
         self.pictures.values()
     }
 
+    /// The coordinate scale for one UI block, 1.0 or 10.0.
+    ///
+    /// Most of the game draws in pixels. The settings screen (CE95) instead builds its
+    /// whole panel from tenth-of-a-character-cell units: it sizes the window as
+    /// 180x195 cells, draws every row at one base coordinate and separates rows with
+    /// `290` shifts in the same unit, and only its `/10` on the left edge brings the
+    /// base back to pixels. A block is recognised by a window box more than twice the
+    /// logical screen; built-in system graphics are exempt because the full-screen
+    /// gradient belongs to the same block but is a real 1024x576 drawing.
+    #[must_use]
+    pub(crate) fn ui_scale_for(&self, number: i32) -> f32 {
+        let Some(picture) = self.pictures.get(&number) else {
+            return 1.0;
+        };
+        if !(picture.kind.is_text() || picture.kind.is_window())
+            || crate::sysgraphic::parse(&picture.file).is_some()
+        {
+            return 1.0;
+        }
+        let block = number.div_euclid(100);
+        let oversized = self.pictures.values().any(|other| {
+            other.number.div_euclid(100) == block
+                && other.kind.is_window()
+                && crate::sysgraphic::parse(&other.file).is_none()
+                && other
+                    .window
+                    .map(|(w, h)| w > SCREEN_W as i32 * 2 || h > SCREEN_H as i32 * 2)
+                    .unwrap_or(false)
+        });
+        if oversized {
+            10.0
+        } else {
+            1.0
+        }
+    }
+
     /// Inserts a fully built picture, replacing any slot with the same number.
     ///
     /// Loading a save rebuilds every picture from the save's Part5 records, and those
@@ -1123,12 +1159,26 @@ impl Screen {
             PictureAction::Draw | PictureAction::Set => {
                 // A draw replaces the slot, which is also how a hidden window comes back:
                 // Picture::new starts visible and nothing else in the data unhides.
+                //
+                // Bit 0x400000 asks the redraw to keep the slot's current draw-coordinate
+                // shift. Common event 95 uses it for the settings help text: a 290 leaves
+                // (2880, 5040) on the slot, then the final draw carries x=y=0 and relies on
+                // that shift to land inside the help box. Resetting it would park the text
+                // at the screen origin.
+                let inherited_shift = if cmd.keep_shift {
+                    self.pictures.get(&cmd.number).map(|picture| picture.shift)
+                } else {
+                    None
+                };
                 let mut picture = Picture::new(cmd.number);
                 picture.kind = PictureKind::from_code(cmd.kind);
                 picture.file = cmd.file.clone();
                 picture.text = cmd.text.clone();
                 picture.anchor = cmd.anchor;
                 merge_args(&mut picture, &cmd.args);
+                if let Some(shift) = inherited_shift {
+                    picture.shift = shift;
+                }
                 self.pictures.insert(cmd.number, picture);
             }
             PictureAction::Move => {
@@ -1316,7 +1366,10 @@ impl Screen {
             // draw the 18x18 skin at its natural size instead of the window box. The
             // built-in system-graphic spelling is the exception: those are real drawings
             // sized by the picture itself, and Atlas::sprites skips them as panels.
-            if picture.kind.is_window() && crate::sysgraphic::parse(&picture.file).is_none() {
+            if picture.kind.is_window()
+                && picture.window.is_some()
+                && crate::sysgraphic::parse(&picture.file).is_none()
+            {
                 continue;
             }
             let (src, dst) = if picture.kind.is_text() {
@@ -1331,12 +1384,22 @@ impl Screen {
                     w.max(0) as f32,
                     h.max(0) as f32,
                 );
-                ([0, 0, 0, 0], picture.transform(placed))
+                let mut dst = picture.transform(placed);
+                let ui = self.ui_scale_for(picture.number);
+                if ui > 1.0 {
+                    dst = [dst[0] / ui, dst[1] / ui, dst[2] / ui, dst[3] / ui];
+                }
+                ([0, 0, 0, 0], dst)
             } else {
                 let Some((src, (w, h))) = picture_frame(picture, &mut tex_size) else {
                     continue;
                 };
-                (src, picture.destination(w as f32, h as f32))
+                let mut dst = picture.destination(w as f32, h as f32);
+                let ui = self.ui_scale_for(picture.number);
+                if ui > 1.0 {
+                    dst = [dst[0] / ui, dst[1] / ui, dst[2] / ui, dst[3] / ui];
+                }
+                (src, dst)
             };
             if !on_screen(dst) {
                 continue;
@@ -1403,7 +1466,7 @@ impl Picture {
     }
 
     /// The logical-pixel displacement the running effects ask for.
-    fn effect_offset(&self) -> (f32, f32) {
+    pub(crate) fn effect_offset(&self) -> (f32, f32) {
         let mut x = self.shift.0 as f32;
         let mut y = self.shift.1 as f32;
         if let Some(shake) = &self.shake {
@@ -1679,6 +1742,7 @@ mod tests {
             text: text.to_owned(),
             args: args.to_vec(),
             animate: Vec::new(),
+            keep_shift: false,
             anchor: ANCHOR_TOP_LEFT,
         }
     }
@@ -2760,6 +2824,7 @@ mod effect_tests {
             text: String::new(),
             args: vec![0, 6, 2, 2, 255, 600, 80, 100, 0],
             animate: Vec::new(),
+            keep_shift: false,
             anchor: ANCHOR_TOP_LEFT,
         });
         let picture = screen.get(90).expect("picture");

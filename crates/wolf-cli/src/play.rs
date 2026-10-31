@@ -83,6 +83,10 @@ pub fn run(
         }
         crate::Entry::Save(path) => {
             let label = format!("save {}", path.display());
+            // CE48 initialises the live CData stat cells; if the load runs first the
+            // deferred initialisation overwrites the restored action/stamina values.
+            // Real boot finishes CE48 before the title menu, so prime it here as well.
+            game.prime_engine();
             let started = game
                 .load_save(path)
                 .map(|_| ())

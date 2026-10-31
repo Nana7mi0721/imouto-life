@@ -91,4 +91,5 @@ wolf-cli capture --event 238 --frames 60 --out work/out/shots/status.png
 - **验收**：workspace 全绿；verify PASS 64/1 SKIP；verify --wolf 72/0；
   读档截图 HUD 与实机参考一致（work/out/shots/bedroom_hudfix.png）。
 - **仍未做**：capture 的 status/夜菜单静态截图需要先合成点击/输入（面板会滑入）；
-  可视设置界面与键位重绑定；msyhbd.ttc TTC 字体加载支持确认。
+  可视设置界面已完成 CE132/CE95 排版（`docs/M4_SETTINGS_UI.md`、`m4_settings_ui`），
+  实机键位重绑定与设置交互仍需用户设置截图后核验；msyhbd.ttc TTC 字体加载支持确认。

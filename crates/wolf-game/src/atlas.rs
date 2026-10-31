@@ -528,7 +528,11 @@ impl Atlas {
                 }
                 // The anchor and the scale live in Picture::destination, the same law the
                 // sprite pass and the message metrics use, so a centred panel lands centred.
-                let dst = picture.destination(w as f32, h as f32);
+                let mut dst = picture.destination(w as f32, h as f32);
+                let ui = screen.ui_scale_for(picture.number);
+                if ui > 1.0 {
+                    dst = [dst[0] / ui, dst[1] / ui, dst[2] / ui, dst[3] / ui];
+                }
                 // The balloon library parks its panels off screen between bubbles; a panel
                 // that cannot touch the screen would still cost nine quads and a skin pack.
                 if !crate::picture::on_screen(dst) {
@@ -881,6 +885,7 @@ mod tests {
             text: "hello".to_owned(),
             args: vec![0, 300, 200, 1, 255, 855, 200, 100, 0],
             animate: Vec::new(),
+            keep_shift: false,
             anchor: 0,
         });
         let mut atlas = Atlas::with_size(8, 8);
@@ -905,6 +910,7 @@ mod tests {
             text: "notice".to_owned(),
             args: vec![0, 300, 200, 1, 255, 855, 200, 100, 0],
             animate: Vec::new(),
+            keep_shift: false,
             anchor: 0,
         });
         let mut atlas = Atlas::with_size(64, 64);
@@ -942,6 +948,7 @@ mod tests {
             text: String::new(),
             args: vec![0, box_size.0, box_size.1, 1, 255, at.0, at.1, 100, 0],
             animate: Vec::new(),
+            keep_shift: false,
             anchor: 0,
         }
     }
@@ -1020,6 +1027,7 @@ mod tests {
             text: String::new(),
             args: vec![0, 300, 200, 1, 255, 855, 200, 100, 0],
             animate: Vec::new(),
+            keep_shift: false,
             anchor: 0,
         });
         let mut atlas = Atlas::with_size(64, 64);

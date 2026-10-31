@@ -410,9 +410,13 @@ impl<'a, 'b> Builder<'a, 'b> {
     }
 
     /// Apply a new font size, clamping it to something drawable.
+    ///
+    /// A non-positive size is the game's way of asking for the default: CE132's settings
+    /// screen writes `\f[0]` on all 23 row labels, so treating zero as one pixel would
+    /// render the whole panel at 1/20 scale. Only positive values are literal sizes.
     fn set_font_px(&mut self, px: f32) {
         self.flush();
-        self.style.font_px = if px.is_finite() {
+        self.style.font_px = if px.is_finite() && px > 0.0 {
             px.max(MIN_FONT_PX)
         } else {
             self.ctx.default_font_px.max(MIN_FONT_PX)

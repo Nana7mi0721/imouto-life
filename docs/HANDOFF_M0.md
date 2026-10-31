@@ -401,3 +401,21 @@ WOLF_DATA_ROOT="$PWD/work/Data" ./target/debug/wolf-cli.exe verify | tail -20
     读档截图 `work/out/shots/bedroom_hudfix.png` 94.1% 非黑，HUD 与实机参考一致。
   * **仍待办（M4 收尾）**：`capture --event 238` 状态面板需点击/输入才滑入（capture
     需补触发路径）；设置 UI 与键位重绑定尚未做可视界面；msyhbd.ttc（TTC）字体支持待确认。
+
+* 2026-10-31（M4 设置屏排版 + play 读档初始化）：
+  * **CE132/CE95 设置界面已可视**（详见 `docs/M4_SETTINGS_UI.md`）：
+    修复 `\f[0]` 字号（`crates/wolf-game/src/textpic.rs`）、文本 `290` 位移
+    （`crates/wolf-game/src/game.rs` `text_quads` + `picture.rs` `effect_offset`）、
+    1/10 字符格 UI 块缩放（`crates/wolf-game/src/picture.rs` `Screen::ui_scale_for`，
+    块内任一非内置窗口宽或高超两倍屏即 10x；CE264 `10240x720` 也正确命中）、
+    无 window 的 CursorBase 窗口图元、head `0x400000` 保留 290 位移
+    （`crates/wolf-vm/src/exec.rs` `PictureCmd.keep_shift`）。
+  * 新增 `crates/wolf-game/tests/m4_settings_ui.rs` 2 条；`m3_visual_text` 的
+    CE264 文本 quad 期望 5→7（应用 290 位移后的正确分栏）。
+  * `crates/wolf-cli/src/play.rs` 的 `Entry::Save` 也改为 `prime_engine()` 后再
+    `load_save`，与 capture 一致，避免 CE48 初始化把恢复的行动力/精力清零。
+  * **验收**：`cargo fmt --all`；`cargo test -q --workspace` exit 0；
+    `verify` PASS 64 / 1 SKIP；设置截图 `work/out/shots/settings_final2.png`
+    100% 非黑，九行设置 + 底部说明可读。
+  * **仍待办**：`capture --event 238` 状态面板需合成点击/输入；实机键位重绑定与
+    设置交互需用户截图后核验；msyhbd.ttc TTC 支持待确认。

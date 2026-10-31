@@ -7,7 +7,8 @@
 
 - **症状**：读档卧室截图的左下「保存」/右下「数据」图标被放大成巨大旋转的
   「データ」叠在场景中央；状态面板（Picture/status01.png，330x576，槽停靠 x=-305）
-  被拉成整屏黑罩，导致 status/night capture 近乎全黑。
+  被拉成整屏黑罩，导致 status/night capture 近乎全黑。（面板显示时由 op150
+  head bit 0x10000 相对坐标从 -305 移到 x=0，见 §6。）
 - **根因**：`crates/wolf-game/src/picture.rs` 的 `Screen::quads` 旧分支把编号 < 0 的
   picture 一律当 `is_screen_layer()`，强制 `dst=[0,0,1024,576]`、src 也回退全屏，
   依据的是错误的 H-PIC-1「负号图都是 1024x576」。零售 SaveData01 实测：槽 -5 是
@@ -86,10 +87,26 @@ HUD = 19:30 周一 / 早泄 强壮 哥哥（学生） / 行动力60/65 / 精力 
 
 ## 6. 尚未收口（M4 后续）
 
-- `capture --event 238` 的状态面板仍停在 x=-305：CE238 需要地图点击/输入才滑入，
-  不是渲染缺陷；capture 需要补「先触发状态入口」的路径或合成一次点击。
+- **状态面板静态截图已收口（2026-10-31）**：`capture --map SampleMapA --load-save
+  work/Data/Save/SaveData01.sav --event 10 --var 15=99 --pointer 100,200 --frames 60
+  --out work/out/shots/status_panel8.png` 得到房间+HUD+左侧状态面板。
+  根因不是渲染：CE238 的显示分支用 op150 **head bit 0x10000 = 相对当前图片位置**，
+  隐藏时 Draw 到 x=-305，显示时 Draw/Move 都相对 +(305,0) 落到 x=0，五个文本
+  (321..325) 也相对移到各标签旁。
+  - `crates/wolf-vm/src/exec.rs`：`PictureCmd` 新增 `relative: bool`，`decode_picture`
+    解析 `head & 0x0001_0000`。
+  - `crates/wolf-game/src/picture.rs`：新增 `picture_args(cmd, base_x, base_y)`；Draw/Set
+    以当前 slot 的 x/y 为基底、Move 以 `Pose::of` 的当前 x/y 为基底，相对偏移 0 表示
+    +0（不走 UNCHANGED 语义），其余字段仍按原语义 merge。
+  - 测试：`picture::tests` 3 条单测（相对 Draw/Move、绝对 Move 回归）+ `m3_status_panel
+    ::ce238_relative_panel_lands_at_the_left_edge`（先隐藏 self600=0 再显示 self600=1，
+    断言面板 x=0、文本 321 (240,90)/322 (75,405)/323 (245,410)/324 (245,465)）。
+  - 该 flag 在 CommonEvent 全量中低频但关键：head 0x10000 仅 CE238/CE239 两处，
+    head 0x10001 有 403 处（大量 text move）；其余 13k+ 普通 op150 不受影响。
+- 夜菜单静态截图仍需合成输入/点击触发。
 - 设置 UI：CE132/CE95 的可视排版已在 M4 设置屏修复中完成（详见
   `docs/M4_SETTINGS_UI.md`：1/10 字符格坐标、\f[0] 字号、290 位移、keep_shift、
   CursorBase）；音量/键位持久化 API 与通用输入路由已就绪，实机键位重绑定仍待
   用户截图后再核验。
-- 字体优先 `C:/Windows/Fonts/msyhbd.ttc`（TTC）需渲染器确认支持。
+- 字体优先 `C:/Windows/Fonts/msyhbd.ttc`：capture 实测已输出
+  `font : C:/Windows/Fonts/msyhbd.ttc`，`Renderer::set_font` 接受 TTC，可标完成。

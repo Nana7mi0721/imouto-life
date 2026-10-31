@@ -1170,12 +1170,24 @@ impl Screen {
                 } else {
                     None
                 };
+                // A relative draw offsets x/y from where the slot already sits. Common
+                // event 238 hides the status panel at x=-305 and then re-draws it with
+                // head 0x10000 and x=305, meaning "move 305 to the right of where it is",
+                // which is x=0 on screen rather than x=305.
+                let (base_x, base_y) = if cmd.relative {
+                    self.pictures
+                        .get(&cmd.number)
+                        .map_or((0, 0), |picture| (picture.x, picture.y))
+                } else {
+                    (0, 0)
+                };
                 let mut picture = Picture::new(cmd.number);
                 picture.kind = PictureKind::from_code(cmd.kind);
                 picture.file = cmd.file.clone();
                 picture.text = cmd.text.clone();
                 picture.anchor = cmd.anchor;
-                merge_args(&mut picture, &cmd.args);
+                let args = picture_args(cmd, base_x, base_y);
+                merge_args(&mut picture, &args);
                 if let Some(shift) = inherited_shift {
                     picture.shift = shift;
                 }
@@ -1208,7 +1220,8 @@ impl Screen {
                 // -1000000 sentinels: those mean "leave this field alone", and the origin of an
                 // unchanged field is its current value, which interpolates to itself.
                 let origin = Pose::of(picture);
-                merge_args(picture, &cmd.args);
+                let args = picture_args(cmd, origin.x, origin.y);
+                merge_args(picture, &args);
                 // With a usable duration the merged fields are only the TARGET: rewind them to
                 // where the picture already is and let `advance` walk there. Without one the
                 // merged fields are final, i.e. the teleport every duration-less move expects.
@@ -1628,6 +1641,25 @@ fn effect_range(args: &[i32]) -> Option<(i32, i32)> {
     Some(if lo <= hi { (lo, hi) } else { (hi, lo) })
 }
 
+/// Returns the command field words with x/y made absolute when the head word's
+/// 0x10000 bit marks them relative to base_x/base_y.
+///
+/// The flag applies to both draws and moves (common events 238/239 use it on both): the
+/// word is an offset from the slot current position, so 0 means stay on this axis.
+/// UNCHANGED still wins, because the relative form never uses that sentinel as an offset.
+fn picture_args(cmd: &PictureCmd, base_x: i32, base_y: i32) -> Vec<i32> {
+    let mut args = cmd.args.clone();
+    if cmd.relative {
+        if let Some(dx) = take(&args, field::X) {
+            args[field::X] = base_x.saturating_add(dx);
+        }
+        if let Some(dy) = take(&args, field::Y) {
+            args[field::Y] = base_y.saturating_add(dy);
+        }
+    }
+    args
+}
+
 /// Merges a command's field words into a picture, honouring the UNCHANGED sentinel.
 fn merge_args(picture: &mut Picture, args: &[i32]) {
     if let Some(value) = take(args, field::OPACITY) {
@@ -1743,8 +1775,87 @@ mod tests {
             args: args.to_vec(),
             animate: Vec::new(),
             keep_shift: false,
+            relative: false,
             anchor: ANCHOR_TOP_LEFT,
         }
+    }
+
+    /// A draw whose head word carries 0x10000 treats x/y as offsets from the slot current
+    /// position. CE238 parks status panel 320 at x=-305, then redraws it with +305.
+    #[test]
+    fn a_relative_draw_offsets_from_the_current_position() {
+        let mut screen = Screen::new();
+        screen.apply(&cmd(
+            320,
+            0,
+            PictureAction::Draw,
+            "Picture/status01.png",
+            "",
+            &[0, 1, 1, 1, 255, -305, 0, 100, 0],
+        ));
+        let mut show = cmd(
+            320,
+            0,
+            PictureAction::Draw,
+            "Picture/status01.png",
+            "",
+            &[20, 1, 1, 1, 255, 305, 0, 100, 0],
+        );
+        show.relative = true;
+        screen.apply(&show);
+        let picture = screen.get(320).expect("panel");
+        assert_eq!((picture.x, picture.y), (0, 0));
+    }
+
+    /// The same flag on a Move shifts a label relative to where the hidden panel put it.
+    #[test]
+    fn a_relative_move_offsets_from_the_current_position() {
+        let mut screen = Screen::new();
+        screen.apply(&cmd(
+            321,
+            2,
+            PictureAction::Draw,
+            "",
+            "25",
+            &[20, 0, 0, 1, 255, -65, 90, 100, 0],
+        ));
+        let mut show = cmd(
+            321,
+            2,
+            PictureAction::Move,
+            "",
+            "",
+            &[20, 0, 0, 1, 255, 305, 0, 100, 0],
+        );
+        show.relative = true;
+        screen.apply(&show);
+        let picture = screen.get(321).expect("label");
+        assert_eq!((picture.x, picture.y), (240, 90));
+    }
+
+    /// A move without the flag must keep its absolute meaning; the 13k ordinary op150s
+    /// in the retail data rely on that.
+    #[test]
+    fn an_absolute_move_is_not_offset() {
+        let mut screen = Screen::new();
+        screen.apply(&cmd(
+            322,
+            2,
+            PictureAction::Draw,
+            "",
+            "10",
+            &[20, 0, 0, 1, 255, -230, 405, 100, 0],
+        ));
+        screen.apply(&cmd(
+            322,
+            2,
+            PictureAction::Move,
+            "",
+            "",
+            &[20, 0, 0, 1, 255, 305, 0, 100, 0],
+        ));
+        let picture = screen.get(322).expect("label");
+        assert_eq!((picture.x, picture.y), (305, 0));
     }
 
     /// A move built the way the interpreter builds one: `args` is the full argument list from
@@ -2825,6 +2936,7 @@ mod effect_tests {
             args: vec![0, 6, 2, 2, 255, 600, 80, 100, 0],
             animate: Vec::new(),
             keep_shift: false,
+            relative: false,
             anchor: ANCHOR_TOP_LEFT,
         });
         let picture = screen.get(90).expect("picture");

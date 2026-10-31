@@ -446,3 +446,28 @@ WOLF_DATA_ROOT="$PWD/work/Data" ./target/debug/wolf-cli.exe verify | tail -20
   * **空间清理**：清理前仓库 9.4 GB，主要来自 `target/debug/deps`(5.1G)、`target/debug/incremental`(2.3G)、`target/release`(881M)、`work/out/saveprobe`(572M)、`target/debug/examples`(268M)、`target/ver6`(55M)。已删除整个 `target/`、`work/out/saveprobe`、`work/out` 下探针 exe/pdb，并删除未跟踪探针 `crates/wolf-format/examples/{ce_dump,mapsizes}.rs`、`crates/wolf-save/examples/savedump.rs`、`crates/wolf-game/tests/tmp_settings_probe2.rs`。清理后 `du -sh .` = **231 MB**（保留 `work/Data` 176M、`work/out/dist` 发布产物、`prt sc/` 用户截图）。
   * **注意**：`target/` 已清空，下一次跑测试/verify 前先 `cargo build -q --workspace`。清理规则已写入 `AGENTS.md` §7。
   * **文档整理**：新增根 `README.md`（项目总览/快速开始/目录结构）、`docs/README.md`（全量索引：交接、基线、各里程碑、M3 专题、调研资料、维护规则）、`docs/research/README.md`（调研资料说明，强调 HANDOFF §7 为采信/推翻口径）。
+
+* 2026-10-31（M4 状态面板相对坐标 + 截图收口）：
+  * **根因**：CE238/CE239 的显示分支用 op150 **head bit 0x10000 = 相对当前图片坐标**。
+    面板隐藏时 Draw 到 x=-305，显示时 Draw/Move 都相对 +(305,0) 落到 x=0；动态文本
+    321..325 也从各自隐藏坐标平移 (+305,0)。旧实现把相对值当绝对坐标，面板停在 305、
+    文本全叠在 (305,0)。
+  * **实现**：`crates/wolf-vm/src/exec.rs` 的 `PictureCmd` 新增 `relative: bool`，
+    `decode_picture` 解析 `head & 0x0001_0000`；`crates/wolf-game/src/picture.rs` 新增
+    `picture_args(cmd, base_x, base_y)`，Draw/Set 以当前 slot、Move 以 `Pose::of` 的当前
+    x/y 为基底，相对偏移 0 表示 +0（不走 UNCHANGED），其余字段照常 merge。
+  * **截图**：`./target/debug/wolf-cli.exe capture --map SampleMapA --load-save
+    work/Data/Save/SaveData01.sav --event 10 --var 15=99 --pointer 100,200 --frames 60
+    --out work/out/shots/status_panel8.png` → 房间+HUD+左侧状态面板，90.1% 非黑；
+    文本位置 321 (240,90)/322 (75,405)/323 (245,410)/324 (245,465)，与实机截图一致。
+    pointer 必须落在面板内（面板在 x=0 后 400,200 已出界，event11 会再隐藏）。
+  * **测试**：`picture::tests` 增 3 条（相对 Draw/Move、绝对 Move 回归）；
+    `m3_status_panel::ce238_relative_panel_lands_at_the_left_edge`（self600=0 隐藏→
+    self600=1 显示，注意 group6 平坦索引是 600 不是 0）；`m3_hud_buttons` 与
+    `m3_map_click` 旧期望 305 全改为 0，hover 指针改到面板内/外的新位置。
+  * **验收**：`WOLF_DATA_ROOT=work/Data cargo test -q --workspace` 全绿（含所有数据
+    测试）；`verify` PASS 64 / 1 SKIP。文档 `docs/M4_HUD.md` §1/§6、
+    `docs/M4_PARITY.md` §6/§8 已更新；临时探针 `zz_probe_status.rs` 已删除。
+  * **仍待办**：夜菜单静态截图仍需合成输入/点击；实机键位重绑定与设置交互需用户截图
+    核验；TTC 字体 capture 已实测输出 msyhbd.ttc。
+  * **当前进度**：M0–M4 主体完成，M4 剩余仅夜菜单截图与实机键位/设置核验。

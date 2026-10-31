@@ -330,7 +330,15 @@ fn main() -> ExitCode {
                     seed_selfs,
                     auto_events,
                 };
-                run_capture_map(&root, out, frames, name, &answers, load_save.as_deref())
+                run_capture_map(
+                    &root,
+                    out,
+                    frames,
+                    name,
+                    &answers,
+                    load_save.as_deref(),
+                    event,
+                )
             }
             None => {
                 // Resolved into an owning value first: Entry borrows its map name and
@@ -2948,6 +2956,10 @@ fn run_capture(
         game.auto_events.running_ids()
     );
     print_background_report(&game);
+    println!(
+        "  map input : last action event {:?}, {} page start(s), {} page switch(es)",
+        game.last_action_event, game.runtime.restarts, game.runtime.switches
+    );
     let warnings = game.stats.warnings;
     println!(
         "  stats     : {} instruction(s), {} picture op(s), {} sound(s), {} db access(es) ({} write, {} label), {} message(s), {} choice(s), {warnings} warning(s)",
@@ -2983,6 +2995,7 @@ fn run_capture_map(
     name: &str,
     answers: &Answers,
     load_save: Option<&Path>,
+    script_event: Option<u32>,
 ) -> ExitCode {
     let out = out.unwrap_or_else(|| PathBuf::from("work/out/map.png"));
     let basic = if root.join("BasicData").is_dir() {
@@ -3093,6 +3106,12 @@ fn run_capture_map(
             }
         }
     }
+    // Seed ordinary variables before the map pages are selected: a page gate such as
+    // SampleMapA event 10's `v15 == 99` decides which page is active, and a capture
+    // that seeds after `start_pages` is already looking at the wrong page.
+    for (addr, value) in &answers.seed_vars {
+        game.vm.vars.set(normalise_var_addr(*addr), *value);
+    }
     // The engine's 108 background coroutines are session-wide: a real map change keeps
     // them running (Game::switch_map does not touch them), so a map capture that skipped
     // them would photograph a world that is not the one the game actually shows. Start
@@ -3108,6 +3127,16 @@ fn run_capture_map(
     // HUD alive, so keep those and retire the one-shot scripts. `--map-run <NAME>
     // --event <ID>` is the path that plays a script page.
     let stopped_autorun = stop_autorun_pages(&mut game);
+    // `capture --map <NAME> --event <ID>` plays one action/parallel page on an otherwise
+    // static room. Starting it here, after the autorun scripts are retired, lets the
+    // capture photograph a UI panel without the new-game opening painting over it.
+    if let Some(id) = script_event {
+        if !game.start_map_event(&map, id) {
+            eprintln!("{name}: no map event with id {id}");
+            return ExitCode::FAILURE;
+        }
+        println!("  script    : event {id}");
+    }
     let peak = drive_capture_frames(&mut game, frames, answers);
 
     let CaptureFrame {
@@ -3220,6 +3249,10 @@ fn run_capture_map(
         game.auto_events.running_ids()
     );
     print_background_report(&game);
+    println!(
+        "  map input : last action event {:?}, {} page start(s), {} page switch(es)",
+        game.last_action_event, game.runtime.restarts, game.runtime.switches
+    );
     let warnings = game.stats.warnings;
     println!(
         "  stats     : {} instruction(s), {} picture op(s), {} sound(s), {} db access(es) ({} write, {} label), {} message(s), {} choice(s), {warnings} warning(s)",

@@ -423,3 +423,54 @@ fn ce237_status_panel_draws_good_bad_and_sleep_icon() {
 
     assert_save_unchanged(&before);
 }
+
+/// CE238 的显示分支用 head 0x10000（相对坐标）：先按隐藏分支把面板停在 x=-305，
+/// 再显示时 +305 应落在 x=0，五个文本也从各自隐藏坐标平移 (+305, 0)。
+#[test]
+fn ce238_relative_panel_lands_at_the_left_edge() {
+    let before = save_fingerprint();
+
+    let Some(mut game) = open_loaded(1) else {
+        return;
+    };
+    game.vm.vars.set(20, 25);
+    game.vm.vars.set(21, 10);
+    let hide = game.vm.start_event(238).expect("CE238 hide");
+    game.vm
+        .instance_mut(hide)
+        .expect("hide instance")
+        .self_vars
+        .set(600, 0); // group 6 slot 0 = flat 600, the call argument
+    for _ in 0..20 {
+        game.frame();
+    }
+    let hidden = game.screen.get(320).expect("hidden panel");
+    assert_eq!(
+        (hidden.x, hidden.y),
+        (-305, 0),
+        "隐藏分支应把面板停在 x=-305"
+    );
+
+    let show = game.vm.start_event(238).expect("CE238 show");
+    game.vm
+        .instance_mut(show)
+        .expect("show instance")
+        .self_vars
+        .set(600, 1); // group 6 slot 0 = flat 600, the call argument
+    for _ in 0..20 {
+        game.frame();
+    }
+    assert_eq!(game.stats.warnings, 0, "CE238 相对坐标不应告警");
+    let panel = game.screen.get(320).expect("shown panel");
+    assert_eq!((panel.x, panel.y), (0, 0), "显示分支应把面板相对移到 x=0");
+    let at = |number: i32| {
+        let p = game.screen.get(number).expect("label");
+        (p.x, p.y)
+    };
+    assert_eq!(at(321), (240, 90), "信頼值应落在面板标签旁");
+    assert_eq!(at(322), (75, 405), "性興味值应落在面板标签旁");
+    assert_eq!(at(323), (245, 410), "感度值应落在面板标签旁");
+    assert_eq!(at(324), (245, 465), "心情值应落在面板标签旁");
+
+    assert_save_unchanged(&before);
+}

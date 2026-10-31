@@ -61,7 +61,7 @@ WOLF_DATA_ROOT=work/Data ./target/debug/wolf-cli.exe verify --wolf <安装目录
 # 截图：标题 / 读档（SaveData01）/ 状态面板 / 夜菜单 / 商店 / 相册
 wolf-cli capture --menu-only --frames 120 --out work/out/shots/title.png
 wolf-cli capture --load-save work/Data/Save/SaveData01.sav --frames 120 --out work/out/shots/bedroom.png
-wolf-cli capture --event 238 --frames 60 --out work/out/shots/status.png
+wolf-cli capture --map SampleMapA --load-save work/Data/Save/SaveData01.sav --event 10 --var 15=99 --pointer 100,200 --frames 60 --out work/out/shots/status_panel8.png
 # 窗口实机：F12 重启、鼠标点选、音量/键位设置、退出落盘
 ```
 
@@ -96,6 +96,12 @@ wolf-cli capture --event 238 --frames 60 --out work/out/shots/status.png
   本作存档不保存事件当前页。新增 `crates/wolf-game/tests/m4_load_resume.rs` 2 条。
 - **验收**：workspace 全绿；verify PASS 64/1 SKIP；verify --wolf 72/0；
   读档截图 HUD 与实机参考一致（work/out/shots/bedroom_hudfix.png）。
-- **仍未做**：capture 的 status/夜菜单静态截图需要先合成点击/输入（面板会滑入）；
-  可视设置界面已完成 CE132/CE95 排版（`docs/M4_SETTINGS_UI.md`、`m4_settings_ui`），
-  实机键位重绑定与设置交互仍需用户设置截图后核验；msyhbd.ttc TTC 字体加载支持确认。
+- **状态面板截图已收口**：`capture --map SampleMapA --load-save ... --event 10 --var 15=99
+  --pointer 100,200` 可直接触发 ev10 的状态入口（v15==99 为该页的显式门槛，正常流程不可达，
+  是数据怪癖），得到房间+HUD+左侧状态面板（work/out/shots/status_panel8.png）。
+  关键是实现了 op150 的 head bit 0x10000 相对坐标：CE238 隐藏时面板在 x=-305，显示时
+  相对 +305 落到 x=0，五个动态文本也相对 +(305,0) 移到各标签旁（见 docs/M4_HUD.md §6）。
+- **仍未做**：夜菜单静态截图仍需合成输入/点击；可视设置界面已完成 CE132/CE95 排版
+  （`docs/M4_SETTINGS_UI.md`、`m4_settings_ui`），实机键位重绑定与设置交互仍需用户
+  设置截图后核验。msyhbd.ttc TTC 字体加载已实测可用（capture 输出 font :
+  C:/Windows/Fonts/msyhbd.ttc），只是仍待在一份文档里标完成。

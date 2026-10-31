@@ -14,8 +14,9 @@
 //!
 //! The panels are interactive because map events 8 and 11 poll opcode 124
 //! picture field 8 (hover): while the pointer is inside the opened panel the
-//! panel stays at x=305; moving away one frame later calls CE239/CE238 with
-//! argument 0 and parks it at x=-305 again. That exercises the engine mouse
+//! panel stays at x=0; moving away one frame later calls CE239/CE238 with
+//! argument 0 and parks it at x=-305 again. (The open x is 0, not 305, because
+//! op150 head bit 0x10000 makes the slide-in relative: -305 + 305 = 0.) That exercises the engine mouse
 //! state path (engine_state fields 7/20/21 and picture_state field 8), so a
 //! missing mouse-to-opcode124 bridge is not a source gap.
 //!
@@ -193,7 +194,7 @@ fn hud_shows_two_visible_icon_buttons_and_two_parked_panels() {
     assert_eq!(game.screen.get(-4).map(|p| p.y), Some(507));
 
     // Panels exist but are parked off the left edge until their event slides
-    // them to x=305.
+    // them in (relative +305 from -305 lands at x=0).
     assert_eq!(slot_file(&game, 320), "Picture/status01.png");
     assert_eq!(slot_x(&game, 320), Some(-305));
     assert_eq!(slot_file(&game, 2300), "Picture/itemlist.png");
@@ -293,7 +294,7 @@ fn item_strip_left_click_opens_item_list_and_hover_keeps_it_open() {
 
     // Click the invisible left-edge trigger, then slide the pointer into the
     // opened panel while still holding. Event 8 polls picture 2300 field 8 and
-    // sees hover=1, so the panel remains at x=305.
+    // sees hover=1, so the panel remains open at x=0.
     settle_pointer(&mut game, 24, 336);
     game.mouse_buttons = 1;
     game.frame();
@@ -307,11 +308,11 @@ fn item_strip_left_click_opens_item_list_and_hover_keeps_it_open() {
         "event 7 must call CE239 item list"
     );
 
-    game.mouse = [400, 336];
+    game.mouse = [100, 336];
     for _ in 0..20 {
         game.frame();
     }
-    assert_eq!(slot_x(&game, 2300), Some(305));
+    assert_eq!(slot_x(&game, 2300), Some(0));
     assert_eq!(slot_file(&game, 2300), "Picture/itemlist.png");
     for slot in 2301..=2319 {
         assert!(
@@ -323,7 +324,7 @@ fn item_strip_left_click_opens_item_list_and_hover_keeps_it_open() {
 
     // Moving the pointer off the panel is seen by the same opcode 124 poll and
     // event 8 parks the list again on the next frame.
-    game.mouse = [100, 500];
+    game.mouse = [800, 336];
     for _ in 0..3 {
         game.frame();
     }
@@ -373,14 +374,14 @@ fn status_panel_opens_and_tracks_hover_once_the_gate_is_forced() {
         Some(10),
         "status strip must start map event 10"
     );
-    assert_eq!(slot_x(&game, 320), Some(305));
+    assert_eq!(slot_x(&game, 320), Some(0));
     assert_eq!(slot_file(&game, 320), "Picture/status01.png");
 
-    game.mouse = [400, 192];
+    game.mouse = [100, 192];
     for _ in 0..20 {
         game.frame();
     }
-    assert_eq!(slot_x(&game, 320), Some(305));
+    assert_eq!(slot_x(&game, 320), Some(0));
     assert!(slot_text(&game, 321).contains("25"));
     assert!(slot_text(&game, 323).contains("普通"));
     assert!(slot_text(&game, 324).contains("普通"));
@@ -388,7 +389,7 @@ fn status_panel_opens_and_tracks_hover_once_the_gate_is_forced() {
 
     // Same opcode 124 field 8 poll as the item list: leaving the rectangle makes
     // event 11 call CE238 with argument 0 and park the panel at x=-305.
-    game.mouse = [100, 500];
+    game.mouse = [600, 192];
     for _ in 0..3 {
         game.frame();
     }

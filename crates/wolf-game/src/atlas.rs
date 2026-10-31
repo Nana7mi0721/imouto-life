@@ -886,6 +886,7 @@ mod tests {
             args: vec![0, 300, 200, 1, 255, 855, 200, 100, 0],
             animate: Vec::new(),
             keep_shift: false,
+            relative: false,
             anchor: 0,
         });
         let mut atlas = Atlas::with_size(8, 8);
@@ -911,6 +912,7 @@ mod tests {
             args: vec![0, 300, 200, 1, 255, 855, 200, 100, 0],
             animate: Vec::new(),
             keep_shift: false,
+            relative: false,
             anchor: 0,
         });
         let mut atlas = Atlas::with_size(64, 64);
@@ -949,6 +951,7 @@ mod tests {
             args: vec![0, box_size.0, box_size.1, 1, 255, at.0, at.1, 100, 0],
             animate: Vec::new(),
             keep_shift: false,
+            relative: false,
             anchor: 0,
         }
     }
@@ -1028,6 +1031,7 @@ mod tests {
             args: vec![0, 300, 200, 1, 255, 855, 200, 100, 0],
             animate: Vec::new(),
             keep_shift: false,
+            relative: false,
             anchor: 0,
         });
         let mut atlas = Atlas::with_size(64, 64);

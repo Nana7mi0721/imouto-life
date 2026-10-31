@@ -417,10 +417,11 @@ fn clicking_the_status_hotspot_draws_the_status_panel() {
         Some(10),
         "status event was not activated"
     );
-    // CE238(1,1) slides the status panel in from x=-305 to x=305.
+    // CE238(1,1) slides the status panel in: op150 head bit 0x10000 is a
+    // relative offset, so -305 + 305 lands at x=0 (the left screen edge).
     let panel = game.screen.get(320).expect("status panel picture 320");
     assert_eq!(panel.file, "Picture/status01.png");
-    assert_eq!(panel.x, 305, "status panel slides in to x=305");
+    assert_eq!(panel.x, 0, "status panel slides in to x=0");
     assert_eq!(text_of(&game, 323), "普通", "status rows are drawn");
     assert_eq!(game.stats.warnings, 0, "warnings");
 }

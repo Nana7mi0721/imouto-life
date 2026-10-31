@@ -244,6 +244,13 @@ pub struct PictureCmd {
     /// redraws its help text with head 0x411f20, x=y=0 and relies on the shift that a
     /// preceding 290 left on the slot; without this the text lands at the screen origin.
     pub keep_shift: bool,
+    /// Bit 0x10000 of the head word marks x/y as offsets from the picture's current
+    /// position instead of absolute screen coordinates. Common event 238 parks the status
+    /// panel at x=-305 and then redraws it with head 0x10000 and x=305, which puts it at
+    /// x=0 on screen; the same flag on the five label moves shifts each label by (+305, 0)
+    /// from where the hidden panel drew it. Treating those words absolutely parks the whole
+    /// panel at x=305 and stacks every label on top of it.
+    pub relative: bool,
 }
 
 /// The `cmd` nibble of a `150 Picture` instruction.
@@ -2517,6 +2524,7 @@ fn decode_picture(inst: &Instance, vars: &Variables, cmd: &Command) -> PictureCm
     // common on moving/drawing commands (188 of 5,433 retail op150s) and the settings
     // screen's help text depends on it.
     let keep_shift = head & 0x0040_0000 != 0;
+    let relative = head & 0x0001_0000 != 0;
     let action = match head & 0x0F {
         0 => PictureAction::Draw,
         1 => PictureAction::Move,
@@ -2562,6 +2570,7 @@ fn decode_picture(inst: &Instance, vars: &Variables, cmd: &Command) -> PictureCm
         anchor,
         animate,
         keep_shift,
+        relative,
     }
 }
 

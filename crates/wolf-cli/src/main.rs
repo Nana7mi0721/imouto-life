@@ -2783,7 +2783,14 @@ fn run_capture(
                         "  loaded    : {} picture(s), {} normal variable(s), playtime {} frame(s), choice anchor {:?}",
                         loaded.pictures, loaded.normal_vars, loaded.playtime_frames, loaded.choice_anchor
                     );
-                    (Ok(()), label)
+                    // A bare load leaves the map runtime empty. The retail 220 path
+                    // restarts the map from the save-menu coroutine; the CLI has no
+                    // such coroutine, so rebuild it from the SavePart1 snapshot.
+                    (
+                        game.resume_loaded_map()
+                            .map(|name| println!("  resumed   : map {name}")),
+                        label,
+                    )
                 }
                 Err(err) => (Err(err), label),
             }

@@ -823,6 +823,24 @@ impl Game {
     /// (an autorun page would be started by `MapRuntime` too, and starting it
     /// twice is a behaviour change nobody asked for).
     pub fn start_pages(&mut self, map: &Map, skip: Option<u32>) -> usize {
+        self.install_map(map, skip);
+        self.runtime.start_pending(&mut self.vm)
+    }
+
+    /// Installs the map for a save that was just loaded, without restarting any
+    /// one-shot autorun page that the saved game had already run.
+    ///
+    /// The shipped save format does not store a map event current page, so the
+    /// pages are re-selected from the restored global variables. That is correct
+    /// for condition-driven pages, but it would also wake SampleMapA event 0 (the
+    /// unconditional new-game opening). start_pending_loaded records those
+    /// autorun pages as already run while still selecting their page.
+    pub fn start_pages_loaded(&mut self, map: &Map) -> usize {
+        self.install_map(map, None);
+        self.runtime.start_pending_loaded(&mut self.vm)
+    }
+
+    fn install_map(&mut self, map: &Map, skip: Option<u32>) {
         self.tilemap = match &self.tilesets {
             Some(sets) => sets
                 .get(map.tileset_index)
@@ -830,7 +848,6 @@ impl Game {
             None => None,
         };
         self.runtime = MapRuntime::collect_except(map, skip);
-        self.runtime.start_pending(&mut self.vm)
     }
 
     /// Builds the tile-layer quads for the current map.
@@ -1221,6 +1238,94 @@ impl Game {
     /// map; a bare capture only needs the screen and the variables.
     pub fn load_save(&mut self, path: &Path) -> Result<crate::savegame::LoadedSave, String> {
         crate::savegame::load_into(self, path)
+    }
+
+    /// Rebuilds the map runtime after Self::load_save on a bare load path.
+    ///
+    /// The retail 220 load is driven by the still-running save-menu coroutine, which
+    /// queues a map change; a CLI load has no such coroutine. SavePart1 carries the
+    /// map snapshot (width, height, chip and the event-object table), so the map can
+    /// be identified without a name field: the one .mps whose dimensions and event-id
+    /// set match the save is the room the player saved in. Starting its pages installs
+    /// the tile layer and the HUD/click pages, which is what the retail engine shows on
+    /// the first frame after a load.
+    ///
+    /// Returns the map name (no extension) so the CLI can print what it resumed.
+    pub fn resume_loaded_map(&mut self) -> Result<String, String> {
+        let Some(save) = self.base_save.as_ref() else {
+            return Err("no loaded save to resume the map from".to_owned());
+        };
+        let width = save.part1.map_width;
+        let height = save.part1.map_height;
+        if width == 0 || height == 0 {
+            return Err("the save carries no map snapshot".to_owned());
+        }
+        let object_ids: Vec<u32> = save
+            .part1
+            .objects
+            .iter()
+            .map(|object| object.var1)
+            .collect();
+        if object_ids.is_empty() {
+            return Err("the save carries no map event objects".to_owned());
+        }
+
+        let map_dir = self.root.join("MapData");
+        let mut names: Vec<PathBuf> = std::fs::read_dir(&map_dir)
+            .map_err(|err| format!("cannot list {}: {err}", map_dir.display()))?
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.path())
+            .filter(|path| {
+                path.extension()
+                    .and_then(|extension| extension.to_str())
+                    .is_some_and(|extension| extension.eq_ignore_ascii_case("mps"))
+            })
+            .collect();
+        names.sort();
+
+        let mut matches: Vec<(String, Map)> = Vec::new();
+        for path in names {
+            let bytes = match std::fs::read(&path) {
+                Ok(bytes) => bytes,
+                Err(_) => continue,
+            };
+            let map = match Map::parse(&bytes) {
+                Ok(map) => map,
+                Err(_) => continue,
+            };
+            if map.width != width || map.height != height || map.events.len() != object_ids.len() {
+                continue;
+            }
+            let same_objects = object_ids
+                .iter()
+                .all(|id| map.events.iter().any(|event| event.id == *id));
+            if !same_objects {
+                continue;
+            }
+            let name = path
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .unwrap_or_default()
+                .to_owned();
+            matches.push((name, map));
+        }
+        match matches.len() {
+            0 => Err(format!(
+                "no .mps in {} matches the saved map snapshot ({width}x{height}, {} event(s))",
+                map_dir.display(),
+                object_ids.len()
+            )),
+            1 => {
+                let (name, map) = matches.remove(0);
+                self.start_engine_events();
+                self.start_pages_loaded(&map);
+                Ok(name)
+            }
+            count => Err(format!(
+                "the saved map snapshot ({width}x{height}, {} event(s)) matches {count} maps",
+                object_ids.len()
+            )),
+        }
     }
 
     pub fn set_choice_cursor(&mut self, index: usize) {

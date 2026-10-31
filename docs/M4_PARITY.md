@@ -7,7 +7,7 @@ M4 的目标：让 Rust 重写在**玩家可感知层面**与零售 2.03 等价�
 
 - **离屏截图链路已可用**：`wolf-render` 有界初始化/回读超时 + `WOLF_RENDER_BACKEND`/
   `WOLF_RENDER_ADAPTER` 覆盖；`wolf-cli capture` 可出 1024x576 PNG（标题/读档/事件）。
-  仍有：`capture --map SampleMapA` 黑屏（wolf-cli map 路径，专项修复中）。
+  `capture --map SampleMapA` 黑屏已修；map 路径与 `--load-save` 现在都会装入地图页面与 HUD。
 - **字体发现**：`find_font` 原来只认姊妹作字体名，本作 `07やさしさゴシックボールド.ttf`
   被跳过 → 截图/窗口无文字。已改为包含本作字体名 + *.ttf 回退。
 - **像素对照流程**：用 `capture` 出图 → 与 `prt sc/` 的 10 张实机截图（1530x860，原生
@@ -88,6 +88,12 @@ wolf-cli capture --event 238 --frames 60 --out work/out/shots/status.png
   发布打包（tools/package.*、docs/PACKAGING.md）、负号图片固定屏修复、
   decode_wolf_str GBK/UTF-8 冲突修复、读档前 CE48 初始化（prime_engine）、
   数据库值 magic/op121 DB 写入（详见 docs/M4_HUD.md）。
+- **读档恢复地图 Runtime**：`play/capture --load-save` 以前只 prime+load，停在静态卧室；
+  现由 `Game::resume_loaded_map` 用 SavePart1 的 64x36、35 个 event id 唯一识别
+  SampleMapA，`start_pages_loaded` + `MapRuntime::start_pending_loaded` 装入 tilemap/
+  页面并按恢复的全局变量重选页，只把无条件 autorun（ev0 ニューゲーム处理）标成
+  已运行，避免读档重播开场。存档对象 var2/var3 是地图坐标的 2 倍，不是页号；
+  本作存档不保存事件当前页。新增 `crates/wolf-game/tests/m4_load_resume.rs` 2 条。
 - **验收**：workspace 全绿；verify PASS 64/1 SKIP；verify --wolf 72/0；
   读档截图 HUD 与实机参考一致（work/out/shots/bedroom_hudfix.png）。
 - **仍未做**：capture 的 status/夜菜单静态截图需要先合成点击/输入（面板会滑入）；

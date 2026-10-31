@@ -395,6 +395,21 @@ impl MapRuntime {
     /// VM, every frame, because a page can switch itself by writing a variable
     /// that its own page selection then reads.
     pub fn start_pending(&mut self, vm: &mut Vm) -> usize {
+        self.start_pending_with(vm, false)
+    }
+
+    /// Like [Self::start_pending], but for the first frame after a save load.
+    ///
+    /// An autorun page (trigger 1) runs once per activation. On a live map it is
+    /// already in that activation, so the engine must not replay a one-shot scene
+    /// (SampleMapA event 0 is the new-game opening) just because the map runtime
+    /// object was rebuilt. The page still becomes the selected page, but its autorun
+    /// is marked as already run; if its conditions later reactivate it, it runs then.
+    pub fn start_pending_loaded(&mut self, vm: &mut Vm) -> usize {
+        self.start_pending_with(vm, true)
+    }
+
+    fn start_pending_with(&mut self, vm: &mut Vm, loaded: bool) -> usize {
         // A retained instance whose program has ended still owns the bank the
         // event must keep; take it and retire the instance before selection.
         for state in &mut self.events {
@@ -468,6 +483,14 @@ impl MapRuntime {
                     continue;
                 }
                 state.instance = None;
+            }
+            // On the first frame after a load, an autorun page is already in
+            // the activation the saved game left it in. Mark it as run so a
+            // one-shot opening scene does not replay; a later condition change
+            // clears starts_on_page and lets it run normally.
+            if loaded && trigger == Trigger::Autorun {
+                state.starts_on_page = 1;
+                continue;
             }
             if !trigger.is_automatic() {
                 continue;

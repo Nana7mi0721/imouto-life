@@ -87,8 +87,12 @@ pub fn run(
             // deferred initialisation overwrites the restored action/stamina values.
             // Real boot finishes CE48 before the title menu, so prime it here as well.
             game.prime_engine();
+            // A bare load only restores the screen and variables. The retail 220 path
+            // has the save-menu coroutine continue and restart the map, which a CLI
+            // entry has no equivalent of, so resume it explicitly from the snapshot.
             let started = game
                 .load_save(path)
+                .and_then(|_| game.resume_loaded_map())
                 .map(|_| ())
                 .map_err(|err| err.to_string());
             (started, label)

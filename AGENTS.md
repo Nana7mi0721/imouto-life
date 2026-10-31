@@ -49,6 +49,26 @@ cd '/e/Study/github program/Imouto Life' && source tools/env.sh >/dev/null 2>&1
 - 不要提交 work/、tools/bin|cmake|ffmpeg、*.exe、prt sc/、docs/相关链接.txt。
 - 每推进一步更新 docs/HANDOFF_M0.md 的「进度」段（方便下次交接）；里程碑结束写对应的 docs/M*_*.md 说明。
 
+
 ## 6. 内容安全
 
 - 面向用户的说明与代码注释避免露骨性词汇，保持中性技术描述（否则可能触发 Provider content_filter）。
+
+## 7. 里程碑收尾与空间清理
+
+每完成一个里程碑（测试全绿、HANDOFF 进度已更新）后，必须做一次空间清理，避免 target/ 与临时探针无限堆积（本项目曾一度到 9.4 GB）。
+
+- 常规清理（保留可运行的 debug 产物）：
+  ```bash
+  cd '/e/Study/github program/Imouto Life'
+  rm -rf target/debug/incremental target/release target/ver6 work/out/saveprobe
+  find work/out -maxdepth 1 -type f \( -name '*.pdb' -o -name '*_probe.exe' -o -name '*probe*.pdb' \) -delete
+  du -sh . work work/Data target 2>/dev/null
+  ```
+- 彻底清理（交付/换机前；删除整个 target，下一次验证前重新 `cargo build -q --workspace`）：
+  ```bash
+  rm -rf target work/out/saveprobe
+  ```
+- 永远不要删除：`work/Data`（175 MB 本作解包数据）、`work/out/dist`（发布产物）、`docs/`、`crates/`、`prt sc/`（用户实机截图）。
+- 临时探针只放 `work/out/` 或未跟踪的 `*.rs`，里程碑收尾时删除；不要把探针、`*.pdb`、`*_probe.exe` 提交。
+- 每次清理后把 `du -sh .` 的数字和删除项记进 `docs/HANDOFF_M0.md` 的「进度」段，作为下一次交接的现状。

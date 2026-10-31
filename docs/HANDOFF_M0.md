@@ -419,3 +419,30 @@ WOLF_DATA_ROOT="$PWD/work/Data" ./target/debug/wolf-cli.exe verify | tail -20
     100% 非黑，九行设置 + 底部说明可读。
   * **仍待办**：`capture --event 238` 状态面板需合成点击/输入；实机键位重绑定与
     设置交互需用户截图后核验；msyhbd.ttc TTC 支持待确认。
+
+* 2026-10-31（M4 读档恢复地图 Runtime）：
+  * **修复缺陷**：`play --load-save` / `capture --load-save` 以前只 `prime_engine`+
+    `load_save`，不启动当前地图的 MapRuntime，读档后停在静态卧室（`play.rs` 的
+    `Entry::Save`、`main.rs` 的 `Entry::Save`）。
+  * **实现**：`crates/wolf-game/src/game.rs` 新增 `resume_loaded_map()`：用 SavePart1
+    的 `map_width/map_height`（64x36）与 35 个 object.var1（event id 集合）在
+    `MapData/*.mps` 中唯一匹配到 SampleMapA；新增 `start_pages_loaded()`，把地图
+    安装拆成 `install_map()` + `start_pending_loaded()`。`crates/wolf-game/src/map_runtime.rs`
+    的 `start_pending_with(vm, loaded)` 在 loaded 首帧对无条件 `Trigger::Autorun` 页
+    置 `starts_on_page = 1`（仍选中该页但不重启 ev0 新游戏开场），条件页照常重选。
+  * **数据结论**：SavePart1 不保存地图事件当前页；object.var2/var3 是地图坐标的
+    2 倍（ev1 x=8,y=18 => 16,36），不能当页号。页状态由恢复的全局变量重新求值。
+  * **测试**：新增 `crates/wolf-game/tests/m4_load_resume.rs` 2 条（tilemap/HUD 文本；
+    ev0 页仍选中但 coroutine 不在 live 集合、无开场 message/choice）。
+  * **验收**：`WOLF_DATA_ROOT=work/Data cargo test -q -p wolf-game --test m4_load_resume`
+    2 passed；`cargo test -q --workspace` exit 0；`verify` PASS 64 / 1 SKIP。读档截图
+    `work/out/shots/bedroom_resume2.png` 94.1% 非黑、行动力60/65、精力 3/3 正常，
+    运行事件 [215,223,224,242,243] 不含 ev0。
+  * **仍待办**：`capture --event 238` 状态面板需合成点击/输入；实机键位重绑定与
+    设置交互需用户截图后核验；msyhbd.ttc TTC 支持待确认。
+
+* 2026-10-31（临时汇报 + 文件清理 + 文档整理）：
+  * **当前进度**：M0–M3 已推送；M4 已完成 HUD/读档数值与负号图片、设置界面排版、tile quad 缓存、SoundCmd.frames、100 日长链、v8 命名审计、发布打包。当前正在收尾的玩家可见缺陷：`play --load-save` 读档后只恢复画面与变量、不启动当前地图的 MapRuntime（`crates/wolf-cli/src/play.rs:84` Entry::Save 缺 start_pages）；状态面板 capture 需运行期状态行/点击路径。
+  * **空间清理**：清理前仓库 9.4 GB，主要来自 `target/debug/deps`(5.1G)、`target/debug/incremental`(2.3G)、`target/release`(881M)、`work/out/saveprobe`(572M)、`target/debug/examples`(268M)、`target/ver6`(55M)。已删除整个 `target/`、`work/out/saveprobe`、`work/out` 下探针 exe/pdb，并删除未跟踪探针 `crates/wolf-format/examples/{ce_dump,mapsizes}.rs`、`crates/wolf-save/examples/savedump.rs`、`crates/wolf-game/tests/tmp_settings_probe2.rs`。清理后 `du -sh .` = **231 MB**（保留 `work/Data` 176M、`work/out/dist` 发布产物、`prt sc/` 用户截图）。
+  * **注意**：`target/` 已清空，下一次跑测试/verify 前先 `cargo build -q --workspace`。清理规则已写入 `AGENTS.md` §7。
+  * **文档整理**：新增根 `README.md`（项目总览/快速开始/目录结构）、`docs/README.md`（全量索引：交接、基线、各里程碑、M3 专题、调研资料、维护规则）、`docs/research/README.md`（调研资料说明，强调 HANDOFF §7 为采信/推翻口径）。

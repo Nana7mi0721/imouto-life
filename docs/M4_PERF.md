@@ -185,10 +185,12 @@ WOLF_DATA_ROOT=work/Data cargo test -q -p wolf-game --test m3_perf_baseline -- -
      准备里最大的一项。代价是约 1 MB 内存（27,648 quad × ~36 B）。风险低。
 
 3. **缓存文字排版结果**
-   - 做法：按图片缓存 `Vec<TextQuad>`，键为 text / 位置 / anchor / alpha / 字体
-     + 变量代次；至少先去掉「layout 之后再 measure 一遍」的重复 shaping。
-   - 预期：每帧省 **0.02–0.04 ms**（相对逻辑帧不小，相对整帧约 3–7%），并避免
-     双倍字形测量。风险中：WOLF 文字可引用变量，缓存必须随变量变化失效。
+   - 现状：第一步（去掉 `layout` 之后重复 `measure` 的那一趟 shaping）已落地，
+     见 §9；剩下的是按图片缓存整个 `Vec<TextQuad>`。
+   - 完整做法：按图片缓存 `Vec<TextQuad>`，键为 text / 位置 / anchor / alpha / 字体
+     + 变量代次。
+   - 预期：宽度复用约省 3–10%（见 §9），完整缓存再省剩余部分。风险中：WOLF 文字
+     可引用变量，缓存必须随变量变化失效。
 
 被否掉的方向：`auto_events.sync`、`Screen::tick/advance` 都是亚微秒级，优化它们
 不会改善玩家体验；VM 指令派发在 E 的 380 指令/帧里也不是主因（见 6.1）。
@@ -216,4 +218,18 @@ WOLF_DATA_ROOT=work/Data cargo test -q -p wolf-game --test m3_perf_baseline -- -
 | E picture_quads | 0.328 ms | **0.026 ms** |
 | E setup（含首帧解码） | 241 ms | 146 ms |
 
-夜间 UI 约 3.2x；`picture_quads` 约 12x。候选 2（瓦片 quad 缓存）仍待做。
+夜间 UI 约 3.2x；`picture_quads` 约 12x。候选 2（瓦片 quad 缓存）已由 task-44 落地
+（`crates/wolf-game/src/tilemap.rs` 的缓存 + `m4_tile_cache` 测试）；候选 3 的第一步
+（文字宽度复用）已落地，完整排版缓存仍未做，见 §9。
+
+## 9. 文字宽度复用（Lead，2026-10-31）
+
+`textpic::Run` 新增 `width`，`layout_with` 在推进 cursor 时顺手记录每个 chunk 的
+advance；`Game::text_quads` 直接用 `run.width + run.font_px`，不再对同一 run 调
+`measure`/`measure_with`。新增单测 `textpic::tests::run_width_matches_the_measured_advance`。
+
+- 视觉等价：同一 capture 场景输出与改前 **逐字节相同**（`cmp` 退出 0）。
+- 同机稳定轮（GPU0 训练负载仍有 ±20–30% 抖动）：B `text_quads` 0.036 → **0.032 ms/call**
+  （约 11%），D 0.033 → **0.032**，E 0.041 → **0.041**（持平）。
+- 仍保留的两项：每个 run 的 `layout` shaping 本身、以及每帧为每个文字图片重建
+  `Vec<TextQuad>`；完整缓存仍属候选 3 的未做部分。

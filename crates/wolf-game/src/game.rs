@@ -1207,12 +1207,9 @@ impl Game {
                 // The box only has to be wide enough that the glyph pass never
                 // re-wraps what the layout already broke; one extra em of slack
                 // covers the shaped advance being a few percent off the half-em rule.
-                let width = if let Some(metrics) = &self.font_metrics {
-                    let advance = |ch: char, px: f32| metrics.advance(ch, px);
-                    crate::textpic::measure_with(&run.text, run.font_px, &advance) + run.font_px
-                } else {
-                    crate::textpic::measure(&run.text, run.font_px) + run.font_px
-                };
+                // The width comes from the same advances the layout used to place the
+                // run, so measuring it again here would only repeat that walk.
+                let width = run.width + run.font_px;
                 quads.push(crate::atlas::TextQuad {
                     number: picture.number,
                     text: run.text,

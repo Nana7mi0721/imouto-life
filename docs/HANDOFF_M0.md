@@ -493,3 +493,19 @@ WOLF_DATA_ROOT="$PWD/work/Data" ./target/debug/wolf-cli.exe verify | tail -20
     `WOLF_DATA_ROOT=work/Data cargo test -q --workspace` 全绿 0 failed；
     `WOLF_DATA_ROOT=work/Data ./target/debug/wolf-cli.exe verify` PASS 64 check(s),
     1 SKIP（dxarchive.header）。
+
+* 2026-10-31（M4 性能：文字宽度复用）：
+  * **动机**：`Game::text_quads` 对每个文字图片先 `layout` 再 `measure` 同一串，等于每帧
+    shaping 两遍（docs/M4_PERF.md §6.3/§9）。
+  * **实现**：`crates/wolf-game/src/textpic.rs` 的 `Run` 新增 `pub width: f32`，
+    `layout_with` 推进 cursor 时记录每个 chunk 的 advance；`crates/wolf-game/src/game.rs`
+    的 `text_quads` 改用 `run.width + run.font_px`，删除重复 `measure`/`measure_with`。
+    新增单测 `textpic::tests::run_width_matches_the_measured_advance`。
+  * **验收**：同参数 capture 输出与改前 **逐字节相同**（`cmp` 退出 0）；同机稳定轮
+    B `text_quads` 0.036 → 0.032 ms/call（约 11%），D 0.033 → 0.032，E 0.041 持平。
+    `cargo test -q --workspace` / `WOLF_DATA_ROOT=work/Data cargo test -q --workspace`
+    全绿；`verify` PASS 64 / 1 SKIP。文档 `docs/M4_PERF.md` §7/§9 已更新。
+  * **注意**：跑全量数据测试时 `m3_settings_persist::save_system_settings_...` 偶发
+    Windows `PermissionDenied (os error 5)` 写 `target/test-scratch/m3_settings/System.sav`，
+    单独重跑即通过，属 Defender/索引瞬时锁，非代码问题。
+  * **当前进度**：M0–M4 主体完成；M4 剩余仅实机键位/设置/音量听感核验（需用户操作）。

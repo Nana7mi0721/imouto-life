@@ -154,6 +154,11 @@ pub struct Run {
     /// Reported separately from [Run::x] so the host can tell the two placements apart
     /// when it has to re-flow a picture on its own.
     pub align_right: bool,
+    /// Advance width of [Run::text] at [Run::font_px], in pixels.
+    ///
+    /// The layout already walks every chunk to advance the cursor, so keeping the width
+    /// here lets the host build its render quads without measuring the same run again.
+    pub width: f32,
 }
 
 /// Everything the layout reads from the running game.
@@ -276,8 +281,11 @@ pub fn layout_with(
             .min(line.chunks.len());
         let mut cursor = left;
         for chunk in &line.chunks[..split] {
-            runs.push(run_of(chunk, cursor, top, false));
-            cursor += width_of(&chunk.text, chunk.style.font_px, advance);
+            let width = width_of(&chunk.text, chunk.style.font_px, advance);
+            let mut run = run_of(chunk, cursor, top, false);
+            run.width = width;
+            runs.push(run);
+            cursor += width;
         }
         if split < line.chunks.len() {
             let tail: f32 = line.chunks[split..]
@@ -286,8 +294,11 @@ pub fn layout_with(
                 .sum();
             cursor = left + block_w - tail;
             for chunk in &line.chunks[split..] {
-                runs.push(run_of(chunk, cursor, top, true));
-                cursor += width_of(&chunk.text, chunk.style.font_px, advance);
+                let width = width_of(&chunk.text, chunk.style.font_px, advance);
+                let mut run = run_of(chunk, cursor, top, true);
+                run.width = width;
+                runs.push(run);
+                cursor += width;
             }
         }
         top += line_pitch(ctx, line);
@@ -648,6 +659,7 @@ fn run_of(chunk: &Chunk, x: f32, y: f32, align_right: bool) -> Run {
         colour: chunk.style.colour,
         outline: chunk.style.outline,
         align_right,
+        width: 0.0,
     }
 }
 
@@ -821,6 +833,17 @@ mod tests {
         let runs = layout("AB", 100.0, 100.0, 5, &bare());
         assert!(approx(runs[0].x, 100.0));
         assert!(approx(runs[0].y, 100.0));
+    }
+
+    #[test]
+    fn run_width_matches_the_measured_advance() {
+        let runs = layout("AB", 0.0, 0.0, 0, &bare());
+        assert_eq!(runs.len(), 1);
+        assert!(approx(runs[0].width, 20.0));
+        assert!(approx(
+            runs[0].width,
+            measure(&runs[0].text, runs[0].font_px)
+        ));
     }
 
     #[test]

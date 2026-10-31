@@ -21,8 +21,9 @@ M4 的目标：让 Rust 重写在**玩家可感知层面**与零售 2.03 等价�
 ## 2. 音频
 
 - 引擎/混音器已完成并有 15 条离线契约测试（音量、循环、淡出、SE 混音、重采样、null）。
-- 待办：`SoundCmd.frames` 的 BGM 淡入 / SE 延迟语义未实现；单条 SE 无法单独停止；
-  play 路径实机试听；BGM/SE 音量与设置界面接线。
+- `SoundCmd.frames` 的 BGM 淡入 / SE 延迟语义已实现（task-45，`m4_soundcmd` 契约测试）。
+- 待办：单条 SE 仍无法单独停止；play 路径实机试听；BGM/SE 音量设置项与界面排布已完成，
+  实机听感与键位重绑定仍需用户截图/操作核验。
 - 本作 BGM 69.2 MB / SE 10.6 MB，全部在 work/Data，无需再解包。
 
 ## 3. 存档互通与格式保真
@@ -111,6 +112,6 @@ wolf-cli capture --load-save work/Data/Save/SaveData01.sav --event 245 --frames 
   "Segoe UI Symbol" 正好命中）；text stats 由 `1 substituted` 变为
   `0 substituted`，截图中的 ▶ 正确显示。单元测试
   `text::tests::a_named_fallback_covers_a_glyph_the_primary_lacks` 覆盖。
-- **仍未做**：可视设置界面已完成 CE132/CE95 排版（`docs/M4_SETTINGS_UI.md`、
-  `m4_settings_ui`），实机键位重绑定与设置交互仍需用户设置截图后核验。msyhbd.ttc
-  TTC 字体加载已实测可用（capture 输出 font : C:/Windows/Fonts/msyhbd.ttc）。
+- **仍需实机核验**：可视设置界面已完成 CE132/CE95 排版（`docs/M4_SETTINGS_UI.md`、
+  `m4_settings_ui`），键位重绑定、设置交互与音量听感仍需用户在 `wolf-cli play` 里截图/
+  操作确认；msyhbd.ttc TTC 字体加载已实测可用。

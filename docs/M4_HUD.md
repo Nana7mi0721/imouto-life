@@ -103,10 +103,24 @@ HUD = 19:30 周一 / 早泄 强壮 哥哥（学生） / 行动力60/65 / 精力 
     断言面板 x=0、文本 321 (240,90)/322 (75,405)/323 (245,410)/324 (245,465)）。
   - 该 flag 在 CommonEvent 全量中低频但关键：head 0x10000 仅 CE238/CE239 两处，
     head 0x10001 有 403 处（大量 text move）；其余 13k+ 普通 op150 不受影响。
-- 夜菜单静态截图仍需合成输入/点击触发。
+- 夜菜单静态截图已收口：`capture --load-save work/Data/Save/SaveData01.sav --event 245
+  --frames 90 --out work/out/shots/night_menu4.png`。`run_capture` 新增 `save_event`
+  参数；Entry::Save 分支在 `resume_loaded_map` 之后调用 `game.start_event(id)`，不再被
+  `--load-save > --event` 的优先级吞掉。画面为房间+HUD+夜菜单六项（`开始交流/泡茶/泡澡/
+  网上购物/今天就这样睡吧/0`），状态面板同时可见。
+- 光标 ▶（U+25B6）修复：msyhbd.ttc 没有该字形，渲染器原先 `substitute_missing` 成 U+FFFD
+  并报 `font has no glyph for '▶'`。做法是保持 msyhbd.ttc 为 primary，新增
+  `Renderer::add_fallback_font`（内部 `TextRenderer::add_fallback_font`）把
+  C:/Windows/Fonts/seguisym.ttf 载入同一个 private fontdb；cosmic-text 的 Windows
+  common fallback 列表含 "Segoe UI Symbol"，因此该 face 被选中。`missing_chars` 现在把
+  primary 与显式 fallback 的 font_id 都视为已覆盖，text stats 从 `1 substituted` 变
+  `0 substituted`。CLI 的 `install_font_fallbacks` 同时供 capture 与 play 使用；字体加载
+  失败只警告不致命。测试 `text::tests::a_named_fallback_covers_a_glyph_the_primary_lacks`
+  验证 primary 单独缺 ▶、加入 fallback 后无缺失。
 - 设置 UI：CE132/CE95 的可视排版已在 M4 设置屏修复中完成（详见
   `docs/M4_SETTINGS_UI.md`：1/10 字符格坐标、\f[0] 字号、290 位移、keep_shift、
   CursorBase）；音量/键位持久化 API 与通用输入路由已就绪，实机键位重绑定仍待
   用户截图后再核验。
 - 字体优先 `C:/Windows/Fonts/msyhbd.ttc`：capture 实测已输出
-  `font : C:/Windows/Fonts/msyhbd.ttc`，`Renderer::set_font` 接受 TTC，可标完成。
+  `font : C:/Windows/Fonts/msyhbd.ttc`，`Renderer::set_font` 接受 TTC；符号字形由
+  `fallback : C:/Windows/Fonts/seguisym.ttf` 补齐，可标完成。

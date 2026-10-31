@@ -62,6 +62,7 @@ WOLF_DATA_ROOT=work/Data ./target/debug/wolf-cli.exe verify --wolf <安装目录
 wolf-cli capture --menu-only --frames 120 --out work/out/shots/title.png
 wolf-cli capture --load-save work/Data/Save/SaveData01.sav --frames 120 --out work/out/shots/bedroom.png
 wolf-cli capture --map SampleMapA --load-save work/Data/Save/SaveData01.sav --event 10 --var 15=99 --pointer 100,200 --frames 60 --out work/out/shots/status_panel8.png
+wolf-cli capture --load-save work/Data/Save/SaveData01.sav --event 245 --frames 90 --out work/out/shots/night_menu4.png
 # 窗口实机：F12 重启、鼠标点选、音量/键位设置、退出落盘
 ```
 
@@ -101,7 +102,15 @@ wolf-cli capture --map SampleMapA --load-save work/Data/Save/SaveData01.sav --ev
   是数据怪癖），得到房间+HUD+左侧状态面板（work/out/shots/status_panel8.png）。
   关键是实现了 op150 的 head bit 0x10000 相对坐标：CE238 隐藏时面板在 x=-305，显示时
   相对 +305 落到 x=0，五个动态文本也相对 +(305,0) 移到各标签旁（见 docs/M4_HUD.md §6）。
-- **仍未做**：夜菜单静态截图仍需合成输入/点击；可视设置界面已完成 CE132/CE95 排版
-  （`docs/M4_SETTINGS_UI.md`、`m4_settings_ui`），实机键位重绑定与设置交互仍需用户
-  设置截图后核验。msyhbd.ttc TTC 字体加载已实测可用（capture 输出 font :
-  C:/Windows/Fonts/msyhbd.ttc），只是仍待在一份文档里标完成。
+- **夜菜单截图已收口**：`capture --load-save ... --event 245` 过去会丢掉 event（Entry::Save
+  优先级高于 --event）；现在 `run_capture` 增加 `save_event`，读档恢复地图后再启动指定
+  common event，得到房间+HUD+夜菜单六项的 work/out/shots/night_menu4.png。
+- **字体覆盖补齐**：msyhbd.ttc（本作 Game.dat 指定的 UI 族）不含 U+25B6（夜菜单光标 ▶）。
+  新增 `Renderer::add_fallback_font` / `TextRenderer::add_fallback_font`，把
+  C:/Windows/Fonts/seguisym.ttf 载入同一 private fontdb（平台 common fallback 名
+  "Segoe UI Symbol" 正好命中）；text stats 由 `1 substituted` 变为
+  `0 substituted`，截图中的 ▶ 正确显示。单元测试
+  `text::tests::a_named_fallback_covers_a_glyph_the_primary_lacks` 覆盖。
+- **仍未做**：可视设置界面已完成 CE132/CE95 排版（`docs/M4_SETTINGS_UI.md`、
+  `m4_settings_ui`），实机键位重绑定与设置交互仍需用户设置截图后核验。msyhbd.ttc
+  TTC 字体加载已实测可用（capture 输出 font : C:/Windows/Fonts/msyhbd.ttc）。

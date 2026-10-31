@@ -471,3 +471,25 @@ WOLF_DATA_ROOT="$PWD/work/Data" ./target/debug/wolf-cli.exe verify | tail -20
   * **仍待办**：夜菜单静态截图仍需合成输入/点击；实机键位重绑定与设置交互需用户截图
     核验；TTC 字体 capture 已实测输出 msyhbd.ttc。
   * **当前进度**：M0–M4 主体完成，M4 剩余仅夜菜单截图与实机键位/设置核验。
+
+* 2026-10-31（M4 夜菜单截图 + 字体符号 fallback）：
+  * **夜菜单截图**：`run_capture` 新增 `save_event` 参数；`Entry::Save` 在
+    `resume_loaded_map` 后调用 `game.start_event(id)`，解决 `--load-save` 抢占
+    `--event` 导致夜菜单事件不启动。命令：
+    `wolf-cli capture --load-save work/Data/Save/SaveData01.sav --event 245 --frames 90
+    --out work/out/shots/night_menu4.png`；结果 90.4% 非黑，房间+HUD+状态面板+
+    夜菜单六项（开始交流/泡茶/泡澡/网上购物/今天就这样睡吧/0）。
+  * **字体 fallback**：msyhbd.ttc 不含 U+25B6（光标 ▶）。`crates/wolf-render/src/text.rs`
+    新增 `build_font_system_with(ttf, fallbacks)`、`TextRenderer::set_fonts` /
+    `add_fallback_font`、`missing_chars`（primary+显式 fallback 都算覆盖）；
+    `crates/wolf-render/src/renderer.rs` 同步暴露 `set_fonts` / `add_fallback_font`；
+    CLI 新增 `system_fallback_fonts` 与 `install_font_fallbacks`，capture/play 均加载
+    `C:/Windows/Fonts/seguisym.ttf`（platform common fallback 名 "Segoe UI Symbol"）。
+    夜菜单 text stats 由 1 substituted 变 0 substituted，▶ 正确显示。单测
+    `text::tests::a_named_fallback_covers_a_glyph_the_primary_lacks`。
+  * **文档**：`docs/M4_PARITY.md` §6/§8 与 `docs/M4_HUD.md` §6 已更新夜菜单命令、
+    save_event、相对坐标、字体 fallback。
+  * **验收**：`cargo fmt --all`；`cargo test -q --workspace` 与
+    `WOLF_DATA_ROOT=work/Data cargo test -q --workspace` 全绿 0 failed；
+    `WOLF_DATA_ROOT=work/Data ./target/debug/wolf-cli.exe verify` PASS 64 check(s),
+    1 SKIP（dxarchive.header）。

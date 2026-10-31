@@ -423,7 +423,10 @@ impl ApplicationHandler for App {
         // Chinese patch text that the bitmap font would render as boxes.
         match crate::find_font(self.game.root()) {
             Some((path, bytes)) => match renderer.set_font(&bytes) {
-                Ok(()) => println!("font: {}", path.display()),
+                Ok(()) => {
+                    println!("font: {}", path.display());
+                    crate::install_font_fallbacks(&mut renderer, &path);
+                }
                 Err(err) => eprintln!("font rejected ({}): {err}", path.display()),
             },
             None => eprintln!("no font found; text will not be drawn"),

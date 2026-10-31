@@ -620,6 +620,14 @@ impl Renderer {
     /// and kept here, and the glyph atlas is created lazily on the first call so a
     /// sprite-only renderer never pays for it.
     pub fn set_font(&mut self, ttf: &[u8]) -> Result<(), RenderError> {
+        self.set_fonts(&[ttf])
+    }
+
+    /// Install one primary font plus optional fallback blobs in one pass.
+    ///
+    /// The first blob is the UI face; later blobs only supply glyphs it lacks. The
+    /// CLI uses this for the CN UI font plus a symbol face (U+25B6 is the real case).
+    pub fn set_fonts(&mut self, fonts: &[&[u8]]) -> Result<(), RenderError> {
         if self.text.is_none() {
             self.text = Some(TextRenderer::new(
                 &self.device,
@@ -629,7 +637,16 @@ impl Renderer {
             ));
         }
         let text = self.text.as_mut().expect("text pass was just created");
-        text.set_font(ttf).map_err(RenderError::Text)
+        text.set_fonts(fonts).map_err(RenderError::Text)
+    }
+
+    /// Add one fallback font blob after [`Renderer::set_font`] or [`Renderer::set_fonts`].
+    pub fn add_fallback_font(&mut self, ttf: &[u8]) -> Result<(), RenderError> {
+        let text = self
+            .text
+            .as_mut()
+            .ok_or(RenderError::Text(crate::text::TextError::NoFont))?;
+        text.add_fallback_font(ttf).map_err(RenderError::Text)
     }
 
     /// Whether a font has been installed for the text pass.

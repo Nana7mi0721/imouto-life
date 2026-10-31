@@ -372,30 +372,65 @@ pub struct TextStats {
 /// With a single-font database the platform fallback family names never resolve,
 /// so `LayoutGlyph::glyph_id == 0` means what it says.
 fn build_font_system(ttf: &[u8]) -> Result<(FontSystem, fontdb::ID, String), TextError> {
+    let (system, id, family, _fallback_ids) = build_font_system_with(ttf, &[])?;
+    Ok((system, id, family))
+}
+
+/// Like [`build_font_system`], but adds extra blobs to the same private database.
+///
+/// The extra faces are deliberately *not* a general system-font fallback: the caller
+/// names them, and [`missing_chars`] treats their glyphs as covered rather than as a
+/// miss. This is what lets a CN-patch UI font draw Chinese while a symbol font supplies
+/// the few geometric shapes (the choice cursor U+25B6 is the real case) the UI face
+/// does not contain.
+fn build_font_system_with(
+    ttf: &[u8],
+    fallbacks: &[&[u8]],
+) -> Result<(FontSystem, fontdb::ID, String, Vec<fontdb::ID>), TextError> {
     if ttf.is_empty() {
         return Err(TextError::EmptyFont);
     }
     let mut db = fontdb::Database::new();
     db.load_font_data(ttf.to_vec());
-    let face = db.faces().next().ok_or(TextError::FontRejected)?;
-    let id = face.id;
-    let family = face
-        .families
-        .first()
-        .map(|(name, _language)| name.clone())
-        .ok_or(TextError::FontRejected)?;
+    let primary_faces: Vec<fontdb::ID> = db.faces().map(|face| face.id).collect();
+    let (id, family) = {
+        let face = db.faces().next().ok_or(TextError::FontRejected)?;
+        let family = face
+            .families
+            .first()
+            .map(|(name, _language)| name.clone())
+            .ok_or(TextError::FontRejected)?;
+        (face.id, family)
+    };
+    let mut fallback_ids: Vec<fontdb::ID> = Vec::new();
+    for bytes in fallbacks {
+        if bytes.is_empty() {
+            continue;
+        }
+        db.load_font_data(bytes.to_vec());
+        for face in db.faces() {
+            if face.id != id
+                && !primary_faces.contains(&face.id)
+                && !fallback_ids.contains(&face.id)
+            {
+                fallback_ids.push(face.id);
+            }
+        }
+    }
     let system = FontSystem::new_with_locale_and_db(LOCALE.to_string(), db);
-    Ok((system, id, family))
+    Ok((system, id, family, fallback_ids))
 }
 
-/// Characters in `buffer` that the primary face could not draw.
-fn missing_chars(buffer: &Buffer, font_id: fontdb::ID) -> Vec<char> {
+/// Characters in `buffer` that neither the primary face nor a named fallback can draw.
+fn missing_chars(buffer: &Buffer, font_id: fontdb::ID, fallback_ids: &[fontdb::ID]) -> Vec<char> {
     let mut out: Vec<char> = Vec::new();
     for run in buffer.layout_runs() {
         for glyph in run.glyphs {
-            // glyph_id 0 is .notdef; a different font_id means cosmic-text
-            // silently swapped in another face, which for us is also a miss.
-            if glyph.glyph_id != 0 && glyph.font_id == font_id {
+            // glyph_id 0 is .notdef; a face outside the allowed set means cosmic-text
+            // silently swapped in a font the caller did not offer, which is a miss.
+            if glyph.glyph_id != 0
+                && (glyph.font_id == font_id || fallback_ids.contains(&glyph.font_id))
+            {
                 continue;
             }
             let Some(slice) = run.text.get(glyph.start..glyph.end) else {
@@ -432,7 +467,7 @@ pub fn missing_glyphs(font: &[u8], text: &str, size_px: f32) -> Vec<char> {
         .color(Color::rgb(255, 255, 255));
     buffer.set_text(text, &attrs, Shaping::Advanced, Some(Align::Left));
     buffer.shape_until_scroll(&mut system, false);
-    missing_chars(&buffer, font_id)
+    missing_chars(&buffer, font_id, &[])
 }
 
 /// One shaped buffer placed on the canvas for this frame.
@@ -470,6 +505,8 @@ pub struct TextRenderer {
     swash: SwashCache,
     /// Face id of the loaded font; `None` until `set_font`.
     font_id: Option<fontdb::ID>,
+    /// Extra faces explicitly offered for glyphs the primary face lacks.
+    fallback_ids: Vec<fontdb::ID>,
     /// Family name to ask cosmic-text for; empty until `set_font`.
     font_family: String,
     /// Logical canvas size the pass renders into.
@@ -520,6 +557,7 @@ impl TextRenderer {
             font_system,
             swash: SwashCache::new(),
             font_id: None,
+            fallback_ids: Vec::new(),
             font_family: String::new(),
             screen,
             buffers: Vec::new(),
@@ -533,10 +571,54 @@ impl TextRenderer {
     /// The bytes come from the player's install (see the module docs); nothing is
     /// cached on disk here. On failure the previously loaded font keeps working.
     pub fn set_font(&mut self, ttf: &[u8]) -> Result<(), TextError> {
-        let (system, id, family) = build_font_system(ttf)?;
+        self.set_fonts(&[ttf])
+    }
+
+    /// Install one primary font plus optional fallback blobs.
+    ///
+    /// The first blob is the UI face; later blobs only fill glyphs it lacks. See
+    /// [`build_font_system_with`] for why a fallback is not the platform's implicit one.
+    pub fn set_fonts(&mut self, fonts: &[&[u8]]) -> Result<(), TextError> {
+        let Some(primary) = fonts.first() else {
+            return Err(TextError::EmptyFont);
+        };
+        let (system, id, family, fallback_ids) = build_font_system_with(primary, &fonts[1..])?;
         self.font_system = system;
         self.font_id = Some(id);
+        self.fallback_ids = fallback_ids;
         self.font_family = family;
+        self.buffers.clear();
+        self.placed.clear();
+        self.stats = TextStats::default();
+        Ok(())
+    }
+
+    /// Add one fallback font blob to an already loaded pass.
+    ///
+    /// Used by the CLI so it can try several system files without rebuilding the
+    /// primary font selection. Invalid or empty bytes are rejected without disturbing
+    /// the current font.
+    pub fn add_fallback_font(&mut self, ttf: &[u8]) -> Result<(), TextError> {
+        if ttf.is_empty() {
+            return Err(TextError::EmptyFont);
+        }
+        let Some(primary) = self.font_id else {
+            return Err(TextError::NoFont);
+        };
+        let before: Vec<fontdb::ID> = {
+            let db = self.font_system.db_mut();
+            db.faces().map(|face| face.id).collect()
+        };
+        self.font_system.db_mut().load_font_data(ttf.to_vec());
+        let after: Vec<fontdb::ID> = {
+            let db = self.font_system.db_mut();
+            db.faces().map(|face| face.id).collect()
+        };
+        for id in after {
+            if id != primary && !before.contains(&id) && !self.fallback_ids.contains(&id) {
+                self.fallback_ids.push(id);
+            }
+        }
         self.buffers.clear();
         self.placed.clear();
         self.stats = TextStats::default();
@@ -612,6 +694,7 @@ impl TextRenderer {
         items: &[TextItem],
     ) -> Result<TextStats, TextError> {
         let font_id = self.font_id.ok_or(TextError::NoFont)?;
+        let fallback_ids = self.fallback_ids.clone();
         let family = self.font_family.clone();
         self.buffers.clear();
         self.placed.clear();
@@ -677,7 +760,7 @@ impl TextRenderer {
             // The text that actually ended up shaped. The outline buffer has to
             // reuse it, otherwise the two passes would break lines differently.
             let mut shaped: Cow<'_, str> = Cow::Borrowed(item.text.as_str());
-            let mut missing = missing_chars(&buffer, font_id);
+            let mut missing = missing_chars(&buffer, font_id, &fallback_ids);
             if !missing.is_empty() {
                 let (rewritten, replaced) = substitute_missing(&item.text, &missing);
                 buffer.set_text(
@@ -880,6 +963,53 @@ mod tests {
         let (out, replaced) = substitute_missing("はじめから", &[]);
         assert_eq!(replaced, 0);
         assert_eq!(out, "はじめから");
+    }
+
+    /// Read a Windows system font by file name, or `None` on a machine without it.
+    fn windows_font(name: &str) -> Option<Vec<u8>> {
+        let dir = std::env::var_os("WINDIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| std::path::PathBuf::from("C:/Windows"))
+            .join("Fonts");
+        std::fs::read(dir.join(name)).ok().filter(|b| !b.is_empty())
+    }
+
+    /// The CN UI face has no U+25B6 (the night-menu cursor). A named symbol fallback
+    /// must make it drawable, and the missing-glyph accounting must treat that face
+    /// as covered rather than substituting a replacement character.
+    #[test]
+    fn a_named_fallback_covers_a_glyph_the_primary_lacks() {
+        let (Some(primary), Some(fallback)) =
+            (windows_font("msyhbd.ttc"), windows_font("seguisym.ttf"))
+        else {
+            eprintln!("skipping fallback test: Microsoft YaHei / Segoe UI Symbol missing");
+            return;
+        };
+        assert_eq!(
+            missing_glyphs(&primary, "▶", 20.0),
+            vec!['▶'],
+            "the primary face unexpectedly covers the choice cursor"
+        );
+        let Ok((mut system, font_id, family, fallback_ids)) =
+            build_font_system_with(&primary, &[&fallback])
+        else {
+            panic!("both system fonts parsed for missing_glyphs but not for the fallback builder");
+        };
+        assert!(
+            !fallback_ids.is_empty(),
+            "the fallback face was not registered"
+        );
+        let size = 20.0_f32;
+        let mut buffer = Buffer::new(&mut system, Metrics::new(size, size * LINE_HEIGHT_FACTOR));
+        let attrs = Attrs::new()
+            .family(Family::Name(&family))
+            .color(Color::rgb(255, 255, 255));
+        buffer.set_text("▶", &attrs, Shaping::Advanced, Some(Align::Left));
+        buffer.shape_until_scroll(&mut system, false);
+        assert!(
+            missing_chars(&buffer, font_id, &fallback_ids).is_empty(),
+            "cosmic-text did not borrow the named fallback for U+25B6"
+        );
     }
 
     /// Garbage font bytes must be an error, never a panic: the game has to keep

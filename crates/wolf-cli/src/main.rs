@@ -380,6 +380,7 @@ fn main() -> ExitCode {
                     hold_message,
                     engine_events,
                     entry,
+                    event,
                 )
             }
         },
@@ -2169,6 +2170,46 @@ fn system_font_dirs() -> Vec<PathBuf> {
     dirs
 }
 
+/// System faces that fill in glyphs the primary UI font lacks.
+///
+/// The CN patch's UI family (Microsoft YaHei UI) has no glyph for the geometric
+/// shapes WOLF uses as cursors: the night menu's choice marker is U+25B6 and the
+/// retail renderer drew it from its own font, not from the dialog face. The
+/// platform fallback list already names "Segoe UI Symbol", so loading that face
+/// into the same private database is enough; no general system-font scan happens.
+fn system_fallback_fonts() -> Vec<PathBuf> {
+    const NAMES: [&str; 2] = ["seguisym.ttf", "msyhbd.ttc"];
+    let mut out: Vec<PathBuf> = Vec::new();
+    for dir in system_font_dirs() {
+        for name in NAMES {
+            let path = dir.join(name);
+            if path.is_file() && !out.contains(&path) {
+                out.push(path);
+            }
+        }
+    }
+    out
+}
+
+/// Offer the symbol fallback to a renderer that already accepted `primary`.
+///
+/// Called by both `capture` and `play`; failures are logged but never fatal,
+/// because a missing symbol face must not stop the game from drawing its text.
+pub(crate) fn install_font_fallbacks(renderer: &mut Renderer, primary: &Path) {
+    for path in system_fallback_fonts() {
+        if path == primary {
+            continue;
+        }
+        let Ok(bytes) = std::fs::read(&path) else {
+            continue;
+        };
+        match renderer.add_fallback_font(&bytes) {
+            Ok(()) => println!("  fallback  : {}", path.display()),
+            Err(err) => eprintln!("  fallback rejected ({}): {err}", path.display()),
+        }
+    }
+}
+
 /// The first font candidate the text stack can actually open.
 ///
 /// `play` uses this single-font entry point; `capture` walks [`font_paths`] itself so it
@@ -2568,9 +2609,12 @@ fn render_capture_frame(
             Err(err) => rejected.push((path, err.to_string())),
         }
     }
-    match chosen {
+    match &chosen {
         Some(path) => println!("  font      : {}", path.display()),
         None => println!("  font      : none found; text pictures will not draw"),
+    }
+    if let Some(path) = &chosen {
+        install_font_fallbacks(&mut renderer, path);
     }
     for (path, err) in rejected {
         eprintln!("  font rejected ({}): {err}", path.display());
@@ -2714,6 +2758,7 @@ fn run_capture(
     hold_message: bool,
     engine_events: Option<Vec<u32>>,
     entry: Entry<'_>,
+    save_event: Option<u32>,
 ) -> ExitCode {
     let out = out.unwrap_or_else(|| PathBuf::from("work/out/title.png"));
     let mut game = match Game::new(root) {
@@ -2794,11 +2839,26 @@ fn run_capture(
                     // A bare load leaves the map runtime empty. The retail 220 path
                     // restarts the map from the save-menu coroutine; the CLI has no
                     // such coroutine, so rebuild it from the SavePart1 snapshot.
-                    (
-                        game.resume_loaded_map()
-                            .map(|name| println!("  resumed   : map {name}")),
-                        label,
-                    )
+                    let resumed = game
+                        .resume_loaded_map()
+                        .map(|name| println!("  resumed   : map {name}"));
+                    // An optional --event lets a loaded save drive a menu/UI event
+                    // (e.g. CE245 night command) on top of the restored bedroom.
+                    let started = match resumed {
+                        Err(err) => Err(err),
+                        Ok(()) => match save_event {
+                            Some(id) => {
+                                if game.start_event(id) {
+                                    println!("  script    : common event {id}");
+                                    Ok(())
+                                } else {
+                                    Err(format!("no common event with id {id}"))
+                                }
+                            }
+                            None => Ok(()),
+                        },
+                    };
+                    (started, label)
                 }
                 Err(err) => (Err(err), label),
             }

@@ -392,9 +392,12 @@ fn system_sav_part2_roundtrips_the_bgm_volume_field() {
 // ---------------------------------------------------------------------------
 
 /// Scratch directory for the persistence tests. Everything here is disposable; the
-/// real data root is never written.
-fn scratch_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/test-scratch/m3_settings")
+/// real data root is never written. Each test gets its own subdirectory: cargo runs
+/// tests in parallel, and two cases sharing one path would delete each other's file.
+fn scratch_dir(case: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/test-scratch/m3_settings")
+        .join(case)
 }
 
 fn open_settings_game() -> Option<Game> {
@@ -540,7 +543,7 @@ fn save_system_settings_writes_a_checksummed_copy_without_touching_the_real_file
     };
     game.set_settings(custom).expect("set_settings");
 
-    let dir = scratch_dir();
+    let dir = scratch_dir("save_copy");
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("scratch dir");
     let path = dir.join("System.sav");
@@ -720,7 +723,7 @@ fn save_system_settings_after_a_load_keeps_the_system_save_skeleton() {
     })
     .expect("set_settings");
 
-    let dir = scratch_dir();
+    let dir = scratch_dir("after_load");
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("scratch dir");
     let out = dir.join("System.sav");

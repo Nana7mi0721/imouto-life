@@ -110,9 +110,12 @@ pub fn text_width_at(text: &str, font_px: f32) -> f32 {
 /// plus the cursor column and the frame padding. A flat per-character estimate is what
 /// broke CJK: a full-width glyph is one em, not half of one.
 fn size(options: &[String], font_px: f32) -> (f32, f32) {
+    // Measure the label that is actually drawn, not the raw option key: the title
+    // menu passes `menu1`/`menu2`/`menu3` but paints the localised labels, so sizing
+    // the raw keys clipped them. `option_label` is the identity for every other prompt.
     let widest = options
         .iter()
-        .map(|option| text_width_at(option, font_px))
+        .map(|option| text_width_at(option_label(option), font_px))
         .fold(0.0_f32, f32::max);
     let marker = font_px * 1.5;
     let width = (widest + marker + PADDING * 2.0 + WIDTH_SLACK).max(MIN_WIDTH);
@@ -159,14 +162,14 @@ pub fn layout(options: &[String], cursor: usize) -> ChoiceLayout {
     build(options, cursor, x.round(), y.round(), TEXT_PX)
 }
 
-/// Lays out the panel at the engine's own choice-window anchor, `None` when it would
-/// not be visible.
+/// Lays out the panel at the engine's own choice-window anchor.
 ///
-/// WOLF places `102`'s window at system variables 3 (X) and 4 (Y), measured in
-/// docs/OPCODE_102.md. The title event parks that window at (512, 1000) on a
-/// 576-pixel-tall screen, i.e. deliberately off screen: `None` is then the faithful
-/// answer, because the engine would paint nothing either. Any other anchor is taken as
-/// the top-left corner, exactly like the manual describes.
+/// WOLF places `102`'s window at system variables 3 (X) and 4 (Y). When the anchor
+/// would put the whole panel off screen (the shipped title event parks it at
+/// (-1000,-1000), and the manual's `-1` sentinel means "default position"), the panel
+/// falls back to the centred default position so the prompt is still visible and
+/// clickable. Known anchors are taken as the top-left corner, exactly like the manual
+/// describes. (The old comment quoted (512,1000); the data actually writes -1000.)
 #[must_use]
 pub fn layout_at(options: &[String], cursor: usize, x: i32, y: i32) -> Option<ChoiceLayout> {
     layout_at_sized(options, cursor, x, y, TEXT_PX)
@@ -192,7 +195,16 @@ pub fn layout_at_sized(
     if on_screen {
         Some(panel)
     } else {
-        None
+        // Out-of-bounds anchor: fall back to the centred default position instead of
+        // painting nothing. The shipped title event parks its window at (-1000,-1000);
+        // treating that as "invisible" left the title with no menu the player could see
+        // or click. WOLF's manual reserves the sentinel -1 for "default position", and an
+        // off-screen pair is the same intent, so honour it here. This only affects anchors
+        // that would draw entirely outside the screen; every in-screen prompt is unchanged.
+        let (width, height) = size(options, font_px);
+        let cx = ((SCREEN_W as f32) - width) / 2.0;
+        let cy = ((SCREEN_H as f32) - height) / 2.0;
+        Some(build(options, cursor, cx.round(), cy.round(), font_px))
     }
 }
 
@@ -200,6 +212,23 @@ pub fn layout_at_sized(
 #[must_use]
 pub fn skin_pieces(layout: &ChoiceLayout, skin_w: u32, skin_h: u32) -> Vec<WindowPiece> {
     window::nine_slice(layout.rect, skin_w, skin_h)
+}
+
+/// Human-facing label for a choice option.
+///
+/// The shipped title event names its three options `menu1`/`menu2`/`menu3`; those are
+/// internal keys, and its branch bodies state their meaning (common event 42 pc29/35/43:
+/// "はじめから" / "つづきから" / "おわる"). Showing the raw keys on the title menu looked
+/// broken, so map just those three keys to localised labels here. Every other prompt keeps
+/// its own text untouched, and the underlying option strings (used for branching and for
+/// tests) are never rewritten.
+fn option_label(option: &str) -> &str {
+    match option {
+        "menu1" => "开始游戏",
+        "menu2" => "读取存档",
+        "menu3" => "退出游戏",
+        other => other,
+    }
 }
 
 /// Builds the panel draw list: window pieces first, then one text row per option.
@@ -231,7 +260,7 @@ fn draw(
         let marker = if index == cursor { "▶ " } else { "   " };
         texts.push(TextQuad {
             number: window::PANEL_PICTURE,
-            text: format!("{marker}{option}"),
+            text: format!("{marker}{}", option_label(option)),
             rect: layout.lines[index],
             alpha: 1.0,
             // The panel is drawn at one size (the caller passes Sys8 in), so each row

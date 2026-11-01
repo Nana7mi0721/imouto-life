@@ -43,7 +43,7 @@ const BACKLOG_ROWS: usize = 18;
 pub struct DisplayOptions {
     /// Integer by default; `fit-nearest`/`fit-linear` fill the window fractionally.
     pub mode: ScaleMode,
-    /// Start borderless-fullscreen instead of the 1920x1080 window.
+    /// Start borderless-fullscreen instead of the windowed presentation.
     pub fullscreen: bool,
 }
 
@@ -54,6 +54,26 @@ impl Default for DisplayOptions {
             fullscreen: false,
         }
     }
+}
+
+/// The largest whole-number multiple of the 1024x576 picture that fits the primary monitor.
+///
+/// The picture is authored at a fixed 1024x576 and the default scale mode is integer, so a
+/// window of any other size letterboxes it with black bars (a 1920x1080 window only fits a
+/// 1x picture, leaving wide bars). Sizing the window to the monitor keeps the picture crisp
+/// and bar-free at every resolution; with no monitor information it falls back to 1x.
+fn window_size_for(monitor: Option<PhysicalSize<u32>>) -> PhysicalSize<u32> {
+    let Some(size) = monitor else {
+        return PhysicalSize::new(LOGICAL_W, LOGICAL_H);
+    };
+    // Leave room for the title bar and taskbar so the OS does not clamp the window.
+    let max_w = (f64::from(size.width) * 0.94) as u32;
+    let max_h = (f64::from(size.height) * 0.90) as u32;
+    let mut scale = 1u32;
+    while (scale + 1) * LOGICAL_W <= max_w && (scale + 1) * LOGICAL_H <= max_h {
+        scale += 1;
+    }
+    PhysicalSize::new(LOGICAL_W * scale, LOGICAL_H * scale)
 }
 
 /// M5-B runtime debug overlay: a toggleable text block drawn over the game.
@@ -729,11 +749,14 @@ impl App {
 
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        let mut attributes = Window::default_attributes()
-            .with_title("imoto-life | title screen")
-            .with_inner_size(PhysicalSize::new(1920u32, 1080u32));
+        let mut attributes =
+            Window::default_attributes().with_title("imoto-life | title screen");
         if self.display.fullscreen {
             attributes = attributes.with_fullscreen(Some(Fullscreen::Borderless(None)));
+        } else {
+            attributes = attributes.with_inner_size(window_size_for(
+                event_loop.primary_monitor().map(|monitor| monitor.size()),
+            ));
         }
         let window = match event_loop.create_window(attributes) {
             Ok(window) => Arc::new(window),

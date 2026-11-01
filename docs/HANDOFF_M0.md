@@ -843,3 +843,34 @@ WOLF_DATA_ROOT="$PWD/work/Data" ./target/debug/wolf-cli.exe verify | tail -20
     target 3.8G，保留可运行 debug 产物）。
   * **当前进度**：M0–M7 完成。可选后续仅剩：跨周目永久成就；语言包可人工润色；补丁/
     热键的更多用法。本地提交（未推送远端）。
+  * **2026-11-01（玩家可见缺陷修复：窗口尺寸 / 标题三选项 / 场景暗块）：** 用户实机反馈 4 项——
+    (1) 窗口比画面大、四周黑边；(2) 初始界面看不到应有的三个选项；(3) 部分场景出现深灰半透明
+    方块；(4) 场景切换闪烁；并指出此前「验收通过」只覆盖 `verify` 的数据/计数层，不渲染实时窗口、
+    不验收画面与交互，该批评成立（`verify`/`capture` 都不等于实机玩法验收）。
+    * **(1) 窗口尺寸** `crates/wolf-cli/src/play.rs`：原 `resumed()` 固定
+      `with_inner_size(PhysicalSize::new(1920,1080))` + 默认 `ScaleMode::Integer`，1080p 对
+      1024x576 只能 1x → 画面居中、四周巨大黑边。新增 `fn window_size_for(monitor)` 按主显示器
+      取能容纳 1024x576 的最大整数倍（宽留 6%/高留 10%），非全屏时用它作初始窗口；无 monitor→1x。
+    * **(3) 场景暗块** `crates/wolf-game/src/picture.rs` 的 `Screen::ui_scale_for`：`oversized`
+      （十分之一 UI）判定误把停靠在屏外（block 160 消息窗 picture 16000，window 7680x1200 @(512,3840)）
+      的窗口按 /10 缩放并拉回屏内，形成约 768x120 的中心暗块。修法：`oversized` 谓词增加 `parked`
+      排除（`x.abs()>SCREEN_W*2 || y.abs()>SCREEN_H*2` 的停靠项不参与判定）。
+    * **(2) 标题三选项可见** `crates/wolf-game/src/choice.rs`：CE42 把选择锚点 Sys3/Sys4 写成
+      -1000/-1000（停靠屏外），`layout_at_sized` 忠实判屏外→None→不画，标题只剩背景。修法：
+      越界锚点回退为**居中面板**（`(SCREEN-width)/2,(SCREEN-height)/2`）；新增 `option_label` 把
+      裸键 `menu1/2/3` 按 CE42 分支注释映射为「开始游戏/读取存档/退出游戏」，`size()` 与 `draw()`
+      都按显示标签测宽/绘制（原按 "menu1" 测宽致中文被裁）；`game.choices.options` 原始键不变。
+      同步把 `tests/m3_title_visibility.rs`、`tests/m3_title_mouse.rs` 的 `layout_at_sized(-1000,-1000)
+      .is_none()` 断言改为「回退为屏内居中面板」，其余命中测试仍过。
+    * **验证**：`cargo build -q --workspace` exit 0；`cargo test -q --workspace`（默认无数据）exit 0；
+      `WOLF_DATA_ROOT=<绝对> WOLF_GAME_DIR=<不存在>` `cargo test -q -p wolf-game` = 283 passed /
+      7 failed，7 条与干净 HEAD 复现的既有姊妹作期望值/事件语义差异**完全相同**（db 2 + auto_events 3
+      + game 2），非本轮回归。标题套件（visibility 4 / mouse 7 / menu_screens 3 / mouse_menu 12）全过。
+      离屏截图 `work/out/title_menu_final.png`：标题美术上居中深灰面板显示「▶ 开始游戏 / 读取存档 /
+      退出游戏」；暗块(block 160)、设置界面、状态页、读档 HUD 截图均干净。
+    * **仍未闭环**：(a) **场景切换闪烁**离屏 capture 不能复现（疑与已修的消息窗暗块同源——切换时该窗口
+      图形短暂出现；或 `switch_map` 调 `clear_screen_layers` 后新图未画的 1 帧、present 两 pass
+      `Clear(BLACK)`+blit），需用户实机复测确认；若仍在请指明具体切换时机。(b) **取消读档软锁**是既有
+      gap（`m3_title_mouse` 有用例断言取消后菜单不恢复；M3_TITLE_UX §4 建议#2 未实现），本轮未动，避免
+      误触发 boot 与 EndGame。(c) H-MENU-1（原版标题菜单精确位置/是否用 menuN 图片按钮）仍未实测，
+      当前用居中文本+中文标签为最小可见修复。

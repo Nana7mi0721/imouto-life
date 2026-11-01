@@ -5,7 +5,7 @@
 并与日文原版（JP 原版 *.wolf）解包结果逐条比对；未在本机运行原版 Game.exe，凡涉及原版运行时行为的判断
 均标注为“未验证”。
 
-仅新增测试与文档，未改动 src。
+（2026-11-01 更新：已据第 4 节建议 #1 在 crates/wolf-game/src/choice.rs 实现「越界锚点回退居中 + 裸键中文标签映射」，本节所述「未改动 src」已过时，详见文末 §7。）
 
 ## 1. 结论摘要
 
@@ -119,3 +119,20 @@ Boot → 选 menu2（cursor=1，auto_choice 延迟 2 帧）→ 逐帧观察到�
     cargo build -q -p wolf-game   # exit 0
 
 数据缺失版（WOLF_DATA_ROOT=/nonexistent/path）同样 4 passed、exit 0。
+
+## 7. 后续实现状态（2026-11-01）
+
+据第 4 节「最小修复建议 #1」已在 src 落地（本轮把文档里“仅新增测试”的定位更新为已实现）：
+
+- `crates/wolf-game/src/choice.rs`：`layout_at_sized` 的越界分支由返回 `None` 改为回退到
+  **屏内居中面板** (`(SCREEN_W-width)/2, (SCREEN_H-height)/2`)；新增 `fn option_label`：
+  menu1→"开始游戏"、menu2→"读取存档"、menu3→"退出游戏"（依据 CE42 分支体注释
+  menu1=はじめから / menu2=つづきから / menu3=おわる），`size()` 与 `draw()` 都按显示标签测宽/绘制。
+  `game.choices.options` 原始键不变，脚本分支与测试仍用 menu1..3。
+- 测试更新：`tests/m3_title_visibility.rs` 用例改名 `title_menu_options_fall_back_to_a_visible_centred_panel`
+  （断言面板在屏内、3 行）；`tests/m3_title_mouse.rs` 用例改名 `title_prompt_falls_back_to_a_hittable_centred_panel`
+  （断言 anchor 仍 -1000、面板在屏内、三行中心 `choice_row_at` 命中）。§6 里列的旧用例名已过时。
+- §4 建议 #2（取消读档后重启标题）**仍未实现**，软锁依旧；`m3_title_mouse`
+  `cancel_closes_the_load_grid_but_does_not_reopen_the_title_menu` 仍断言“不恢复”，作为已知 gap 记录。
+- 实测：`capture --frames 900` 标题美术上现居中显示「▶ 开始游戏 / 读取存档 / 退出游戏」（见
+  work/out/title_menu_final.png）。原版精确位置/是否改用 menuN 图片按钮仍属 H-MENU-1 未验证。

@@ -202,7 +202,7 @@ fn run_frames(game: &mut Game, count: usize) {
 const EXPECTED_TITLE: [&str; 3] = ["menu1", "menu2", "menu3"];
 
 #[test]
-fn title_prompt_is_a_real_offscreen_placeholder() {
+fn title_prompt_falls_back_to_a_hittable_centred_panel() {
     let Some(game) = open_title() else {
         return;
     };
@@ -214,33 +214,39 @@ fn title_prompt_is_a_real_offscreen_placeholder() {
     assert_eq!(
         game.choice_anchor(),
         (-1000, -1000),
-        "CE42 hard-sets system vars 3/4 to -1000 to hide the sample menu box"
+        "CE42 hard-sets system vars 3/4 to -1000"
     );
+    // That off-screen anchor now falls back to a visible, centred panel instead of
+    // painting nothing, so the title menu the player needs is actually there.
     let choices = game.choices.as_ref().unwrap();
+    let panel = wolf_game::choice::layout_at_sized(
+        &choices.options,
+        game.choice_cursor(),
+        game.choice_anchor().0,
+        game.choice_anchor().1,
+        game.font_px(),
+    )
+    .expect("the parked anchor falls back to a centred on-screen panel");
     assert!(
-        wolf_game::choice::layout_at_sized(
-            &choices.options,
-            game.choice_cursor(),
-            game.choice_anchor().0,
-            game.choice_anchor().1,
-            game.font_px(),
-        )
-        .is_none(),
-        "an off-screen anchor has no on-screen layout"
+        panel.rect[0] >= 0.0
+            && panel.rect[1] >= 0.0
+            && panel.rect[0] + panel.rect[2] <= 1024.0
+            && panel.rect[1] + panel.rect[3] <= 576.0,
+        "the fallback panel is fully on screen: {:?}",
+        panel.rect
     );
-    // No screen point can hit a row of the real title prompt.
-    for y in (0..576).step_by(32) {
-        for x in (0..1024).step_by(32) {
-            assert_eq!(
-                game.choice_row_at(x, y),
-                None,
-                "no row is reachable at ({x},{y}) while the window is parked off screen"
-            );
-        }
+    // Every one of the three title rows is now mouse-hittable at its centre.
+    for (row, line) in panel.lines.iter().enumerate() {
+        let (x, y) = row_centre(line);
+        assert_eq!(
+            game.choice_row_at(x, y),
+            Some(row),
+            "row {row} of the visible title menu is hittable at ({x},{y})"
+        );
     }
     assert_eq!(
         game.stats.warnings, 0,
-        "the off-screen title prompt is warning-free"
+        "the visible title prompt is warning-free"
     );
 }
 

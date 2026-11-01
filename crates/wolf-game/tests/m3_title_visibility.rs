@@ -115,7 +115,7 @@ fn boot_to_title_choices() -> Option<(Game, Vec<String>, bool)> {
 const TITLE_OPTIONS: [&str; 3] = ["menu1", "menu2", "menu3"];
 
 #[test]
-fn title_menu_options_are_parked_off_screen() {
+fn title_menu_options_fall_back_to_a_visible_centred_panel() {
     let Some((game, options, saw_271)) = boot_to_title_choices() else {
         return;
     };
@@ -140,14 +140,22 @@ fn title_menu_options_are_parked_off_screen() {
     assert_eq!(game.sys(3), -1000, "Sys3 (choice window X)");
     assert_eq!(game.sys(4), -1000, "Sys4 (choice window Y)");
 
-    // At that anchor the panel is fully off screen, so the port paints no choice window.
+    // A fully off-screen anchor now falls back to the centred default position, so the
+    // title prompt is visible and clickable instead of silently painting nothing.
+    let panel = wolf_game::choice::layout_at_sized(&options, 0, -1000, -1000, 20.0)
+        .expect("an off-screen anchor must fall back to a visible panel, not None");
     assert!(
-        wolf_game::choice::layout_at_sized(&options, 0, -1000, -1000, 20.0).is_none(),
-        "a (-1000,-1000) anchor is off screen and must yield no panel"
+        panel.rect[0] >= 0.0
+            && panel.rect[1] >= 0.0
+            && panel.rect[0] + panel.rect[2] <= 1024.0
+            && panel.rect[1] + panel.rect[3] <= 576.0,
+        "the fallback panel is fully on screen: {:?}",
+        panel.rect
     );
-    assert!(
-        game.text_quads().is_empty(),
-        "a menu-less title paints no choice text"
+    assert_eq!(
+        panel.lines.len(),
+        3,
+        "the fallback panel still lists all three title options"
     );
 
     // The only picture up is the title art (slot -2); the menu is not baked into it.

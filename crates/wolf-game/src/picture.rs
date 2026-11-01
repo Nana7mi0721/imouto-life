@@ -1054,7 +1054,15 @@ impl Screen {
         }
         let block = number.div_euclid(100);
         let oversized = self.pictures.values().any(|other| {
+            // A widget the engine parks far off screen keeps an oversized window box
+            // (the message window parks at y = 3840 between lines), but it is not a
+            // tenths UI block: dividing its parked position by ten drags it back on
+            // screen as a stray dark panel. Only an on-screen anchor marks a tenths
+            // block, so skip anything parked outside the extended logical screen.
+            let parked =
+                other.x.abs() > SCREEN_W as i32 * 2 || other.y.abs() > SCREEN_H as i32 * 2;
             other.number.div_euclid(100) == block
+                && !parked
                 && other.kind.is_window()
                 && crate::sysgraphic::parse(&other.file).is_none()
                 && other

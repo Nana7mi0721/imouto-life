@@ -213,10 +213,18 @@ fn sleep_event_251_runs_the_morning_and_advances_the_clock() {
 
     assert!(game.start_event(251), "common event 251 starts");
 
-    // 消息会被后续剧情覆盖，所以边跑边抓第一条。
+    // 消息会被后续剧情覆盖，所以边跑边抓第一条。CE251 pc162 是一个
+    // `123 [var, 0x91]` 的「クリック処理」等待（wait 位），原版会停在那里等玩家
+    // 按键；测试在协程停在该等待上时喂一帧决定键，等价于玩家点击。
     let mut first_message: Option<String> = None;
     let mut last_len = game.messages.len();
     for _ in 0..400 {
+        let waiting = game
+            .vm
+            .instances()
+            .iter()
+            .any(|inst| inst.event == 251 && inst.wait == wolf_vm::WaitState::Key);
+        game.key_bits = if waiting { wolf_game::key::OK } else { 0 };
         game.frame();
         if game.messages.len() != last_len {
             if first_message.is_none() && !game.messages.is_empty() {
@@ -225,6 +233,8 @@ fn sleep_event_251_runs_the_morning_and_advances_the_clock() {
             last_len = game.messages.len();
         }
     }
+
+    game.key_bits = 0;
 
     let first = first_message.expect("the sleep event shows messages");
     assert!(

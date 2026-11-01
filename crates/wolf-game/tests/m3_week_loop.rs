@@ -98,6 +98,7 @@ fn choose(game: &mut Game, needle: &str) -> String {
 /// auto_advance 会及时消费消息，所以要逐帧抓取，不能等结束后再读 messages。
 fn collect(game: &mut Game, frames: usize, seen: &mut Vec<String>) {
     for _ in 0..frames {
+        tick(game);
         for message in &game.messages {
             if seen
                 .last()
@@ -107,7 +108,6 @@ fn collect(game: &mut Game, frames: usize, seen: &mut Vec<String>) {
                 seen.push(message.text.clone());
             }
         }
-        game.frame();
     }
 }
 
@@ -159,11 +159,25 @@ fn drive_daytime(game: &mut Game) -> Vec<Vec<String>> {
 /// 从傍晚调起就寝事件后，跑到翌朝日菜单弹出（出现 choices）为止。
 fn morning_wait(game: &mut Game) {
     for _ in 0..1500 {
-        game.frame();
+        tick(game);
         if game.choices.is_some() {
             break;
         }
     }
+}
+
+/// One frame, answering a `123` wait poll like a player tapping the decide key
+/// (CE251's night scene parks on a `0x91` click-to-continue poll).
+fn tick(game: &mut Game) {
+    let held = game.key_bits;
+    let waiting = game
+        .vm
+        .instances()
+        .iter()
+        .any(|inst| inst.wait == wolf_vm::WaitState::Key);
+    game.key_bits = held | if waiting { wolf_game::key::OK } else { 0 };
+    game.frame();
+    game.key_bits = held;
 }
 
 // ---------------------------------------------------------------------------

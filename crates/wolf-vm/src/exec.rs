@@ -97,6 +97,9 @@ pub enum WaitState {
     Choice { block: usize },
     /// `210`/`300`: until the child coroutine ends.
     Child(InstanceId),
+    /// `123` with the wait bit: until a key the poll accepts arrives. Cleared at the
+    /// start of the next frame so the same instruction runs again.
+    Key,
 }
 
 /// One open loop of a coroutine (docs/OPCODE_SPEC.md §4.6).
@@ -692,19 +695,19 @@ pub trait Host {
         None
     }
 
-    /// Key code a script reads for opcode 123, given the poll's key `mask`.
+    /// Key code a script reads for opcode 123, given the poll's decoded option word.
     ///
     /// The value is a CODE, not a bit pattern: 10 decide, 11 cancel, 12 sub, and the
     /// numpad direction codes (2 down, 4 left, 6 right, 8 up), 0 when nothing is
     /// held. The evidence is the developers' own debug comments next to the
     /// comparisons in this game (crates/wolf-game/src/key.rs lists them).
     ///
-    /// What the mask selects is still unknown, which is why it is handed to the host
-    /// instead of being applied here: one poll can yield six different codes.
-    /// Headless hosts return 0, which reads exactly like "nobody is touching the
-    /// keyboard".
-    fn key_code(&mut self, mask: u32) -> i32 {
-        let _ = mask;
+    /// `query` is the poll's request: which direction keys and action keys it accepts,
+    /// whether it blocks, and which input device it reads. `banned` holds the port's
+    /// key bits that opcode 126 switched off. Headless hosts return 0, which reads
+    /// exactly like "nobody is touching the keyboard".
+    fn key_code(&mut self, query: KeyQuery, banned: u32) -> i32 {
+        let _ = (query, banned);
         0
     }
 
@@ -714,9 +717,9 @@ pub trait Host {
     /// The interpreter passes its current `InputState::auto_keys` here on every
     /// 123 poll. A host that owns a real keyboard can OR the bits into its held-key
     /// state; the default ignores them, which keeps every headless host unchanged.
-    fn key_code_auto(&mut self, mask: u32, auto: u32) -> i32 {
+    fn key_code_auto(&mut self, query: KeyQuery, auto: u32, banned: u32) -> i32 {
         let _ = auto;
-        self.key_code(mask)
+        self.key_code(query, banned)
     }
 
     /// `106 DebugMessage`.
@@ -786,27 +789,80 @@ pub struct HotSpot {
     pub hits: u64,
 }
 
+/// The decoded option word of `123 InputKey` (a `キー入力` poll).
+///
+/// The command's second argument is not a key bitmask. It packs a one-byte option
+/// field and a one-byte device field, the same layout the independent
+/// `wolfrpg-map-parser` crate calls `BasicOptions` / `InputType`:
+///
+/// | bits | meaning |
+/// | --- | --- |
+/// | 0..3 | direction selector: 0 none, 1 four, 2 eight, 3 up, 4 down, 5 left, 6 right, 7 up+down, 8 left+right |
+/// | 0x10 | accept the decide key |
+/// | 0x20 | accept the cancel key |
+/// | 0x40 | accept the sub key |
+/// | 0x80 | wait for input (the poll blocks until an accepted key arrives) |
+/// | 8..11 | device: 0 basic, 1 keyboard, 2 pad, 3 mouse |
+///
+/// The game's own debug comments confirm the fields: event 118 polls `0xB0` under
+/// "決定かキャンセルか、だけ受付する" (only decide or cancel), event 84 polls `0xB8`
+/// (left+right only) and tests nothing but 4 and 6, and event 59 polls `0x10`/`0x20`/
+/// `0x40` as three separate single-key checks. See `crates/wolf-game/src/key.rs`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct KeyQuery {
+    /// Raw direction selector, 0..=8 (see the table above).
+    pub directions: u8,
+    /// Accept the decide key.
+    pub ok: bool,
+    /// Accept the cancel key.
+    pub cancel: bool,
+    /// Accept the sub key.
+    pub sub: bool,
+    /// The poll blocks until an accepted key arrives.
+    pub wait: bool,
+    /// Input device: 0 basic, 1 keyboard, 2 pad, 3 mouse.
+    pub device: u8,
+}
+
+impl KeyQuery {
+    /// Decode the raw second argument of a `123` command.
+    #[must_use]
+    pub fn decode(word: u32) -> Self {
+        let options = (word & 0xFF) as u8;
+        Self {
+            directions: options & 0x0F,
+            ok: options & 0x10 != 0,
+            cancel: options & 0x20 != 0,
+            sub: options & 0x40 != 0,
+            wait: options & 0x80 != 0,
+            device: ((word >> 8) & 0x0F) as u8,
+        }
+    }
+
+    /// True for a poll that names a device rather than the logical key set.
+    #[must_use]
+    pub const fn is_device_poll(self) -> bool {
+        self.device != 0
+    }
+}
+
 /// Input policy set by the two input-control opcodes.
 ///
-/// 125 (auto input) and 126 (ban input) both take a single int argument that is
-/// a key mask in the same bit space that 123 polls: this game passes 1, 2, 16,
-/// 32, 64, 128, 240, 247, 496, 752 - the OK/cancel/sub bits plus the four
-/// direction bits, sometimes all at once (247 = every key). The value persists
-/// until the script writes it again, so the two masks are state, not one-shot
-/// commands.
+/// 125 (automatic input) and 126 (input toggle) both carry a one-byte WOLF key
+/// layout in their first word — decide 1, cancel 2, sub 4, down 0x10, left 0x20,
+/// right 0x40, up 0x80 — and 126 additionally carries a mode in the second byte:
+/// 0 = enabled, 1 = no movement, 2 = disabled. The game uses the toggle around
+/// cutscenes (map event 0 opens with `126 [247]`, i.e. *enable* every key) and the
+/// automatic input to steer a cursor while the mouse hovers a menu row.
 ///
-/// Banning is applied by the interpreter itself: the banned bits are cleared out
-/// of the mask handed to the host, so a banned key reads as not pressed. Auto
-/// input is passed to the host on every 123 poll through `Host::key_code_auto`;
-/// a host that owns a real keyboard ORs it into the held-key state, while a
-/// headless host keeps its default "nobody is touching the keyboard". 126 appears
-/// in the opening script (it bans every key for the cutscene); 125 is polled by the
-/// UI cursor events in the real game.
+/// The values stay in WOLF's layout here; the host translates them into its own
+/// key bits. `ban_keys` is therefore not the command word: it is the set of inputs
+/// a mode-1/2 toggle switched off, and a mode-0 toggle removes them again.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct InputState {
     /// Key bits the script wants pressed even when the player is not pressing them.
     pub auto_keys: u32,
-    /// Key bits the script wants ignored while they are held.
+    /// Key bits a `126` toggle switched off.
     pub ban_keys: u32,
 }
 
@@ -1075,6 +1131,11 @@ impl Vm {
             let wait = self.instances[i].wait.clone();
             match wait {
                 WaitState::None | WaitState::Child(_) => {}
+                WaitState::Key => {
+                    // A key poll re-runs its own instruction next frame; there is no
+                    // sticky state to keep, the host answers again from live input.
+                    self.instances[i].wait = WaitState::None;
+                }
                 WaitState::Frames(n) => {
                     self.instances[i].wait = if n <= 1 {
                         WaitState::None
@@ -1540,8 +1601,13 @@ fn compound(kind: i32, current: i32, value: i32) -> i32 {
                 current % value
             }
         }
-        0x600 => value,
-        0x700 => value,
+        // 0x600/0x700 are the two clamps, not assignments. CE132's volume rows
+        // write `Sys100 = max(Sys100, 0)` then `Sys100 = min(Sys100, 120)`;
+        // treating them as plain assignment pinned the volume at 120 after a single
+        // key press (observed: 100 -> 120 instead of 95). Event 36 pairs the same
+        // two ops as `v3 = clamp(v3, 1, v82)`.
+        0x600 => current.max(value),
+        0x700 => current.min(value),
         0x800 => value.abs(),
         0x900 => {
             // Angle from slope, in tenths of a degree.
@@ -1813,18 +1879,24 @@ fn execute(
                 // against 10/11/12 and the numpad direction codes, which is why the
                 // old "key_bits & mask" model could never take a branch. A headless
                 // host reports 0, exactly like an untouched keyboard.
+                //
+                // The option word is decoded here so the host only sees the request:
+                // which keys count, whether the poll waits, and which device it reads.
                 let target = arg(cmd, 0);
-                // A key the script banned with 126 must read as not pressed; a key
-                // it asked for with 125 is handed to the host, which owns the keyboard.
-                let mask = arg(cmd, 1) as u32 & !input.ban_keys;
-                store_num(
-                    inst,
-                    vars,
-                    target,
-                    host.key_code_auto(mask, input.auto_keys),
-                );
-                inst.pc += 1;
-                None
+                let query = KeyQuery::decode(arg(cmd, 1) as u32);
+                let code = host.key_code_auto(query, input.auto_keys, input.ban_keys);
+                store_num(inst, vars, target, code);
+                // A wait poll (`入力を待つ`) blocks the coroutine until a key it accepts
+                // arrives. Event 249's pause overlay polls 0x91 and never reads the
+                // result: it exists purely to hold the scene until the player presses a
+                // key, which is how the shipped game paces that scene.
+                if query.wait && code == 0 {
+                    inst.wait = WaitState::Key;
+                    Some(Signal::Blocked)
+                } else {
+                    inst.pc += 1;
+                    None
+                }
             }
             124 => {
                 // 124 SetVariableEx (``変数操作（拡張）``; WolfTL Command.hpp:112) is a pure
@@ -1885,15 +1957,29 @@ fn execute(
                 None
             }
             125 => {
-                // Auto input: remember the mask. Only the host can force a press,
-                // because it owns the real keyboard.
-                input.auto_keys = arg(cmd, 0) as u32;
+                // Automatic input: the option byte names the keys the script wants held
+                // (WOLF layout: decide 1, cancel 2, sub 4, down 0x10, left 0x20,
+                // right 0x40, up 0x80). Only the host can force a press, because it
+                // owns the real keyboard.
+                input.auto_keys = arg(cmd, 0) as u32 & 0xFF;
                 inst.pc += 1;
                 None
             }
             126 => {
-                // Ban input: every later 123 poll has these bits cleared.
-                input.ban_keys = arg(cmd, 0) as u32;
+                // Input toggle, NOT a ban mask. Byte 0 names the keys (same layout as
+                // 125), byte 1 is the mode: 0 = all enabled, 1 = no movement,
+                // 2 = all disabled. The shipped scripts disable movement around a
+                // cutscene and re-enable it later with mode 0, so treating the whole
+                // word as a ban bitmask silenced every key for the rest of the game
+                // (map event 0 opens with `126 [247]`, which is *enable all*).
+                let word = arg(cmd, 0) as u32;
+                let inputs = word & 0xFF;
+                let mode = (word >> 8) & 0xFF;
+                if mode == 0 {
+                    input.ban_keys &= !inputs;
+                } else {
+                    input.ban_keys |= inputs;
+                }
                 inst.pc += 1;
                 None
             }
@@ -2736,7 +2822,7 @@ mod tests {
         // Every 290 effect the interpreter decoded: (type, duration, evaluated args).
         effects: Vec<(i32, i32, Vec<i32>)>,
         // Every 123 poll the host answered: (mask, auto-input bits).
-        key_polls: Vec<(u32, u32)>,
+        key_polls: Vec<(KeyQuery, u32, u32)>,
         // Every 151 ChangeColor: (packed colour, frames).
         colours: Vec<(i32, i32)>,
     }
@@ -2798,8 +2884,8 @@ mod tests {
         fn effect(&mut self, kind: i32, duration: i32, args: &[i32]) {
             self.effects.push((kind, duration, args.to_vec()));
         }
-        fn key_code_auto(&mut self, mask: u32, auto: u32) -> i32 {
-            self.key_polls.push((mask, auto));
+        fn key_code_auto(&mut self, query: KeyQuery, auto: u32, banned: u32) -> i32 {
+            self.key_polls.push((query, auto, banned));
             0
         }
         fn close_message(&mut self) {
@@ -2808,24 +2894,90 @@ mod tests {
     }
 
     #[test]
-    fn auto_input_reaches_the_host_with_the_poll_mask() {
+    fn auto_input_reaches_the_host_with_the_poll_request() {
         // 125 remembers the key bits the script wants pressed; the next 123 must
-        // carry them to the host, not just leave them in the interpreter.
+        // carry them to the host, not just leave them in the interpreter. The mask
+        // is 0x77 (no wait bit) so both polls run in one frame.
         let ev = event(
             5,
             "auto input",
             vec![
                 cmd(125, &[16], &[]),
-                cmd(123, &[2_000_000, 247], &[]),
+                cmd(123, &[2_000_000, 0x77], &[]),
                 cmd(125, &[0], &[]),
-                cmd(123, &[2_000_001, 247], &[]),
+                cmd(123, &[2_000_001, 0x77], &[]),
             ],
         );
         let mut vm = vm_with(vec![ev]);
         vm.start_event(5).unwrap();
         let mut host = Recorder::default();
         vm.step_frame(&mut host);
-        assert_eq!(host.key_polls, vec![(247, 16), (247, 0)]);
+        let query = KeyQuery {
+            directions: 7,
+            ok: true,
+            cancel: true,
+            sub: true,
+            wait: false,
+            device: 0,
+        };
+        assert_eq!(host.key_polls, vec![(query, 16, 0), (query, 0, 0)]);
+    }
+
+    #[test]
+    fn the_input_toggle_switches_keys_off_and_back_on() {
+        // 126 is a toggle, not a ban mask: byte 0 names the keys, byte 1 the mode
+        // (0 enabled, 1 no movement, 2 disabled). The shipped opening command
+        // `126 [247]` is *enable everything*, not "ban everything".
+        let ev = event(
+            7,
+            "toggle",
+            vec![
+                cmd(126, &[0x1F0], &[]), // directions: disabled
+                cmd(123, &[2_000_000, 0x11], &[]),
+                cmd(126, &[0xF0], &[]), // directions: enabled again
+                cmd(123, &[2_000_001, 0x11], &[]),
+            ],
+        );
+        let mut vm = vm_with(vec![ev]);
+        vm.start_event(7).unwrap();
+        let mut host = Recorder::default();
+        vm.step_frame(&mut host);
+        let query = KeyQuery::decode(0x11);
+        assert_eq!(
+            host.key_polls,
+            vec![(query, 0, 0xF0), (query, 0, 0)],
+            "mode 1 disables the named keys, mode 0 enables them again"
+        );
+    }
+
+    #[test]
+    fn a_wait_poll_holds_the_coroutine_until_a_key_arrives() {
+        // The wait bit (0x80) makes 123 block. Event 249 uses it for a pause overlay:
+        // the poll's value is never read, the command exists only to stop the scene.
+        let ev = event(
+            6,
+            "wait poll",
+            vec![
+                cmd(123, &[2_000_000, 0x91], &[]),
+                cmd(121, &[2_000_001, 1, 0, 0], &[]),
+            ],
+        );
+        let mut vm = vm_with(vec![ev]);
+        let id = vm.start_event(6).unwrap();
+        let mut host = Recorder::default();
+        vm.step_frame(&mut host);
+        assert_eq!(host.key_polls.len(), 1, "the poll ran once");
+        assert_eq!(
+            vm.vars.get(1),
+            0,
+            "the instruction after the wait must not run"
+        );
+        assert_eq!(vm.instance(id).unwrap().wait, WaitState::Key);
+
+        // Next frame the poll runs again; the recorder still answers 0, so it stays.
+        vm.step_frame(&mut host);
+        assert_eq!(host.key_polls.len(), 2);
+        assert_eq!(vm.vars.get(1), 0);
     }
 
     #[test]

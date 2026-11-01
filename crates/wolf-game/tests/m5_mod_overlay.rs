@@ -83,11 +83,7 @@ fn a_mod_can_patch_text_and_the_explicit_catalog_merges_last() {
         "name=text-mod\nversion=0.1\nrequires=base\n",
     )
     .expect("manifest");
-    std::fs::write(
-        overlay.join("translations.tsv"),
-        "开始交流 \tMod chat\n",
-    )
-    .expect("mod catalog");
+    std::fs::write(overlay.join("translations.tsv"), "开始交流 \tMod chat\n").expect("mod catalog");
 
     let mut game = Game::with_overlays(&root, vec![overlay.clone()]).expect("layered game");
     assert_eq!(game.translation_len(), 1);

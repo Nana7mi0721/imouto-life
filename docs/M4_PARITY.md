@@ -87,7 +87,11 @@ wolf-cli capture --load-save work/Data/Save/SaveData01.sav --event 245 --frames 
 - **地图 ActionKey 点击层已完成**：SampleMapA 的 44 个 trigger-0 页（保存/道具/状态/
   日中菜单/就寝/结束/姿势/统计/相册/妹妹位置）现在由 `MapRuntime::action_key_at` +
   Game 左键/悬停 OK 路由激活；ev5 保存、ev10 状态、ev21「終了仮」夜间退出均已端到端
-  （m3_map_click 7 条）。PlayerTouch 在定屏地图上仍不建模。
+  （m3_map_click 7 条）。PlayerTouch 在定屏地图上仍不建模：M6 用数据确认本作
+  注册的 5 张地图（TitleMap/SampleMapA/Map003/Map024/Map031）**没有任何 trigger-3 页**，
+  只有未注册的编辑器样例 Dungeon/SampleMapB 各 2 页；`m6_input_parity` 锁定该结论。
+  命中框按 WOLF 的 tile + range extension（左上锚定）判定，与画面按钮的偏差来自
+  数据摆放本身（结束按钮图元 (935,505) 90×70，命中框 (976,544) 起），不是端口偏差。
 - **字体**：`find_font` 优先本作 `07やさしさゴシックボールド.ttf` 并支持任意
   *.ttf/*.otf/*.ttc；但该日语字体缺少简体专有字形（废/欢/烦/请/栏/为/动/时/读/该）。
   Game.dat 指定的是系统 `Microsoft Yahei UI Bold`，M4 应优先加载

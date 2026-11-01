@@ -234,6 +234,14 @@ fn event_sound_commands_resolve_and_render() {
         assert!(game.start_event(id), "common event {id} starts");
         let mut plays = Vec::new();
         for _ in 0..300 {
+            // CE251 parks on a `123 [var, 0x91]` click-to-continue poll; feed the
+            // decide key on those frames so the scene reaches its later sound cues.
+            let waiting = game
+                .vm
+                .instances()
+                .iter()
+                .any(|inst| inst.wait == wolf_vm::WaitState::Key);
+            game.key_bits = if waiting { wolf_game::key::OK } else { 0 };
             game.frame();
             for cmd in &game.sounds {
                 if cmd.action != SoundAction::Play {

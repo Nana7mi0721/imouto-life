@@ -138,11 +138,21 @@ fn has_option(options: &[String], needle: &str) -> bool {
 /// 跑若干帧，等到一个新菜单弹出为止（auto_advance 会消费消息，靠逐帧推进时序）。
 fn wait_for_menu(game: &mut Game, frames: usize) {
     for _ in 0..frames {
+        // CE251's night scene parks on a `123 [var, 0x91]` click-to-continue poll;
+        // answer it like a player tapping the decide key.
+        let waiting = game
+            .vm
+            .instances()
+            .iter()
+            .any(|inst| inst.wait == wolf_vm::WaitState::Key);
+        game.key_bits = if waiting { wolf_game::key::OK } else { 0 };
         game.frame();
         if game.choices.is_some() {
+            game.key_bits = 0;
             break;
         }
     }
+    game.key_bits = 0;
 }
 
 /// 工作日白天：从 08:30 日菜单反复「无所事事地度过」+「是」，16:00 出现归宅菜单后

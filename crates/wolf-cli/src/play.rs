@@ -226,6 +226,7 @@ pub fn run(
         sprites: Vec::new(),
         texts: Vec::new(),
         held: HashSet::new(),
+        raw_held: Vec::new(),
         mouse: [-1, -1],
         mouse_buttons: 0,
         window: None,
@@ -282,6 +283,12 @@ struct App {
     sprites: Vec<SpriteInstance>,
     texts: Vec<TextQuad>,
     held: HashSet<u32>,
+    /// WOLF keyboard key codes held right now, in press order (scancode + 100).
+    ///
+    /// The key-config screen (CE132) polls a raw keyboard key and stores it in
+    /// Sys52..54, and the decide/cancel/sub bindings are those codes, so the app
+    /// has to keep the physical keys as codes as well as as logical bits.
+    raw_held: Vec<i32>,
     /// Mouse position in game pixels, or (-1, -1) while the cursor is outside the window.
     mouse: [i32; 2],
     /// WOLF mouse button bits: 1 left, 2 right, 4 middle.
@@ -409,12 +416,32 @@ fn stats_lines(
 
 impl App {
     fn bits(&self) -> u32 {
-        self.held.iter().copied().fold(0, |acc, bit| acc | bit)
+        let mut bits = self.held.iter().copied().fold(0, |acc, bit| acc | bit);
+        // CE132 edits the three keyboard bindings live in Sys52..54; the shipped
+        // System.sav holds Z/X/C (144/145/146). Enter and Backspace stay as the
+        // manual's fixed aliases (manual01: 決定 Enter・Z・left click,
+        // キャンセル backspace・X・right click).
+        let config = self.game.live_settings().key_config;
+        for code in &self.raw_held {
+            let code = *code as u32;
+            if code == config[0] || code == WOLF_ENTER {
+                bits |= key::OK;
+            }
+            if code == config[2] || code == WOLF_BACKSPACE {
+                bits |= key::CANCEL;
+            }
+            if code == config[4] {
+                bits |= key::SUB;
+            }
+        }
+        bits
     }
 
     /// Advances one frame: latch input, run the script, rebuild the draw list.
     fn step(&mut self) {
         self.game.key_bits = self.bits();
+        self.game.raw_keys.clear();
+        self.game.raw_keys.extend_from_slice(&self.raw_held);
         self.game.mouse = self.mouse;
         self.game.mouse_buttons = self.mouse_buttons;
         let outcome = self.game.frame();
@@ -462,6 +489,7 @@ impl App {
         // packed images stay valid. Only the transient state belongs to the old session.
         self.game = game;
         self.held.clear();
+        self.raw_held.clear();
         self.mouse_buttons = 0;
         self.backlog = false;
         self.backlog_scroll = 0;
@@ -756,7 +784,8 @@ impl ApplicationHandler for App {
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::KeyboardInput { event, .. } => {
-                let bit = wolf_bit(&event.logical_key);
+                let bit = fixed_bit(event.physical_key);
+                let raw = raw_key_code(event.physical_key);
                 if event.state == ElementState::Pressed {
                     if matches!(event.logical_key, Key::Named(NamedKey::F10)) {
                         event_loop.exit();
@@ -821,6 +850,7 @@ impl ApplicationHandler for App {
                             // A modal page must not leak held keys/buttons into the
                             // script that keeps running underneath it.
                             self.held.clear();
+                            self.raw_held.clear();
                             self.mouse_buttons = 0;
                             println!("backlog: overlay {}", self.backlog);
                         }
@@ -855,8 +885,18 @@ impl ApplicationHandler for App {
                     if let Some(bit) = bit {
                         self.held.insert(bit);
                     }
-                } else if let Some(bit) = bit {
-                    self.held.remove(&bit);
+                    if let Some(code) = raw {
+                        if !self.raw_held.contains(&code) {
+                            self.raw_held.push(code);
+                        }
+                    }
+                } else {
+                    if let Some(bit) = bit {
+                        self.held.remove(&bit);
+                    }
+                    if let Some(code) = raw {
+                        self.raw_held.retain(|held| *held != code);
+                    }
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
@@ -964,23 +1004,142 @@ fn is_restart_key(key: &Key) -> bool {
     matches!(key, Key::Named(NamedKey::F12))
 }
 
-fn wolf_bit(key: &Key) -> Option<u32> {
-    match key {
-        Key::Named(NamedKey::ArrowUp) => Some(key::UP),
-        Key::Named(NamedKey::ArrowDown) => Some(key::DOWN),
-        Key::Named(NamedKey::ArrowLeft) => Some(key::LEFT),
-        Key::Named(NamedKey::ArrowRight) => Some(key::RIGHT),
-        Key::Named(NamedKey::Enter | NamedKey::Space) => Some(key::OK),
-        Key::Named(NamedKey::Escape | NamedKey::Backspace) => Some(key::CANCEL),
-        Key::Named(NamedKey::Shift | NamedKey::Tab) => Some(key::SUB),
-        Key::Character(text) => match text.to_lowercase().as_str() {
-            "z" | "y" => Some(key::OK),
-            "x" => Some(key::CANCEL),
-            "c" => Some(key::SUB),
-            _ => None,
-        },
+/// Keys that always carry a logical meaning, independent of the player's config.
+///
+/// manual01 lists 決定 = Enter / Z / left click and キャンセル = backspace / X /
+/// right click, so Enter and Backspace stay fixed while Z and X come from the
+/// configurable Sys52..54 (shipped defaults 144/145/146). The arrow keys are not
+/// configurable in this game; Escape is a port alias for Backspace.
+fn fixed_bit(code: winit::keyboard::PhysicalKey) -> Option<u32> {
+    use winit::keyboard::KeyCode as K;
+    let winit::keyboard::PhysicalKey::Code(code) = code else {
+        return None;
+    };
+    match code {
+        K::ArrowUp => Some(key::UP),
+        K::ArrowDown => Some(key::DOWN),
+        K::ArrowLeft => Some(key::LEFT),
+        K::ArrowRight => Some(key::RIGHT),
+        K::Enter => Some(key::OK),
+        K::Backspace | K::Escape => Some(key::CANCEL),
         _ => None,
     }
+}
+
+/// WOLF key codes for the fixed aliases above (scancode + 100).
+const WOLF_ENTER: u32 = 128;
+const WOLF_BACKSPACE: u32 = 114;
+
+/// The WOLF key code of a physical key, in DirectInput scancode + 100 encoding.
+///
+/// Only the keys a player can actually bind need an entry; the game's own defaults
+/// (Z = 144, X = 145, C = 146) pin the encoding. `None` means "this key has no code
+/// we can express", and the key-config screen simply will not capture it.
+fn raw_key_code(code: winit::keyboard::PhysicalKey) -> Option<i32> {
+    use winit::keyboard::KeyCode as K;
+    let winit::keyboard::PhysicalKey::Code(code) = code else {
+        return None;
+    };
+    let scancode: u8 = match code {
+        K::Escape => 0x01,
+        K::Digit1 => 0x02,
+        K::Digit2 => 0x03,
+        K::Digit3 => 0x04,
+        K::Digit4 => 0x05,
+        K::Digit5 => 0x06,
+        K::Digit6 => 0x07,
+        K::Digit7 => 0x08,
+        K::Digit8 => 0x09,
+        K::Digit9 => 0x0A,
+        K::Digit0 => 0x0B,
+        K::Minus => 0x0C,
+        K::Equal => 0x0D,
+        K::Backspace => 0x0E,
+        K::Tab => 0x0F,
+        K::KeyQ => 0x10,
+        K::KeyW => 0x11,
+        K::KeyE => 0x12,
+        K::KeyR => 0x13,
+        K::KeyT => 0x14,
+        K::KeyY => 0x15,
+        K::KeyU => 0x16,
+        K::KeyI => 0x17,
+        K::KeyO => 0x18,
+        K::KeyP => 0x19,
+        K::BracketLeft => 0x1A,
+        K::BracketRight => 0x1B,
+        K::Enter => 0x1C,
+        K::ControlLeft => 0x1D,
+        K::KeyA => 0x1E,
+        K::KeyS => 0x1F,
+        K::KeyD => 0x20,
+        K::KeyF => 0x21,
+        K::KeyG => 0x22,
+        K::KeyH => 0x23,
+        K::KeyJ => 0x24,
+        K::KeyK => 0x25,
+        K::KeyL => 0x26,
+        K::Semicolon => 0x27,
+        K::Quote => 0x28,
+        K::Backquote => 0x29,
+        K::ShiftLeft => 0x2A,
+        K::Backslash => 0x2B,
+        K::KeyZ => 0x2C,
+        K::KeyX => 0x2D,
+        K::KeyC => 0x2E,
+        K::KeyV => 0x2F,
+        K::KeyB => 0x30,
+        K::KeyN => 0x31,
+        K::KeyM => 0x32,
+        K::Comma => 0x33,
+        K::Period => 0x34,
+        K::Slash => 0x35,
+        K::ShiftRight => 0x36,
+        K::NumpadMultiply => 0x37,
+        K::AltLeft => 0x38,
+        K::Space => 0x39,
+        K::CapsLock => 0x3A,
+        K::F1 => 0x3B,
+        K::F2 => 0x3C,
+        K::F3 => 0x3D,
+        K::F4 => 0x3E,
+        K::F5 => 0x3F,
+        K::F6 => 0x40,
+        K::F7 => 0x41,
+        K::F8 => 0x42,
+        K::F9 => 0x43,
+        K::F10 => 0x44,
+        K::NumLock => 0x45,
+        K::ScrollLock => 0x46,
+        K::Numpad7 => 0x47,
+        K::Numpad8 => 0x48,
+        K::Numpad9 => 0x49,
+        K::NumpadSubtract => 0x4A,
+        K::Numpad4 => 0x4B,
+        K::Numpad5 => 0x4C,
+        K::Numpad6 => 0x4D,
+        K::NumpadAdd => 0x4E,
+        K::Numpad1 => 0x4F,
+        K::Numpad2 => 0x50,
+        K::Numpad3 => 0x51,
+        K::Numpad0 => 0x52,
+        K::NumpadDecimal => 0x53,
+        K::F11 => 0x57,
+        K::F12 => 0x58,
+        // Extended (E0-prefixed) keys use the same make code in set 1.
+        K::ArrowUp => 0x48,
+        K::ArrowDown => 0x50,
+        K::ArrowLeft => 0x4B,
+        K::ArrowRight => 0x4D,
+        K::Insert => 0x52,
+        K::Delete => 0x53,
+        K::Home => 0x47,
+        K::End => 0x4F,
+        K::PageUp => 0x49,
+        K::PageDown => 0x51,
+        _ => return None,
+    };
+    Some(key::keyboard_code(scancode))
 }
 
 #[cfg(test)]

@@ -56,7 +56,11 @@ fn the_scanner_sees_every_script_string_and_writes_a_valid_template() {
         .find(|text| text.context == TextContext::Choice && text.text == "开始交流 ")
         .expect("the night menu's first choice is a scanned literal");
     assert!(chat.is_static());
-    assert!(chat.static_events.contains(&245), "{:?}", chat.static_events);
+    assert!(
+        chat.static_events.contains(&245),
+        "{:?}",
+        chat.static_events
+    );
 
     let template = scan.template();
     assert!(template.contains("# wolf-cli translations template\n"));
@@ -72,15 +76,15 @@ fn the_scanner_sees_every_script_string_and_writes_a_valid_template() {
         rows += 1;
     }
     assert_eq!(rows + skipped_rows(&template), scan.static_count());
-    assert!(Translator::parse(&template).expect("template is a valid catalog").is_empty());
+    assert!(Translator::parse(&template)
+        .expect("template is a valid catalog")
+        .is_empty());
 }
 
 fn skipped_rows(template: &str) -> usize {
     template
         .lines()
-        .find(|line| {
-            line.starts_with("# ") && line.contains("contain a literal TAB/CR/LF")
-        })
+        .find(|line| line.starts_with("# ") && line.contains("contain a literal TAB/CR/LF"))
         .and_then(|line| line.split_whitespace().nth(1))
         .and_then(|count| count.parse().ok())
         .unwrap_or(0)

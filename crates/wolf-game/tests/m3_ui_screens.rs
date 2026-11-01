@@ -109,6 +109,8 @@ fn open_loaded_bedroom() -> Option<Game> {
         return None;
     }
     for _ in 0..1600 {
+        // Boot runs the title menu with auto_choice; no key feed here, or the
+        // harness would answer the menu's own polls before the cursor settles.
         game.frame();
     }
     let has_action = game
@@ -145,6 +147,21 @@ struct Shot {
     frames: u32,
 }
 
+/// One frame, answering a `123` wait poll the way a player tapping the decide key
+/// would: several screens (staff roll, credits, album) park on a click-to-continue
+/// poll whose whole purpose is to hold the scene.
+fn tick(game: &mut Game) {
+    let held = game.key_bits;
+    let waiting = game
+        .vm
+        .instances()
+        .iter()
+        .any(|inst| inst.wait == wolf_vm::WaitState::Key);
+    game.key_bits = held | if waiting { wolf_game::key::OK } else { 0 };
+    game.frame();
+    game.key_bits = held;
+}
+
 /// Clears the screen, starts one common event, and runs it for a fixed number of frames.
 fn run_event(game: &mut Game, id: u32, frames: u32) -> Shot {
     game.screen.clear();
@@ -152,7 +169,7 @@ fn run_event(game: &mut Game, id: u32, frames: u32) -> Shot {
     assert!(game.start_event(id), "event {id} did not start");
     let mut shot = Shot::default();
     for _ in 0..frames {
-        game.frame();
+        tick(&mut *game);
         for msg in &game.messages {
             let text = visible(&msg.text);
             if !shot.messages.contains(&text) {
@@ -194,7 +211,7 @@ fn run_until_end(game: &mut Game, id: u32, cap: u32) -> Roll {
     assert!(game.start_event(id), "event {id} did not start");
     let mut roll = Roll::default();
     for _ in 0..cap {
-        game.frame();
+        tick(&mut *game);
         roll.frames += 1;
         if game
             .screen
@@ -216,26 +233,26 @@ fn run_until_end(game: &mut Game, id: u32, cap: u32) -> Roll {
 fn press(game: &mut Game, bits: u32) {
     game.key_bits = bits;
     for _ in 0..24 {
-        game.frame();
+        tick(&mut *game);
     }
     game.key_bits = 0;
     for _ in 0..6 {
-        game.frame();
+        tick(&mut *game);
     }
 }
 
 fn click_at(game: &mut Game, x: i32, y: i32) {
     game.mouse = [x, y];
     for _ in 0..10 {
-        game.frame();
+        tick(&mut *game);
     }
     game.mouse_buttons = 1;
     for _ in 0..5 {
-        game.frame();
+        tick(&mut *game);
     }
     game.mouse_buttons = 0;
     for _ in 0..5 {
-        game.frame();
+        tick(&mut *game);
     }
 }
 
@@ -336,7 +353,7 @@ fn ce241_blink_keeps_layers() {
 
     assert!(game.start_event(241), "event 241 did not start");
     for _ in 0..400 {
-        game.frame();
+        tick(&mut game);
     }
     let after: BTreeMap<i32, String> = game
         .screen
@@ -501,7 +518,7 @@ fn ce301_album_draw_is_context_only() {
     game.messages.clear();
     let _started = game.start_event(301);
     for _ in 0..30 {
-        game.frame();
+        tick(&mut game);
     }
     let painted = game.screen.iter().filter(|p| p.number > 0).count();
     assert_eq!(
@@ -526,7 +543,7 @@ fn ce303_album_screen() {
     game.messages.clear();
     assert!(game.start_event(303), "event 303 did not start");
     for _ in 0..30 {
-        game.frame();
+        tick(&mut game);
     }
     assert!(running(&game, 303), "CE303 album screen stays open");
 
@@ -584,7 +601,15 @@ fn ce303_album_screen() {
         }
     }
 
-    press(&mut game, wolf_game::key::CANCEL);
+    // Clicking a thumbnail opens the picture detail as a child coroutine, so the
+    // first cancel closes that view and the second closes the album (CE303 polls
+    // cancel at pc885 only after the child returns). Press until it is gone.
+    for _ in 0..3 {
+        if !running(&game, 303) {
+            break;
+        }
+        press(&mut game, wolf_game::key::CANCEL);
+    }
     assert!(!running(&game, 303), "CE303 closes on cancel");
     let album_left: Vec<i32> = game
         .screen

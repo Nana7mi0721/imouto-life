@@ -133,11 +133,20 @@ fn drive_daytime(game: &mut Game) -> Vec<Vec<String>> {
 
 fn morning_wait(game: &mut Game) {
     for _ in 0..1500 {
+        // CE251's night scene parks on a `123 [var, 0x91]` click-to-continue poll.
+        let waiting = game
+            .vm
+            .instances()
+            .iter()
+            .any(|inst| inst.wait == wolf_vm::WaitState::Key);
+        game.key_bits = if waiting { key::OK } else { 0 };
         game.frame();
         if game.choices.is_some() {
+            game.key_bits = 0;
             break;
         }
     }
+    game.key_bits = 0;
 }
 
 /// 打开 CE245 夜菜单，断言六项含就寝项，然后用 CANCEL 关闭，回到无菜单的事件态。

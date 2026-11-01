@@ -29,6 +29,7 @@
 | [M4_PERF.md](M4_PERF.md) | 已完成/基线 | M4 headless 性能基线与优化候选（tile quad 缓存已落地） |
 | [M4_V8_AUDIT.md](M4_V8_AUDIT.md) | 已完成 | 普通变量 v8 语义专项：夜间可活动上限 23..26，不是行动力 |
 | [M5_BEYOND.md](M5_BEYOND.md) | 已完成 | M5 超越原版：A–F 第一切片，D2 翻译工具/上下文键，E2 mod 清单/依赖/文本级补丁 |
+| [M6_INPUT.md](M6_INPUT.md) | 已完成 | M6 输入层对等：`123` 选项字解码/掩码过滤/等待位阻塞、原始键码与改键闭环、`125`/`126` 编码修正、`121` 0x600/0x700 min-max |
 | [PACKAGING.md](PACKAGING.md) | 已完成 | 发布打包：`work/out/dist/<version>/` 的 exe、README、启动器、校验和 |
 
 ## 4. M3 专题审计（按主题）

@@ -123,6 +123,21 @@ fn press(game: &mut Game, bits: u32) {
     }
 }
 
+/// One deliberate press: hold for three frames (one row step) then release.
+///
+/// Holding for longer would keep stepping: CE132's `キー設定` rows trap a held
+/// direction in their capture loop, because that row exists to bind a new key.
+fn tap(game: &mut Game, bits: u32) {
+    game.key_bits = bits;
+    for _ in 0..3 {
+        game.frame();
+    }
+    game.key_bits = 0;
+    for _ in 0..6 {
+        game.frame();
+    }
+}
+
 /// Name + size of every file in work/Data/Save, to prove a menu test never wrote one.
 fn save_dir_fingerprint() -> Vec<(String, u64)> {
     let dir = data_root().join("Save");
@@ -256,12 +271,12 @@ fn ce132_system_settings_draws_navigates_and_cancels() {
     // Moving the highlight down swaps the help line under the list.
     let help0 = text_of(&game, 12004);
     assert!(!help0.is_empty(), "CE132 help line should be populated");
-    press(&mut game, wolf_game::key::DOWN);
+    tap(&mut game, wolf_game::key::DOWN);
     assert!(running(&game, 132), "CE132 still open after pressing down");
     let help1 = text_of(&game, 12004);
     assert_ne!(
         help1, help0,
-        "CE132 help line should change when the cursor moves"
+        "CE132 help line should change when the cursor moves ({help0:?} -> {help1:?})"
     );
     assert_eq!(game.stats.warnings, 0, "CE132 warnings after navigating");
 

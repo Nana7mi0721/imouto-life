@@ -188,11 +188,21 @@ fn choose(game: &mut Game, needle: &str) -> String {
 
 fn wait_choices(game: &mut Game, frames: usize) -> bool {
     for _ in 0..frames {
+        // Scenes with a `123 [var, 0x91]` click-to-continue poll park until a key
+        // arrives; answer them the way a player tapping the decide key would.
+        let waiting = game
+            .vm
+            .instances()
+            .iter()
+            .any(|inst| inst.wait == wolf_vm::WaitState::Key);
+        game.key_bits = if waiting { wolf_game::key::OK } else { 0 };
         game.frame();
         if game.choices.is_some() {
+            game.key_bits = 0;
             return true;
         }
     }
+    game.key_bits = 0;
     game.choices.is_some()
 }
 

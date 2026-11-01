@@ -68,7 +68,7 @@ fn drive_daytime(game: &mut Game) {
     for _ in 0..60 {
         if game.choices.is_none() {
             for _ in 0..500 {
-                game.frame();
+                tick(game);
                 if game.choices.is_some() {
                     break;
                 }
@@ -124,10 +124,24 @@ fn drive_daytime(game: &mut Game) {
     }
 }
 
+/// One frame, answering a `123` wait poll like a player tapping the decide key
+/// (the bedtime scene parks on a `0x91` click-to-continue poll).
+fn tick(game: &mut Game) {
+    let held = game.key_bits;
+    let waiting = game
+        .vm
+        .instances()
+        .iter()
+        .any(|inst| inst.wait == wolf_vm::WaitState::Key);
+    game.key_bits = held | if waiting { wolf_game::key::OK } else { 0 };
+    game.frame();
+    game.key_bits = held;
+}
+
 /// 逐帧推进到下一次弹出选项，同时收集途中出现过的消息文本与选项。
 fn wait_for_choice(game: &mut Game, messages: &mut Vec<String>, choices: &mut Vec<String>) {
     for _ in 0..3000 {
-        game.frame();
+        tick(&mut *game);
         for message in &game.messages {
             let text = message.text.clone();
             if !text.is_empty() && !messages.contains(&text) {
@@ -235,7 +249,7 @@ fn hundred_day_chain_reaches_the_happy_end_choice() {
     // 选择「我知道」后，CE258 继续播放 100 日剧情、写 v201 并给出 HAPPYEND。
     choose(&mut game, "我知道");
     for _ in 0..4000 {
-        game.frame();
+        tick(&mut game);
         for message in &game.messages {
             let text = message.text.clone();
             if !text.is_empty() && !messages.contains(&text) {

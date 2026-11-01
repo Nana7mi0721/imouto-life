@@ -544,7 +544,9 @@ fn print_help() {
     println!("                                   [--scale integer|fit-nearest|fit-linear] [--fullscreen]");
     println!("                                   [--debug] [--debug-var <ADDR,...>] [--stats]");
     println!("    wolf-cli [--root <DIR>] list [--filter <TEXT>]");
-    println!("    wolf-cli [--root <DIR>] translations [--template <FILE>] [--check <FILE>] [--strict]");
+    println!(
+        "    wolf-cli [--root <DIR>] translations [--template <FILE>] [--check <FILE>] [--strict]"
+    );
     println!();
     println!("COMMANDS:");
     println!(
@@ -602,7 +604,9 @@ fn print_help() {
     println!("                      dirs win). Only files a mod ships replace the base data.");
     println!("                      An optional <DIR>/mod.ini declares name/version/requires.");
     println!("    --template <FILE> Write the 'translations' fill-in TSV catalog to FILE.");
-    println!("    --check <FILE>    Check a catalog's coverage against the script's static strings.");
+    println!(
+        "    --check <FILE>    Check a catalog's coverage against the script's static strings."
+    );
     println!("    --strict          With --check, exit 1 when any static string is untranslated.");
     println!("    --hold-message    Park on the first 101 message instead of dismissing it.");
     println!("    --audio           Play BGM/SE through the real mixer (silent null backend if no device).");

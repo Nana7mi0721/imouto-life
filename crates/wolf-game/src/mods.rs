@@ -341,7 +341,10 @@ mod tests {
         let error = ModManifest::parse(Path::new("mods/example"), "name=x\ncolour=blue\n")
             .expect_err("unknown key");
         let text = error.to_string();
-        assert!(text.contains("mod.ini line 2: unknown key 'colour'"), "{text}");
+        assert!(
+            text.contains("mod.ini line 2: unknown key 'colour'"),
+            "{text}"
+        );
     }
 
     #[test]

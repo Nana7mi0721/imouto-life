@@ -24,12 +24,29 @@
 //! pattern. Codes 20, 13, 14, 100 and 300 also occur in comparisons and are still
 //! unnamed (H-KEY-2 stays open in docs/UNVERIFIED.md).
 //!
-//! What the mask argument of `123` selects is NOT understood yet: one poll can
-//! return any of six codes (event 108, mask 177 -> 10/11/2 in the first branch and
-//! 8/4/6 in the else branch), which rules out "one bit per key". The port takes the
-//! mask but answers with the code of whatever is held, which is forward compatible
-//! with every comparison the game performs: `!= 0` still means "any key", `== 10`
-//! still means decide.
+//! What the mask argument of `123` selects is now decoded. The second argument is
+//! not a bitmask: it packs a one-byte option field and a one-byte device field
+//! (`wolfrpg-map-parser`'s `BasicOptions` / `InputType`), and the game's own debug
+//! comments confirm every field:
+//!
+//! * `0xB0` (bit 7 wait + 0x20 cancel + 0x10 decide) is polled under event 118's
+//!   "決定かキャンセルか、だけ受付する" (accept only decide or cancel).
+//! * `0xB8` (wait + cancel + decide + direction 8 = left/right) is polled by event
+//!   84, which tests nothing but 4 (left) and 6 (right).
+//! * `0xB7` is the same with direction 7 (up/down).
+//! * `0xF1` adds the sub key, and event 65 polls it under "サブキーを押したら終了する場合".
+//! * event 59 polls `0x10`, `0x20` and `0x40` as three separate single-key checks.
+//!
+//! The direction nibble is 0 none / 1 four / 2 eight / 3 up / 4 down / 5 left /
+//! 6 right / 7 up+down / 8 left+right. Bits 8..11 name the device: 0 the logical
+//! key set, 1 keyboard, 2 pad, 3 mouse. A device poll returns that device's raw key
+//! code instead: the key-config screen (CE132) polls `0x101` (keyboard) and `0x200`
+//! (pad) and compares the captured value with `>= 100` / `>= 300`, which is why the
+//! port stores keyboard codes as scancode + 100 and pad codes as button + 300.
+//!
+//! Bit 7 (`wait`) is the "入力を待つ" checkbox: the poll blocks until one of the
+//! accepted keys arrives. Event 249's pause overlay polls `0x91` and never reads the
+//! result, so the command exists purely to hold the scene for a key press.
 //!
 //! The bit layout below is therefore the PORT's own, used only to talk to the host;
 //! the numbers handed to scripts are the codes.
@@ -148,6 +165,98 @@ pub fn code(held: u32) -> i32 {
     }
 }
 
+/// The host key bits an opcode-123 poll accepts.
+///
+/// `query.directions` is the editor's direction *selector*, not a bit set: 0 accepts
+/// no direction at all, 1 the four cardinals, 2 eight directions (the port's
+/// diagonals), 3..8 a single direction or one axis.
+#[must_use]
+pub fn accepts(query: wolf_vm::KeyQuery) -> u32 {
+    let directions = match query.directions {
+        0 => 0,
+        1 | 2 => DIRECTIONS,
+        3 => UP,
+        4 => DOWN,
+        5 => LEFT,
+        6 => RIGHT,
+        7 => UP | DOWN,
+        8 => LEFT | RIGHT,
+        _ => 0,
+    };
+    directions
+        | if query.ok { OK } else { 0 }
+        | if query.cancel { CANCEL } else { 0 }
+        | if query.sub { SUB } else { 0 }
+}
+
+/// The code a `123` poll reads, or 0 when the held keys are outside its request.
+///
+/// A poll that only accepts decide (event 59's `0x10`) must report 0 while the
+/// player holds a direction, which is what the original engine does and what the
+/// three separate single-key polls in that event rely on.
+#[must_use]
+pub fn code_for(held: u32, query: wolf_vm::KeyQuery, banned: u32) -> i32 {
+    code(held & accepts(query) & !banned)
+}
+
+/// Translate WOLF's key layout into the port's bit layout.
+///
+/// Opcodes 125 (automatic input) and 126 (input toggle) name keys in the editor's
+/// own layout: decide 1, cancel 2, sub 4, **down 0x10, left 0x20, right 0x40,
+/// up 0x80**. The port keeps a different order for directions, so the two must be
+/// translated instead of reused: without this, CE223's automatic input pressed the
+/// opposite directions (it names `0x10` for "move down", which the port read as up).
+#[must_use]
+pub fn from_wolf_bits(bits: u32) -> u32 {
+    let mut out = 0;
+    if bits & 0x01 != 0 {
+        out |= OK;
+    }
+    if bits & 0x02 != 0 {
+        out |= CANCEL;
+    }
+    if bits & 0x04 != 0 {
+        out |= SUB;
+    }
+    if bits & 0x10 != 0 {
+        out |= DOWN;
+    }
+    if bits & 0x20 != 0 {
+        out |= LEFT;
+    }
+    if bits & 0x40 != 0 {
+        out |= RIGHT;
+    }
+    if bits & 0x80 != 0 {
+        out |= UP;
+    }
+    out
+}
+
+/// WOLF keyboard key codes start at 100: the DirectInput scancode plus 100.
+///
+/// CE132 resets the decide/cancel/sub keys to 144/145/146 (Z/X/C, scancodes
+/// 44/45/46) and its capture loop accepts any value `>= 100`, so the encoding is
+/// pinned by the shipped data.
+pub const KEYBOARD_CODE_BASE: i32 = 100;
+/// Pad key codes start at 300; CE132 writes 301..303 for the three pad buttons.
+pub const PAD_CODE_BASE: i32 = 300;
+
+/// Device selector of a basic (logical key) poll.
+pub const DEVICE_BASIC: u8 = 0;
+/// Device selector of a raw-keyboard poll (CE132's key-config rows).
+pub const DEVICE_KEYBOARD: u8 = 1;
+/// Device selector of a raw-pad poll.
+pub const DEVICE_PAD: u8 = 2;
+/// Device selector of a mouse poll (unused by this game's 123 sites).
+pub const DEVICE_MOUSE: u8 = 3;
+
+/// The WOLF key code for a PC scancode (set 1).
+#[must_use]
+pub const fn keyboard_code(scancode: u8) -> i32 {
+    KEYBOARD_CODE_BASE + scancode as i32
+}
+
 /// The host key bits a change in the mouse buttons represents.
 ///
 /// The command menus poll their key state with opcode 123 every frame while a
@@ -227,13 +336,97 @@ mod tests {
     }
 
     #[test]
-    fn the_masks_the_game_actually_polls_are_all_within_our_bitset() {
-        for mask in [
-            1u32, 7, 16, 17, 32, 33, 48, 49, 64, 144, 145, 160, 176, 177, 183, 184, 241, 257, 771,
-            784,
+    fn every_poll_in_the_shipped_data_decodes_into_known_fields() {
+        // The 93 opcode-123 sites of CommonEvent.dat, as the words the editor wrote.
+        // Values above 0xFF carry the device byte: 257 = keyboard, 512 = pad.
+        for word in [
+            1u32, 7, 16, 17, 32, 33, 48, 49, 64, 100, 144, 145, 160, 176, 177, 183, 184, 241, 257,
+            512,
         ] {
-            assert_eq!(mask & !ALL_KEYS, 0, "mask {mask} has bits we do not model");
+            let query = wolf_vm::KeyQuery::decode(word);
+            assert!(
+                query.directions <= 8,
+                "word {word:#x} names an unknown direction selector {}",
+                query.directions
+            );
+            assert!(
+                query.device <= 3,
+                "word {word:#x} names an unknown device {}",
+                query.device
+            );
+            assert!(
+                query.ok || query.cancel || query.sub || query.directions != 0 || query.device != 0,
+                "word {word:#x} accepts nothing at all"
+            );
         }
+    }
+
+    #[test]
+    fn the_option_word_decodes_into_the_fields_the_scripts_expect() {
+        // 0xB0: event 118's "決定かキャンセルか、だけ受付する" — wait, decide, cancel.
+        let decide_or_cancel = wolf_vm::KeyQuery::decode(0xB0);
+        assert_eq!(decide_or_cancel.directions, 0);
+        assert!(decide_or_cancel.ok && decide_or_cancel.cancel);
+        assert!(!decide_or_cancel.sub && decide_or_cancel.wait);
+
+        // 0xB8: event 84 tests nothing but left and right.
+        let left_right = wolf_vm::KeyQuery::decode(0xB8);
+        assert_eq!(left_right.directions, 8);
+        assert!(left_right.ok && left_right.cancel);
+
+        // 0x11: the common "four directions + decide, do not wait" poll.
+        let movement = wolf_vm::KeyQuery::decode(0x11);
+        assert_eq!(movement.directions, 1);
+        assert!(movement.ok && !movement.cancel && !movement.wait);
+
+        // 0x101: CE132's keyboard capture; 0x200 is the pad one.
+        assert_eq!(wolf_vm::KeyQuery::decode(0x101).device, DEVICE_KEYBOARD);
+        assert_eq!(wolf_vm::KeyQuery::decode(0x200).device, DEVICE_PAD);
+    }
+
+    #[test]
+    fn a_poll_only_reports_the_keys_it_asked_for() {
+        let decide_only = wolf_vm::KeyQuery::decode(0x10);
+        assert_eq!(code_for(DOWN, decide_only, 0), CODE_NONE);
+        assert_eq!(code_for(OK, decide_only, 0), CODE_OK);
+        assert_eq!(code_for(OK | DOWN, decide_only, 0), CODE_OK);
+
+        let cancel_only = wolf_vm::KeyQuery::decode(0x20);
+        assert_eq!(code_for(OK, cancel_only, 0), CODE_NONE);
+        assert_eq!(code_for(CANCEL, cancel_only, 0), CODE_CANCEL);
+
+        let sub_only = wolf_vm::KeyQuery::decode(0x40);
+        assert_eq!(code_for(SUB, sub_only, 0), CODE_SUB);
+
+        let left_right = wolf_vm::KeyQuery::decode(0xB8);
+        assert_eq!(code_for(LEFT, left_right, 0), CODE_LEFT);
+        assert_eq!(code_for(RIGHT, left_right, 0), CODE_RIGHT);
+        assert_eq!(code_for(UP, left_right, 0), CODE_NONE);
+
+        let up_down = wolf_vm::KeyQuery::decode(0xB7);
+        assert_eq!(code_for(UP, up_down, 0), CODE_UP);
+        assert_eq!(code_for(DOWN, up_down, 0), CODE_DOWN);
+        assert_eq!(code_for(LEFT, up_down, 0), CODE_NONE);
+
+        // A key the script switched off with 126 reads as not pressed.
+        let any = wolf_vm::KeyQuery::decode(0xB1);
+        assert_eq!(code_for(OK, any, from_wolf_bits(0x01)), CODE_NONE);
+        assert_eq!(code_for(DOWN, any, from_wolf_bits(0x10)), CODE_NONE);
+        assert_eq!(code_for(DOWN, any, 0), CODE_DOWN);
+    }
+
+    #[test]
+    fn wolf_key_layout_maps_onto_the_ports_direction_bits() {
+        // WOLF: decide 1, cancel 2, sub 4, down 0x10, left 0x20, right 0x40, up 0x80.
+        assert_eq!(from_wolf_bits(0x01), OK);
+        assert_eq!(from_wolf_bits(0x02), CANCEL);
+        assert_eq!(from_wolf_bits(0x04), SUB);
+        assert_eq!(from_wolf_bits(0x10), DOWN);
+        assert_eq!(from_wolf_bits(0x20), LEFT);
+        assert_eq!(from_wolf_bits(0x40), RIGHT);
+        assert_eq!(from_wolf_bits(0x80), UP);
+        assert_eq!(from_wolf_bits(0xF0), DIRECTIONS);
+        assert_eq!(from_wolf_bits(0), 0);
     }
 
     #[test]

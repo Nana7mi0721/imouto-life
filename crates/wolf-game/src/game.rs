@@ -338,6 +338,16 @@ pub struct Game {
     pub databases: Databases,
     /// Keys held this frame (see crate::key).
     pub key_bits: u32,
+    /// Raw keyboard key codes held this frame, in WOLF's scancode+100 encoding.
+    ///
+    /// The key-config screen (CE132) polls opcode 123 with `0x101` and stores whatever
+    /// it reads into Sys52..54, so the host has to expose the physical keys as codes.
+    /// Empty on the headless paths, where nobody presses anything.
+    pub raw_keys: Vec<i32>,
+    /// Raw pad key codes held this frame (`301..303` in the shipped defaults).
+    pub raw_pad_keys: Vec<i32>,
+    /// Last BGM/SE volumes handed to the mixer, so a CE132 edit is applied once.
+    applied_volumes: (u32, u32),
     /// Sounds requested during the current frame.
     pub sounds: Vec<SoundCmd>,
     /// M4 audio output. `None` keeps the pure-logic and test paths silent and
@@ -515,6 +525,9 @@ impl Game {
             auto_advance: false,
             auto_choice: false,
             auto_choice_delay: 0,
+            raw_keys: Vec::new(),
+            raw_pad_keys: Vec::new(),
+            applied_volumes: (u32::MAX, u32::MAX),
             runtime: MapRuntime::new(),
             last_action_event: None,
             auto_events,
@@ -1765,6 +1778,8 @@ impl Game {
             diagnostics: &mut self.diagnostics,
             stats: &mut self.stats,
             key_bits: self.key_bits,
+            raw_keys: &self.raw_keys,
+            raw_pad_keys: &self.raw_pad_keys,
             auto_advance: self.auto_advance,
             auto_choice: self.auto_choice,
             auto_choice_delay: self.auto_choice_delay,
@@ -1847,6 +1862,13 @@ impl Game {
         }
         if let Some(choices) = &mut self.choices {
             choices.frames = choices.frames.saturating_add(1);
+        }
+        // CE132 edits Sys100/Sys102 straight from the settings window; the retail
+        // engine feeds the mixer as soon as the value changes, not only at exit.
+        let volumes = (volume_word(self.sys(100)), volume_word(self.sys(102)));
+        if volumes != self.applied_volumes {
+            self.applied_volumes = volumes;
+            self.apply_settings();
         }
         self.screen.tick();
         // Slides (150 Move with a duration tail) live on the same screen and advance
@@ -2159,6 +2181,11 @@ struct GameHost<'a> {
     diagnostics: &'a mut BTreeMap<String, u64>,
     stats: &'a mut GameStats,
     key_bits: u32,
+    /// Raw keyboard codes held this frame (scancode+100), for the device polls of
+    /// opcode 123 that the key-config screen uses.
+    raw_keys: &'a [i32],
+    /// Raw pad codes held this frame (301..303).
+    raw_pad_keys: &'a [i32],
     auto_advance: bool,
     auto_choice: bool,
     auto_choice_delay: u32,
@@ -2777,21 +2804,33 @@ impl Host for GameHost<'_> {
         }
     }
 
-    fn key_code(&mut self, mask: u32) -> i32 {
-        // The mask is deliberately unused: one mask can yield six different codes,
-        // see crates/wolf-game/src/key.rs. A mouse click joins the held keyboard
-        // bits as an edge, so the command menus (opcode 123) react to the mouse.
-        let _ = mask;
-        crate::key::code(self.key_bits | self.mouse_key_bits())
+    fn key_code(&mut self, query: wolf_vm::KeyQuery, banned: u32) -> i32 {
+        match query.device {
+            // The key-config screen polls a device directly: it wants the raw key
+            // code the player just pressed, not the logical decide/cancel code.
+            crate::key::DEVICE_KEYBOARD => self.raw_keys.first().copied().unwrap_or(0),
+            crate::key::DEVICE_PAD => self.raw_pad_keys.first().copied().unwrap_or(0),
+            crate::key::DEVICE_MOUSE => 0,
+            _ => {
+                // The request decides which keys count: a poll that only accepts
+                // decide must read 0 while the player holds a direction. A mouse
+                // click joins the held keyboard bits as an edge, so the command
+                // menus (opcode 123) react to the mouse too.
+                let held = self.key_bits | self.mouse_key_bits();
+                crate::key::code_for(held, query, crate::key::from_wolf_bits(banned))
+            }
+        }
     }
 
-    fn key_code_auto(&mut self, mask: u32, auto: u32) -> i32 {
+    fn key_code_auto(&mut self, query: wolf_vm::KeyQuery, auto: u32, banned: u32) -> i32 {
         // Opcode 125 exists exactly for script-driven input: the key bits it names
-        // are pressed even when the player is not touching the keyboard. The mask is
-        // still irrelevant for the code mapping, as above. The mouse joins in too, so
-        // a scripted menu and a real click follow the same path.
-        let _ = mask;
-        crate::key::code(self.key_bits | auto | self.mouse_key_bits())
+        // are pressed even when the player is not touching the keyboard. The mouse
+        // joins in too, so a scripted menu and a real click follow the same path.
+        if query.device != 0 {
+            return self.key_code(query, banned);
+        }
+        let held = self.key_bits | crate::key::from_wolf_bits(auto) | self.mouse_key_bits();
+        crate::key::code_for(held, query, crate::key::from_wolf_bits(banned))
     }
 
     fn picture_state(&mut self, number: i32, field: i32) -> Option<i32> {
@@ -3290,6 +3329,8 @@ mod tests {
             diagnostics: &mut game.diagnostics,
             stats: &mut game.stats,
             key_bits: game.key_bits,
+            raw_keys: &game.raw_keys,
+            raw_pad_keys: &game.raw_pad_keys,
             auto_advance: game.auto_advance,
             auto_choice: game.auto_choice,
             auto_choice_delay: game.auto_choice_delay,
@@ -3372,22 +3413,31 @@ mod tests {
         let Some(root) = have_data() else { return };
         let mut game = Game::new(&root).expect("game");
         game.mouse = [300, 240];
+        // 0x11 = four directions + decide; 0x31 adds cancel (both appear in the data).
+        let decide_or_direction = wolf_vm::KeyQuery::decode(0x11);
+        let with_cancel = wolf_vm::KeyQuery::decode(0x31);
 
         // opcode 123 (key_code): a left press edge is the decide code.
         game.mouse_buttons = 1;
         game.previous_mouse_buttons = 0;
-        assert_eq!(host(&mut game).key_code(17), crate::key::CODE_OK);
+        assert_eq!(
+            host(&mut game).key_code(decide_or_direction, 0),
+            crate::key::CODE_OK
+        );
 
         // Holding the button is not a fresh press, so the poll reads nothing.
         game.previous_mouse_buttons = 1;
-        assert_eq!(host(&mut game).key_code(17), crate::key::CODE_NONE);
+        assert_eq!(
+            host(&mut game).key_code(decide_or_direction, 0),
+            crate::key::CODE_NONE
+        );
 
         // opcode 125 (key_code_auto): the scripted bits and the mouse both apply,
         // and the decide action still wins over an injected cancel.
         game.mouse_buttons = 1;
         game.previous_mouse_buttons = 0;
         assert_eq!(
-            host(&mut game).key_code_auto(17, crate::key::CANCEL),
+            host(&mut game).key_code_auto(decide_or_direction, crate::key::CANCEL, 0),
             crate::key::CODE_OK
         );
 
@@ -3395,16 +3445,29 @@ mod tests {
         game.mouse_buttons = 0;
         game.previous_mouse_buttons = 0;
         assert_eq!(
-            host(&mut game).key_code_auto(17, crate::key::CANCEL),
+            host(&mut game).key_code_auto(decide_or_direction, crate::key::CANCEL, 0),
+            crate::key::CODE_NONE,
+            "0x11 asks for decide only; an injected cancel is not an accepted key"
+        );
+        assert_eq!(
+            host(&mut game).key_code_auto(with_cancel, crate::key::CANCEL, 0),
             crate::key::CODE_CANCEL
         );
 
-        // A right press edge is the cancel code on both polls.
+        // A right press edge is the cancel code on a poll that accepts cancel.
         game.mouse_buttons = 2;
         game.previous_mouse_buttons = 0;
-        assert_eq!(host(&mut game).key_code(17), crate::key::CODE_CANCEL);
         assert_eq!(
-            host(&mut game).key_code_auto(17, 0),
+            host(&mut game).key_code(decide_or_direction, 0),
+            crate::key::CODE_NONE,
+            "a decide-only poll must ignore the right button"
+        );
+        assert_eq!(
+            host(&mut game).key_code(with_cancel, 0),
+            crate::key::CODE_CANCEL
+        );
+        assert_eq!(
+            host(&mut game).key_code_auto(with_cancel, 0, 0),
             crate::key::CODE_CANCEL
         );
     }

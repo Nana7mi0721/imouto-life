@@ -33,8 +33,8 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use wolf_format::commonevent::CommonEventData;
 use wolf_format::command::Slot;
+use wolf_format::commonevent::CommonEventData;
 
 /// Where a game string appears, used to scope catalog entries.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -332,18 +332,18 @@ impl SourceScan {
         Self::finish(buckets)
     }
 
-    fn finish(
-        buckets: BTreeMap<(Context, String), (BTreeSet<u32>, BTreeSet<u32>)>,
-    ) -> Self {
+    fn finish(buckets: BTreeMap<(Context, String), (BTreeSet<u32>, BTreeSet<u32>)>) -> Self {
         Self {
             texts: buckets
                 .into_iter()
-                .map(|((context, text), (static_events, dynamic_events))| SourceText {
-                    context,
-                    text,
-                    static_events,
-                    dynamic_events,
-                })
+                .map(
+                    |((context, text), (static_events, dynamic_events))| SourceText {
+                        context,
+                        text,
+                        static_events,
+                        dynamic_events,
+                    },
+                )
                 .collect(),
         }
     }
@@ -489,11 +489,7 @@ pub struct Coverage {
 /// Strips the `@n` speaker prefix exactly as the VM does before showing a message.
 fn strip_face(text: &str) -> &str {
     let bytes = text.as_bytes();
-    if bytes.first() == Some(&b'@')
-        && bytes
-            .get(1)
-            .is_some_and(|digit| digit.is_ascii_digit())
-    {
+    if bytes.first() == Some(&b'@') && bytes.get(1).is_some_and(|digit| digit.is_ascii_digit()) {
         text.get(2..).unwrap_or("")
     } else {
         text
@@ -608,7 +604,10 @@ mod tests {
     #[test]
     fn a_static_message_is_stored_without_its_face_prefix() {
         use super::Context;
-        let scan = scan_of(&[(Context::Message, 212, "@1早上好"), (Context::Choice, 245, "开始交流")]);
+        let scan = scan_of(&[
+            (Context::Message, 212, "@1早上好"),
+            (Context::Choice, 245, "开始交流"),
+        ]);
         assert_eq!(scan.static_count(), 2);
         let message = scan
             .texts
@@ -616,7 +615,10 @@ mod tests {
             .find(|text| text.context == Context::Message)
             .expect("message");
         assert_eq!(message.text, "早上好");
-        assert_eq!(message.static_events.iter().copied().collect::<Vec<_>>(), vec![212]);
+        assert_eq!(
+            message.static_events.iter().copied().collect::<Vec<_>>(),
+            vec![212]
+        );
         assert!(message.dynamic_events.is_empty());
     }
 
@@ -653,10 +655,7 @@ mod tests {
         let coverage = scan.coverage(&translator);
         assert_eq!(coverage.static_total, 2);
         assert_eq!(coverage.covered, 1);
-        assert_eq!(
-            coverage.missing,
-            vec![(Context::Choice, "no".to_owned())]
-        );
+        assert_eq!(coverage.missing, vec![(Context::Choice, "no".to_owned())]);
         assert_eq!(coverage.unused, vec!["stale".to_owned()]);
         assert_eq!(coverage.dynamic_total, 0);
     }

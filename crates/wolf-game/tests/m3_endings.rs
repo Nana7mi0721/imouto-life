@@ -102,6 +102,14 @@ struct Run {
 fn run(game: &mut Game, frames: usize) -> Run {
     let mut out = Run::default();
     for _ in 0..frames {
+        // CE258's scenes carry `123 [var, 0x91]` click-to-continue polls (wait bit);
+        // the harness answers them like a player tapping the decide key.
+        let waiting = game
+            .vm
+            .instances()
+            .iter()
+            .any(|inst| inst.wait == wolf_vm::WaitState::Key);
+        game.key_bits = if waiting { wolf_game::key::OK } else { 0 };
         game.frame();
         for message in &game.messages {
             let text = visible(&message.text);

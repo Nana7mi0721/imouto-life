@@ -2240,6 +2240,16 @@ impl Host for GameHost<'_> {
         }
     }
 
+    fn sound_db(&mut self, db_type: i32, entry: u16) -> Option<(String, i32)> {
+        let resolved = self.databases.sound_entry(db_type, entry);
+        if resolved.is_none() {
+            self.diagnostics
+                .entry(format!("140 sound DB {db_type}/{entry}: no entry"))
+                .or_insert(0);
+        }
+        resolved
+    }
+
     fn database_cell(
         &mut self,
         container: wolf_vm::DbContainer,

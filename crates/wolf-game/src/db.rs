@@ -434,6 +434,26 @@ impl Databases {
         self.sys.as_ref()?.text(0, row, 0)
     }
 
+    /// A SystemDB audio-list entry as `(file name, volume %)`.
+    ///
+    /// Opcode 140 sound-type 0 addresses a row in one of the three fixed lists:
+    /// type 1 BGM, type 2 BGS, type 3 SE. Column 0 is the file name and column 1 the
+    /// editor's 再生音量 (docs/FORMAT_SPEC.md §6.6). An empty file name is not a
+    /// playable entry and answers `None`, so the caller can keep the command visible
+    /// without resolving it to a nonexistent asset.
+    pub fn sound_entry(&self, db_type: i32, entry: u16) -> Option<(String, i32)> {
+        let row = i32::from(entry);
+        if !self.row_exists(Container::Sys, db_type, row) {
+            return None;
+        }
+        let file = self.text(Container::Sys, db_type, row, 0)?;
+        if file.is_empty() {
+            return None;
+        }
+        let volume = self.num(Container::Sys, db_type, row, 1).unwrap_or(100);
+        Some((file.to_owned(), volume))
+    }
+
     /// Numeric read: engine cells win, then the addressed container.
     /// The SystemDB `12:文字色` palette entry that `\c[n]` names.
     ///

@@ -673,3 +673,21 @@ WOLF_DATA_ROOT="$PWD/work/Data" ./target/debug/wolf-cli.exe verify | tail -20
   * **边界**：BGM/SE 整文件覆盖，不重编码；音频格式仍须 ogg/mp3/wav 可解码；
     mod 不能注入新 SoundCmd/opcode，存档仍只写 base。
   * **当前进度**：M0–M4 完成；M5-A..E 完成第一切片，M5-E 含音频覆盖。用户 m07499 授权持续推进。
+
+* 2026-11-01（M4 补：opcode 140 sound-type=0 的 SystemDB 条目解析）：
+  * **问题**：少量 140 只带 arg0（无文件名字符串），此前一律按 Stop 处理；实数据 10 条：
+    CE249 pc258/pc280 指向 SE row 0（决定音），SampleMapA ev15 p1..p8 指向 SE row 2（取消音）。
+  * **解码**：arg0 低字节 options 高 nibble 1→BGS、2→SE、其它→BGM；entry=(bits>>8)&0xFFFF；
+    sound-type=(bits>>24)&0xFF。sound-type=0 且 entry!=0xFFFF 即为 DB-entry 播放。
+    0x00FFFF00 是 BGM stop 哨兵，0xFFFFFFxx 仍是显式 FreeAll，二者都不查库；负值守卫保留。
+  * **实现**：wolf-vm Host 新增 sound_db(db_type, entry)->Option<(file, volume)> 默认 None；
+    140 DB 分支向 host 取文件名与行音量，命令带显式音量时 arg[4] 优先。wolf-game
+    Databases::sound_entry 从 SysDatabase type 1/2/3 的「ファイル名 / 再生音量」取值；
+    GameHost 委托并失败时诊断 `140 sound DB {type}/{entry}: no entry`。未改 SoundCmd 结构。
+  * **测试**：wolf-vm 新增 3 条（SE row 解析与音量、host 无答案仍记录播放、00FFFF00 是 stop）；
+    wolf-game/tests/m4_db_sound.rs 用真实数据断言 SE row0=[SE]Enter.ogg/90、
+    row2=[SE]Cancel.ogg/80、缺失 row None。cargo test -q -p wolf-vm = 95 passed；
+    workspace 默认与 WOLF_DATA_ROOT=work/Data 均 exit0。
+  * **verify**：64 matched / 1 SKIP；verify --wolf 72 matched / 0 pending、1,361/1,361 bytes equal。
+  * **当前进度**：M0–M4 完成（音频 DB-entry 遗留已清）；M5-A..E 完成第一切片。
+    用户 m07499/m08440 授权持续推进。

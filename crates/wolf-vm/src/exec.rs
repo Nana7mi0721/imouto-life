@@ -552,6 +552,18 @@ pub trait Host {
         let _ = cmd;
     }
 
+    /// Resolves a system-database sound entry to its file name and volume.
+    ///
+    /// Opcode 140's sound-type 0 addresses a row of the SystemDB BGM/BGS/SE list
+    /// instead of carrying a file name. `db_type` is 1 (BGM), 2 (BGS) or 3 (SE); the
+    /// host owns the database, so the interpreter asks rather than guessing. The
+    /// default `None` keeps hosts without a database working: the command still
+    /// reaches `sound`, with an empty file name, just as an unresolvable file would.
+    fn sound_db(&mut self, db_type: i32, entry: u16) -> Option<(String, i32)> {
+        let _ = (db_type, entry);
+        None
+    }
+
     /// `250 DatabaseAccess`. Answers the cell the script asked for; `None` leaves
     /// the destination variable untouched, exactly like a cell that is empty in
     /// the editor.
@@ -1931,10 +1943,39 @@ fn execute(
                 } else {
                     SoundChannel::Bgm
                 };
-                let is_play = bits >= 0 && bits & 0x0200_0000 != 0;
+                // The sound-type byte and the 16-bit SystemDB row are packed above the
+                // options byte. Sound-type 0 with row 0xFFFF is the BGM stop sentinel,
+                // not row 65535: the editor writes 0x00FFFF00 for "stop BGM" and
+                // 0xFFFFFFxx for the explicit FreeAll variants.
+                let sound_type = ((bits >> 24) & 0xFF) as u8;
+                let entry = ((bits >> 8) & 0xFFFF) as u16;
+                let db_type = match bits & 0xF0 {
+                    0x10 => 2, // BGS list
+                    0x20 => 3, // SE list
+                    _ => 1,    // BGM list
+                };
+                let db_play = sound_type == 0 && entry != 0xFFFF;
+                // The explicit play flag is only meaningful on the non-negative form;
+                // 0xFFFFFFxx encodes FreeAll and has bit 25 set too.
+                let is_play = db_play || (bits >= 0 && bits & 0x0200_0000 != 0);
                 let (action, file, volume, frames) = if is_play {
-                    let file = expand(cmd.strings.first().map_or("", String::as_str), inst, vars);
-                    let volume = if argc(cmd) >= 6 { arg(cmd, 4) } else { 100 };
+                    let (file, volume) = if db_play {
+                        let (file, db_volume) = host.sound_db(db_type, entry).unwrap_or_default();
+                        // The row's 再生音量 is the default; an explicit [4] operand wins
+                        // when the editor stored one. Every DB-entry site in this title
+                        // carries only arg0, so the row volume is what plays.
+                        let volume = if argc(cmd) >= 6 {
+                            arg(cmd, 4)
+                        } else {
+                            db_volume
+                        };
+                        (file, volume)
+                    } else {
+                        let file =
+                            expand(cmd.strings.first().map_or("", String::as_str), inst, vars);
+                        let volume = if argc(cmd) >= 6 { arg(cmd, 4) } else { 100 };
+                        (file, volume)
+                    };
                     // Shared fade/delay slot: fade-in for BGM, start delay for SE. Both
                     // are honoured by `AudioEngine::apply_sound_cmd`.
                     let frames = if argc(cmd) >= 6 {
@@ -2675,6 +2716,10 @@ mod tests {
         picture_answers: Vec<(i32, i32, Option<i32>)>,
         // Every (number, field) pair 124 actually asked about.
         picture_queries: Vec<(i32, i32)>,
+        // Canned answer for a 140 SystemDB sound entry: (db_type, entry) -> file, volume.
+        sound_db: Option<(String, i32)>,
+        // Every SystemDB sound lookup the interpreter made: (db_type, entry).
+        sound_db_queries: Vec<(i32, u16)>,
         // Canned engine answers for 124 0x3000, keyed by field.
         engine_answers: Vec<(i32, i32)>,
         // How many times the interpreter told the host to close the window.
@@ -2715,6 +2760,10 @@ mod tests {
         }
         fn sound(&mut self, cmd: &SoundCmd) {
             self.sounds.push(cmd.clone());
+        }
+        fn sound_db(&mut self, db_type: i32, entry: u16) -> Option<(String, i32)> {
+            self.sound_db_queries.push((db_type, entry));
+            self.sound_db.clone()
         }
         fn teleport(&mut self, target: i32, map: i32, x: i32, y: i32, options: i32) {
             self.teleports.push((target, map, x, y, options));
@@ -3916,6 +3965,51 @@ mod tests {
         assert_eq!(host.sounds[0].action, SoundAction::Play);
         assert_eq!(host.sounds[0].volume, 70);
         assert_eq!(host.sounds[0].frames, 10);
+    }
+
+    #[test]
+    fn se_db_entry_resolves_through_the_host_and_uses_its_volume() {
+        // CE249 pc258 stores arg0 = 0x00000020: SE playback of SystemDB SE row 0.
+        let e = event(1, "sedb", vec![cmd(140, &[0x20], &[])]);
+        let mut vm = vm_with(vec![e]);
+        let mut host = Recorder {
+            sound_db: Some(("SystemFile/[SE]Enter.ogg".to_owned(), 90)),
+            ..Recorder::default()
+        };
+        vm.start_event(1).unwrap();
+        vm.step_frame(&mut host);
+        assert_eq!(host.sound_db_queries, vec![(3, 0)]);
+        assert_eq!(host.sounds.len(), 1);
+        let cmd = &host.sounds[0];
+        assert_eq!(cmd.channel, SoundChannel::Se);
+        assert_eq!(cmd.action, SoundAction::Play);
+        assert_eq!(cmd.file, "SystemFile/[SE]Enter.ogg");
+        assert_eq!(cmd.volume, 90, "the DB row volume is the default");
+        assert_eq!(cmd.frames, 0);
+    }
+
+    #[test]
+    fn a_db_entry_without_a_host_answer_still_reaches_the_recorder() {
+        let e = event(1, "sedb_missing", vec![cmd(140, &[0x220], &[])]);
+        let mut vm = vm_with(vec![e]);
+        let mut host = Recorder::default();
+        vm.start_event(1).unwrap();
+        vm.step_frame(&mut host);
+        assert_eq!(host.sound_db_queries, vec![(3, 2)]);
+        assert_eq!(host.sounds[0].action, SoundAction::Play);
+        assert!(host.sounds[0].file.is_empty());
+    }
+
+    #[test]
+    fn the_00ffff00_bgm_stop_sentinel_is_not_a_db_entry() {
+        let e = event(1, "bgm_stop_db_shape", vec![cmd(140, &[0x00FF_FF00], &[])]);
+        let mut vm = vm_with(vec![e]);
+        let mut host = Recorder::default();
+        vm.start_event(1).unwrap();
+        vm.step_frame(&mut host);
+        assert!(host.sound_db_queries.is_empty());
+        assert_eq!(host.sounds[0].action, SoundAction::Stop);
+        assert_eq!(host.sounds[0].channel, SoundChannel::Bgm);
     }
 
     #[test]

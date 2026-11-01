@@ -28,7 +28,7 @@
 | [M4_SETTINGS_UI.md](M4_SETTINGS_UI.md) | 已完成 | CE132/CE95 设置界面排版修复：字号、290 位移、1/10 字符格、CursorBase |
 | [M4_PERF.md](M4_PERF.md) | 已完成/基线 | M4 headless 性能基线与优化候选（tile quad 缓存已落地） |
 | [M4_V8_AUDIT.md](M4_V8_AUDIT.md) | 已完成 | 普通变量 v8 语义专项：夜间可活动上限 23..26，不是行动力 |
-| [M5_BEYOND.md](M5_BEYOND.md) | 进行中 | M5 超越原版：M5-A 高分辨率/缩放/全屏、M5-B F3 调试 overlay、M5-C F2 统计/里程碑 overlay、M5-D TSV 内容翻译目录已落地；Mod 规划 |
+| [M5_BEYOND.md](M5_BEYOND.md) | 进行中 | M5 超越原版：M5-A 高分辨率/缩放/全屏、M5-B F3 调试 overlay、M5-C F2 统计/里程碑 overlay、M5-D TSV 内容翻译目录、M5-E --mod 数据覆盖层已落地 |
 | [PACKAGING.md](PACKAGING.md) | 已完成 | 发布打包：`work/out/dist/<version>/` 的 exe、README、启动器、校验和 |
 
 ## 4. M3 专题审计（按主题）

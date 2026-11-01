@@ -120,6 +120,8 @@ fn main() -> ExitCode {
     let mut stats_overlay = false;
     // M5-D side-car content catalog: replaces exact message/choice strings at runtime.
     let mut translation: Option<PathBuf> = None;
+    // M5-E mod data overlays, highest priority last.
+    let mut mods: Vec<PathBuf> = Vec::new();
     let mut map: Option<String> = None;
     let mut map_run: Option<String> = None;
     // `dump` seeds inputs into a real Game and reads state back out. It is the probe
@@ -291,6 +293,11 @@ fn main() -> ExitCode {
             "--translation" => {
                 translation = args.next().map(PathBuf::from);
             }
+            "--mod" => {
+                if let Some(path) = args.next() {
+                    mods.push(PathBuf::from(path));
+                }
+            }
             "--debug-var" => {
                 let value = args.next().unwrap_or_default();
                 match play::parse_debug_vars(&value) {
@@ -376,6 +383,7 @@ fn main() -> ExitCode {
                     load_save.as_deref(),
                     event,
                     translation.as_deref(),
+                    &mods,
                 )
             }
             None => {
@@ -420,6 +428,7 @@ fn main() -> ExitCode {
                     entry,
                     event,
                     translation.as_deref(),
+                    &mods,
                 )
             }
         },
@@ -474,6 +483,7 @@ fn main() -> ExitCode {
                     stats: stats_overlay,
                 },
                 translation.as_deref(),
+                &mods,
             )
         }
         Some("run") => match (map.as_deref(), event) {
@@ -567,6 +577,8 @@ fn print_help() {
     );
     println!("    --translation <FILE>  Replace exact message/choice strings using a UTF-8 TSV");
     println!("                      catalog (original<TAB>translation; # comments); works in play/capture.");
+    println!("    --mod <DIR>       Data overlay root mirroring the data tree (repeatable; later");
+    println!("                      dirs win). Only files a mod ships replace the base data.");
     println!("    --hold-message    Park on the first 101 message instead of dismissing it.");
     println!("    --audio           Play BGM/SE through the real mixer (silent null backend if no device).");
     println!("    --pointer <x,y>   Put the mouse pointer at a game pixel for the whole capture.");
@@ -2054,6 +2066,34 @@ fn read(path: &Path) -> Option<Vec<u8>> {
     }
 }
 
+/// Resolves a basic-system data file through the mod overlays, first match wins.
+fn layered_basic_file(root: &Path, basic: &Path, mods: &[PathBuf], name: &str) -> PathBuf {
+    for overlay in mods.iter().rev() {
+        for candidate in [overlay.join("BasicData").join(name), overlay.join(name)] {
+            if candidate.is_file() {
+                return candidate;
+            }
+        }
+    }
+    for candidate in [basic.join(name), root.join(name)] {
+        if candidate.is_file() {
+            return candidate;
+        }
+    }
+    basic.join(name)
+}
+
+/// Resolves a data path (already relative to the root, e.g. MapData/TitleMap.mps).
+fn layered_file(root: &Path, mods: &[PathBuf], relative: &Path) -> PathBuf {
+    for overlay in mods.iter().rev() {
+        let candidate = overlay.join(relative);
+        if candidate.is_file() {
+            return candidate;
+        }
+    }
+    root.join(relative)
+}
+
 fn report(checks: &[Check]) -> ExitCode {
     let width = checks.iter().map(|c| c.label.len()).max().unwrap_or(0);
     let mut failures = 0usize;
@@ -2827,9 +2867,10 @@ fn run_capture(
     entry: Entry<'_>,
     save_event: Option<u32>,
     translation: Option<&Path>,
+    mods: &[PathBuf],
 ) -> ExitCode {
     let out = out.unwrap_or_else(|| PathBuf::from("work/out/title.png"));
-    let mut game = match Game::new(root) {
+    let mut game = match Game::with_overlays(root, mods.to_vec()) {
         Ok(game) => game,
         Err(err) => {
             eprintln!("cannot load the game data: {err}");
@@ -3134,6 +3175,7 @@ fn run_capture_map(
     load_save: Option<&Path>,
     script_event: Option<u32>,
     translation: Option<&Path>,
+    mods: &[PathBuf],
 ) -> ExitCode {
     let out = out.unwrap_or_else(|| PathBuf::from("work/out/map.png"));
     let basic = if root.join("BasicData").is_dir() {
@@ -3143,10 +3185,11 @@ fn run_capture_map(
     };
     // The tileset is only needed for the header (its base image name); Game owns the
     // actual tile layer.
-    let tileset_bytes = match read(&basic.join("TileSetData.dat")) {
+    let tileset_path = layered_basic_file(root, &basic, mods, "TileSetData.dat");
+    let tileset_bytes = match read(&tileset_path) {
         Some(bytes) => bytes,
         None => {
-            eprintln!("no TileSetData.dat under {}", basic.display());
+            eprintln!("no TileSetData.dat at {}", tileset_path.display());
             return ExitCode::FAILURE;
         }
     };
@@ -3166,10 +3209,11 @@ fn run_capture_map(
     } else {
         PathBuf::from(format!("MapData/{name}.mps"))
     };
-    let map_bytes = match read(&root.join(&relative)) {
+    let map_path = layered_file(root, mods, &relative);
+    let map_bytes = match read(&map_path) {
         Some(bytes) => bytes,
         None => {
-            eprintln!("cannot read {}", root.join(&relative).display());
+            eprintln!("cannot read {}", map_path.display());
             return ExitCode::FAILURE;
         }
     };
@@ -3207,7 +3251,7 @@ fn run_capture_map(
     // Drive a real Game so the room's picture layer composites over its tiles, exactly
     // as the scripted capture does. start_pages installs the tile layer AND starts the
     // map's automatic pages (the ones that draw the background/picture layer).
-    let mut game = match Game::new(root) {
+    let mut game = match Game::with_overlays(root, mods.to_vec()) {
         Ok(game) => game,
         Err(err) => {
             eprintln!("cannot load the game data: {err}");
@@ -3758,8 +3802,8 @@ fn run_map_event(
 #[cfg(test)]
 mod tests {
     use super::{
-        font_paths_in, key_bits_for_frame, parse_key_frame, renderer_accepts_font,
-        resolve_capture_entry, system_font_files, CaptureEntry,
+        font_paths_in, key_bits_for_frame, layered_basic_file, layered_file, parse_key_frame,
+        renderer_accepts_font, resolve_capture_entry, system_font_files, CaptureEntry,
     };
     use std::path::{Path, PathBuf};
 
@@ -3941,5 +3985,64 @@ mod tests {
             "fontdb rejected {}",
             path.display()
         );
+    }
+
+    fn scratch(name: &str) -> PathBuf {
+        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        path.pop();
+        path.pop();
+        path.join("target/test-scratch/cli_layers").join(name)
+    }
+
+    #[test]
+    fn later_mod_overlays_win_and_missing_files_fall_back() {
+        let root = scratch("root");
+        let basic = root.join("BasicData");
+        let first = scratch("overlay-first");
+        let later = scratch("overlay-later");
+        let nested = scratch("overlay-nested");
+        for dir in [&root, &basic, &first, &later, &nested] {
+            let _ = std::fs::remove_dir_all(dir);
+        }
+        std::fs::create_dir_all(&basic).expect("basic dir");
+        std::fs::create_dir_all(&first).expect("first dir");
+        std::fs::create_dir_all(&later).expect("later dir");
+        std::fs::create_dir_all(nested.join("BasicData")).expect("nested BasicData");
+        std::fs::write(basic.join("Game.dat"), b"base").expect("base file");
+        std::fs::write(first.join("Game.dat"), b"first").expect("first file");
+        std::fs::write(later.join("Game.dat"), b"later").expect("later file");
+        std::fs::write(nested.join("BasicData/Game.dat"), b"nested").expect("nested file");
+
+        assert_eq!(
+            layered_basic_file(&root, &basic, &[first.clone(), later.clone()], "Game.dat"),
+            later.join("Game.dat")
+        );
+        assert_eq!(
+            layered_basic_file(&root, &basic, &[first.clone()], "Game.dat"),
+            first.join("Game.dat")
+        );
+        assert_eq!(
+            layered_basic_file(&root, &basic, &[nested.clone()], "Game.dat"),
+            nested.join("BasicData/Game.dat")
+        );
+        assert_eq!(
+            layered_basic_file(&root, &basic, &[], "Game.dat"),
+            basic.join("Game.dat")
+        );
+
+        std::fs::create_dir_all(later.join("MapData")).expect("later MapData");
+        std::fs::write(later.join("MapData/TitleMap.mps"), b"mod map").expect("mod map");
+        assert_eq!(
+            layered_file(&root, &[later.clone()], Path::new("MapData/TitleMap.mps")),
+            later.join("MapData/TitleMap.mps")
+        );
+        assert_eq!(
+            layered_file(&root, &[later.clone()], Path::new("MapData/Other.mps")),
+            root.join("MapData/Other.mps")
+        );
+
+        for dir in [root, first, later, nested] {
+            let _ = std::fs::remove_dir_all(dir);
+        }
     }
 }

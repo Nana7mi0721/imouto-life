@@ -1,6 +1,6 @@
 # M5 — 超越原版
 
-状态：**进行中（M5-A、M5-B、M5-C、M5-D 已完成第一切片）**。M0–M4 已交付；M5 的目标是在数据级重写与
+状态：**进行中（M5-A、M5-B、M5-C、M5-D、M5-E 已完成第一切片）**。M0–M4 已交付；M5 的目标是在数据级重写与
 逐像素对等之外，补上原版没有、玩家实际能感知的能力。
 
 | 切片 | 内容 | 状态 |
@@ -9,7 +9,7 @@
 | M5-B | 运行时调试器（F3 overlay） | 已完成第一切片 |
 | M5-C | 游戏倾向 / 里程碑汇总面板（F2 overlay） | 已完成第一切片（实时读取存档变量，无独立成就存档） |
 | M5-D | 多语言文本层（中/日/英） | 已完成第一切片（外部 TSV 翻译目录 + play/capture 应用） |
-| M5-E | Mod 数据覆盖层 | 计划，风险与范围待定 |
+| M5-E | Mod 数据覆盖层 | 已完成第一切片（`--mod` 数据目录覆盖，存档仍写 base） |
 
 ## M5-A：高分辨率与无级缩放
 
@@ -248,8 +248,71 @@ headless capture 仍输出不带 overlay 的 1024x576 证据帧。
 - 只覆盖 opcode 101 消息与 opcode 102 选项，不覆盖图片内文字、F2/F3 overlay 标签。
 - 目录语言不限，中/日/英都只是同一格式的文件；完整词条需要人工整理。
 
+## M5-E：Mod 数据覆盖层
+
+原版把地图、公共事件、数据库和图片都放在安装目录的数据树里，改一个文件就得备份整包。
+本切片增加可重复的 --mod 目录：每个目录镜像数据树的相对路径，只放要改的文件；
+运行时先查 mod，未命中再回落 base。这样地图、事件、数据库和美术都能像资源包一样替换，
+又不需要改 exe 或复制 175MB 数据。
+
+### 玩家用法
+
+    # 一个只改了 SampleMapA 与一张状态面板图的 mod
+    wolf-cli play --load-save work/Data/Save/SaveData01.sav --mod mods/example
+
+    # 多个 mod：后面的目录优先
+    wolf-cli play --mod mods/base --mod mods/override
+
+    # capture 同样接受 --mod，便于离线核对
+    wolf-cli capture --map SampleMapA --mod mods/example --frames 60 --out work/out/map.png
+
+mod 目录示例（相对路径与数据根一致）：
+
+    mods/example/BasicData/CommonEvent.dat
+    mods/example/BasicData/SysDatabase.dat
+    mods/example/MapData/SampleMapA.mps
+    mods/example/Picture/status01.png
+
+也可以把 BasicData 省掉，直接写 mods/example/Game.dat 或 mods/example/MapData/...；
+两种布局都会先查 BasicData/name，再查 name。
+
+### 实现
+
+- crates/wolf-game/src/assets.rs：Assets 新增 overlays 字段和 with_overlays；resolve
+  按 overlays 逆序 + base 依次查同一相对路径，原大小写不敏感探测逻辑保留在 resolve_in。
+- crates/wolf-game/src/game.rs：Game 新增 overlays 字段与 with_overlays；
+  CommonEvent.dat / Game.dat / TileSetData.dat 通过 layered_path 读取；Game::read 让
+  MapData 等运行期路径也走 overlay；resume_loaded_map 扫描 overlay 的 MapData；
+  Assets::with_overlays 统一接管图片。
+- crates/wolf-game/src/db.rs：Databases::load_with_overlays 读 DataBase、CDataBase、
+  SysDatabase 及其 .project，overlay 优先、缺文件回落 base；原 load 保持为无 overlay 包装。
+- crates/wolf-cli/src/main.rs / play.rs：新增可重复 --mod <DIR>，贯通 play、capture、
+  capture --map/--map-run；play 的 F12 重启会保留同一组 mod；地图 capture 的预读
+  TileSetData/mps 也走 overlay，避免只有 Game 内部生效、命令行预检仍读 base。
+- 写存档、Save/System.sav、Save/*.sav 始终写 base 根，不写回 mod；overlay 只影响读取。
+- 没有新增外部依赖；mod 不需要脚本或安装器，只是目录布局约定。
+
+### 测试
+
+- assets::tests::a_mod_overlay_wins_over_the_base_asset：base 1x1 黑图与 overlay 2x1
+  两色图，Assets::with_overlays 后读到 overlay 的尺寸与像素，Assets::new 仍是 base。
+- crates/wolf-game/tests/m5_mod_overlay.rs：真实数据下 base status01 为 330x576，
+  overlay 换成 2x1 PNG 后 Game::with_overlays 读到 (2,1) 且像素正确，base Game 不变。
+- wolf-cli tests::later_mod_overlays_win_and_missing_files_fall_back：后置 overlay 优先、
+  缺文件回落 base、BasicData 嵌套布局与 MapData 相对路径都覆盖。
+- capture 实测：--mod 目录放一份相同 status01 时输出与无 mod 逐字节相同；
+  放一张 330x576 纯色替换图时输出与基准不同（95.4% 非黑、0 warning），证明覆盖真正生效。
+
+### 边界
+
+- 只覆盖数据文件，不覆盖 exe、脚本运行器或渲染参数；mod 不能注入新 opcode。
+- 第一切片按整文件替换，不做逐行/逐记录合并；mod 要改 CommonEvent.dat 就得提供完整文件。
+- 音频资产暂不纳入 overlay（wolf-audio 仍从 base 资源根加载），后续可单独接。
+- 存档格式与 base 完全一致；读档时地图对象匹配会同时扫描 overlay 与 base 的 MapData。
+
 ## 后续切片的设计约束
 
 - M5-D 已采用 side-car TSV 目录（不直接改 CP932/GBK 解码）；后续可补完整语言包与
   更细的上下键（同句多义）。
-- M5-E Mod 数据覆盖层风险与范围待定，优先只覆盖 data 文件，不碰 exe。
+- M5-E 已采用 --mod 目录覆盖 data 文件，不碰 exe；后续可补音频资源 overlay 与
+  更细粒度的补丁（当前是整文件替换）。

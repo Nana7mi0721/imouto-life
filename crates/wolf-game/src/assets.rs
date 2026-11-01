@@ -186,6 +186,9 @@ impl std::error::Error for AssetError {
 #[derive(Clone, Debug)]
 pub struct Assets {
     root: PathBuf,
+    /// Optional mod roots, highest priority last (a later overlay wins a name clash).
+    /// Empty for a plain data root; see Assets::with_overlays.
+    overlays: Vec<PathBuf>,
     cache: HashMap<String, Arc<ImageData>>,
     /// Names that are not files (built-in `<SHAPE>` system graphics) or whose
     /// resolution failed. The picture layer asks for a size on every draw, and a
@@ -202,8 +205,20 @@ impl Assets {
     /// Anchors the database at an unpacked game root (the folder holding BasicData/).
     #[must_use]
     pub fn new(root: impl Into<PathBuf>) -> Self {
+        Self::with_overlays(root, Vec::new())
+    }
+
+    /// Anchors the database at a base root plus zero or more mod overlay roots.
+    ///
+    /// Each overlay is a directory that mirrors the data tree (for example
+    /// mod/Picture/status01.png). A name is looked up in every overlay first,
+    /// newest overlay first, then in the base root. The first hit wins, so an overlay
+    /// only has to carry the files it replaces.
+    #[must_use]
+    pub fn with_overlays(root: impl Into<PathBuf>, overlays: Vec<PathBuf>) -> Self {
         Self {
             root: root.into(),
+            overlays,
             cache: HashMap::new(),
             missing: HashSet::new(),
             fallbacks: Vec::new(),
@@ -214,6 +229,12 @@ impl Assets {
     #[must_use]
     pub fn root(&self) -> &Path {
         &self.root
+    }
+
+    /// The mod overlay roots, lowest priority first.
+    #[must_use]
+    pub fn overlays(&self) -> &[PathBuf] {
+        &self.overlays
     }
 
     /// Number of decoded images held.
@@ -255,41 +276,17 @@ impl Assets {
     #[must_use]
     pub fn resolve(&self, name: &str) -> Option<PathBuf> {
         let relative = normalize(name)?;
-        let direct = self.root.join(&relative);
-        if direct.is_file() {
-            return Some(direct);
-        }
-        // A name without an extension: probe the codecs the game ships.
-        if Path::new(&relative).extension().is_none() {
-            for extension in PROBE_EXTENSIONS {
-                let candidate = self.root.join(format!("{relative}.{extension}"));
-                if candidate.is_file() {
-                    return Some(candidate);
-                }
+        for root in self
+            .overlays
+            .iter()
+            .rev()
+            .chain(std::iter::once(&self.root))
+        {
+            if let Some(path) = resolve_in(root, &relative) {
+                return Some(path);
             }
         }
-        // Case-insensitive walk, one path segment at a time.
-        let mut current = self.root.clone();
-        for segment in relative.split('/') {
-            let entries = std::fs::read_dir(&current).ok()?;
-            let mut found: Option<PathBuf> = None;
-            for entry in entries.flatten() {
-                let candidate = entry.path();
-                let Some(file_name) = candidate.file_name().and_then(|n| n.to_str()) else {
-                    continue;
-                };
-                if file_name.eq_ignore_ascii_case(segment) {
-                    found = Some(candidate);
-                    break;
-                }
-            }
-            current = found?;
-        }
-        if current.is_file() {
-            Some(current)
-        } else {
-            None
-        }
+        None
     }
 
     /// Resolves a name, then a narrow fallback alias if the direct lookup misses.
@@ -419,6 +416,46 @@ fn normalize(name: &str) -> Option<String> {
         None
     } else {
         Some(parts.join("/"))
+    }
+}
+
+/// Resolves one already-normalised name under a single root, applying the same
+/// extension probe and case-insensitive walk the public lookup uses.
+fn resolve_in(root: &Path, relative: &str) -> Option<PathBuf> {
+    let direct = root.join(relative);
+    if direct.is_file() {
+        return Some(direct);
+    }
+    // A name without an extension: probe the codecs the game ships.
+    if Path::new(relative).extension().is_none() {
+        for extension in PROBE_EXTENSIONS {
+            let candidate = root.join(format!("{relative}.{extension}"));
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    // Case-insensitive walk, one path segment at a time.
+    let mut current = root.to_path_buf();
+    for segment in relative.split('/') {
+        let entries = std::fs::read_dir(&current).ok()?;
+        let mut found: Option<PathBuf> = None;
+        for entry in entries.flatten() {
+            let candidate = entry.path();
+            let Some(file_name) = candidate.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if file_name.eq_ignore_ascii_case(segment) {
+                found = Some(candidate);
+                break;
+            }
+        }
+        current = found?;
+    }
+    if current.is_file() {
+        Some(current)
+    } else {
+        None
     }
 }
 
@@ -617,5 +654,51 @@ mod tests {
         ));
 
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_mod_overlay_wins_over_the_base_asset() {
+        let base = scratch_dir("overlay-base");
+        let overlay = scratch_dir("overlay-mod");
+        std::fs::create_dir_all(base.join("Picture")).expect("base dir");
+        std::fs::create_dir_all(overlay.join("Picture")).expect("overlay dir");
+        // Base is 1x1 opaque black; the overlay is 2x1 with two distinct colours.
+        let base_px = [0u8, 0, 0, 255];
+        image::save_buffer(
+            base.join("Picture").join("status01.png"),
+            &base_px,
+            1,
+            1,
+            image::ColorType::Rgba8,
+        )
+        .expect("base png");
+        let overlay_px = [1u8, 2, 3, 255, 4, 5, 6, 255];
+        image::save_buffer(
+            overlay.join("Picture").join("status01.png"),
+            &overlay_px,
+            2,
+            1,
+            image::ColorType::Rgba8,
+        )
+        .expect("overlay png");
+
+        let mut plain = Assets::new(&base);
+        assert_eq!(
+            plain
+                .load("Picture/status01.png")
+                .expect("base asset")
+                .size(),
+            (1, 1)
+        );
+
+        let mut layered = Assets::with_overlays(&base, vec![overlay.clone()]);
+        let image = layered.load("Picture/status01.png").expect("overlay asset");
+        assert_eq!(image.size(), (2, 1));
+        assert_eq!(image.pixel(0, 0), Some([1, 2, 3, 255]));
+        assert_eq!(image.pixel(1, 0), Some([4, 5, 6, 255]));
+        assert_eq!(layered.overlays(), std::slice::from_ref(&overlay));
+
+        let _ = std::fs::remove_dir_all(&base);
+        let _ = std::fs::remove_dir_all(&overlay);
     }
 }

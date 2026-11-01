@@ -103,8 +103,9 @@ pub fn run(
     display: DisplayOptions,
     debug: DebugOptions,
     translation: Option<&std::path::Path>,
+    mods: &[std::path::PathBuf],
 ) -> std::process::ExitCode {
-    let mut game = match Game::new(root) {
+    let mut game = match Game::with_overlays(root, mods.to_vec()) {
         Ok(game) => game,
         Err(err) => {
             eprintln!("cannot load the game data: {err}");
@@ -204,6 +205,7 @@ pub fn run(
         debug_vars: debug.vars,
         stats_overlay: debug.stats,
         translation: translation.map(std::path::Path::to_path_buf),
+        mods: mods.to_vec(),
     };
     if let Err(err) = event_loop.run_app(&mut app) {
         eprintln!("event loop failed: {err}");
@@ -267,6 +269,8 @@ struct App {
     stats_overlay: bool,
     /// M5-D catalog path, re-applied when F12 rebuilds the session.
     translation: Option<std::path::PathBuf>,
+    /// M5-E mod data overlay roots, re-applied when F12 rebuilds the session.
+    mods: Vec<std::path::PathBuf>,
 }
 
 /// The primitive values the overlay renders, separated from `App` so the text can be
@@ -390,7 +394,7 @@ impl App {
     /// a broken restart must not take the window down with it.
     fn restart(&mut self) {
         let root = self.root.clone();
-        let mut game = match Game::new(&root) {
+        let mut game = match Game::with_overlays(&root, self.mods.clone()) {
             Ok(game) => game,
             Err(err) => {
                 eprintln!("restart failed (cannot reload the game data): {err}");

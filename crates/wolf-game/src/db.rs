@@ -39,7 +39,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use wolf_format::database::{Database, FieldKind, RowValue};
 use wolf_format::sysdatabase::SysDatabase;
@@ -188,7 +188,24 @@ impl Databases {
     /// A missing or corrupt file is not an error: the game still boots and the
     /// diagnostics report which cells stay unanswered.
     pub fn load(basic: &Path, screen: (u32, u32)) -> Self {
-        let read = |name: &str| fs::read(basic.join(name)).ok();
+        Self::load_with_overlays(basic, &[], screen)
+    }
+
+    /// Loads the database files through mod overlays, highest priority last.
+    ///
+    /// Each overlay may mirror the data root directly or its `BasicData` folder. A name
+    /// that no overlay carries falls back to `basic`, so a mod can ship just one table.
+    pub fn load_with_overlays(basic: &Path, overlays: &[PathBuf], screen: (u32, u32)) -> Self {
+        let read = |name: &str| {
+            for overlay in overlays.iter().rev() {
+                for candidate in [overlay.join("BasicData").join(name), overlay.join(name)] {
+                    if candidate.is_file() {
+                        return fs::read(candidate).ok();
+                    }
+                }
+            }
+            fs::read(basic.join(name)).ok()
+        };
         let mut databases = Databases {
             data: read("DataBase.dat").and_then(|bytes| Database::parse(&bytes).ok()),
             cdata: read("CDataBase.dat").and_then(|bytes| Database::parse(&bytes).ok()),

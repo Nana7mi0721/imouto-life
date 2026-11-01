@@ -638,3 +638,22 @@ WOLF_DATA_ROOT="$PWD/work/Data" ./target/debug/wolf-cli.exe verify | tail -20
   * **边界**：只精确替换消息/选项，不覆盖图片内文字或 F2/F3 overlay 标签；漏译回退原文；
     完整词条属内容作者/社区工作。
   * **当前进度**：M0–M4 完成；M5-A/M5-B/M5-C/M5-D 完成，M5-E 待做。用户 m07499 授权持续推进。
+
+* 2026-10-31（M5-E：Mod 数据覆盖层，第一切片）：
+  * **动机**：原版改地图/事件/数据库/图片要动整个安装目录；本切片新增可重复 --mod 目录，
+    每个目录镜像数据树，运行时先查 mod 再回落 base。写存档仍写 base，不回写 mod。
+  * **实现**：Assets 增加 overlays/with_overlays，resolve 按 overlays 逆序 + base 查相对路径；
+    Game 增加 overlays/with_overlays，CommonEvent.dat、Game.dat、TileSetData.dat、
+    Databases 及 .project、MapData 运行期读取都走 overlay；resume_loaded_map 同时扫描
+    overlay 与 base 的 MapData；Databases::load_with_overlays 保持原 load 兼容。
+    main.rs/play.rs 新增可重复 --mod <DIR>，贯通 play、capture、capture --map/--map-run，
+    F12 重启保留 mod；地图 capture 的 TileSetData/mps 预读也走 overlay。无新外部依赖。
+  * **测试**：assets 单测 a_mod_overlay_wins_over_the_base_asset；
+    wolf-game/tests/m5_mod_overlay.rs（真实数据下 status01 330x576 被 overlay 2x1 替换）；
+    wolf-cli 单测 later_mod_overlays_win_and_missing_files_fall_back；
+    cargo test -q -p wolf-game --lib = 253 passed，cargo test -q -p wolf-cli = 19 passed。
+  * **capture 实测**：--mod 放相同 status01 时输出与无 mod 逐字节相同；
+    放 330x576 纯色替换图时输出不同（95.4% 非黑、0 warning），覆盖真实生效。
+  * **边界**：只覆盖 data 文件，不碰 exe/渲染参数/opcode；整文件替换不做逐行合并；
+    音频资产暂不纳入 overlay；存档格式与 base 一致。
+  * **当前进度**：M0–M4 完成；M5-A..E 全部完成第一切片。用户 m07499 授权持续推进。

@@ -393,6 +393,10 @@ pub struct Game {
     /// loading a slot must not change the player's volumes.
     pub system_save: Option<wolf_save::SaveFile>,
     root: PathBuf,
+    /// Optional mod data overlay roots, highest priority last. Each mirrors the data
+    /// tree; a file present here is used instead of the base root. See
+    /// [`Self::with_overlays`].
+    overlays: Vec<PathBuf>,
 }
 
 impl Game {
@@ -403,13 +407,29 @@ impl Game {
     /// Fails when Game.dat or CommonEvent.dat is missing or malformed, because without
     /// them no event can run at all.
     pub fn new(root: impl Into<PathBuf>) -> Result<Self, GameError> {
+        Self::with_overlays(root, Vec::new())
+    }
+
+    /// Loads the game with zero or more mod data overlay roots.
+    ///
+    /// Overlays mirror the data tree (for example mod/BasicData/CommonEvent.dat or
+    /// mod/MapData/SampleMapA.mps) and take priority over the base root. A missing file
+    /// in an overlay falls through to the base, so a mod only ships what it changes.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`Self::new`].
+    pub fn with_overlays(
+        root: impl Into<PathBuf>,
+        overlays: Vec<PathBuf>,
+    ) -> Result<Self, GameError> {
         let root = root.into();
         let basic = if root.join("BasicData").is_dir() {
             root.join("BasicData")
         } else {
             root.clone()
         };
-        let events = read_events(&basic.join("CommonEvent.dat"))?;
+        let events = read_events(&layered_path(&root, &basic, &overlays, "CommonEvent.dat"))?;
         let programs = ProgramSet::from_common_events(&events);
         // Common event 63 multiplies every message-window measurement by the
         // coordinate scale, which is one 32nd of the screen width and one 24th of
@@ -420,17 +440,14 @@ impl Game {
         // leading u32 words are generator outputs, not seeds, so a live LCG seeded
         // from them cannot reproduce the stream. Keep the whole parsed file so both
         // consumers see the same bytes.
-        let game_dat = std::fs::read(root.join("Game.dat"))
-            .or_else(|_| std::fs::read(basic.join("Game.dat")))
-            .ok()
+        let game_dat = layered_read(&root, &basic, &overlays, "Game.dat")
             .and_then(|bytes| GameDat::parse(&bytes).ok());
         let screen = game_dat.as_ref().map_or(crate::db::DEFAULT_SCREEN, |dat| {
             let (width, height) = dat.screen_size();
             (u32::from(width), u32::from(height))
         });
-        let databases = Databases::load(&basic, screen);
-        let tilesets = std::fs::read(basic.join("TileSetData.dat"))
-            .ok()
+        let databases = Databases::load_with_overlays(&basic, &overlays, screen);
+        let tilesets = layered_read(&root, &basic, &overlays, "TileSetData.dat")
             .and_then(|bytes| TileSetData::parse(&bytes).ok());
         // System.sav is a complete save file in this game: use it as the template so a
         // brand-new game can write its first save without inventing part1/part4. Its
@@ -453,7 +470,7 @@ impl Game {
             translator: Translator::default(),
             tilemap: None,
             tilesets,
-            assets: Assets::new(&root),
+            assets: Assets::with_overlays(&root, overlays.clone()),
             databases,
             key_bits: 0,
             sounds: Vec::new(),
@@ -483,6 +500,7 @@ impl Game {
             base_save,
             system_save,
             root,
+            overlays,
         };
         // The retail random source is the pre-generated table in Game.dat, read
         // verbatim (bytes masked to the editor's 7-bit output). A bare Vm keeps the
@@ -521,6 +539,12 @@ impl Game {
     #[must_use]
     pub fn root(&self) -> &Path {
         &self.root
+    }
+
+    /// The mod data overlay roots, lowest priority first.
+    #[must_use]
+    pub fn overlays(&self) -> &[PathBuf] {
+        &self.overlays
     }
 
     /// Installs an M5-D content catalog parsed in memory.
@@ -1086,7 +1110,13 @@ impl Game {
 
     fn read(&self, name: &str) -> Result<Vec<u8>, GameError> {
         let relative: std::path::PathBuf = name.split('/').collect();
-        let path = self.root.join(relative);
+        let path = self
+            .overlays
+            .iter()
+            .rev()
+            .map(|overlay| overlay.join(&relative))
+            .find(|candidate| candidate.is_file())
+            .unwrap_or_else(|| self.root.join(&relative));
         std::fs::read(&path).map_err(|source| GameError::Io { path, source })
     }
 
@@ -1438,17 +1468,33 @@ impl Game {
         }
 
         let map_dir = self.root.join("MapData");
-        let mut names: Vec<PathBuf> = std::fs::read_dir(&map_dir)
-            .map_err(|err| format!("cannot list {}: {err}", map_dir.display()))?
-            .filter_map(|entry| entry.ok())
-            .map(|entry| entry.path())
-            .filter(|path| {
-                path.extension()
-                    .and_then(|extension| extension.to_str())
-                    .is_some_and(|extension| extension.eq_ignore_ascii_case("mps"))
-            })
-            .collect();
+        let mut names: Vec<PathBuf> = Vec::new();
+        for dir in self
+            .overlays
+            .iter()
+            .rev()
+            .map(|overlay| overlay.join("MapData"))
+            .chain(std::iter::once(map_dir.clone()))
+        {
+            let Ok(entries) = std::fs::read_dir(&dir) else {
+                continue;
+            };
+            names.extend(
+                entries
+                    .filter_map(|entry| entry.ok())
+                    .map(|entry| entry.path())
+                    .filter(|path| {
+                        path.extension()
+                            .and_then(|extension| extension.to_str())
+                            .is_some_and(|extension| extension.eq_ignore_ascii_case("mps"))
+                    }),
+            );
+        }
+        if names.is_empty() {
+            return Err(format!("cannot list {}: no .mps files", map_dir.display()));
+        }
         names.sort();
+        names.dedup();
 
         let mut matches: Vec<(String, Map)> = Vec::new();
         for path in names {
@@ -1755,6 +1801,32 @@ impl Game {
         // Host::log, which deduplicates. A per-frame Vec would otherwise grow forever.
         FrameOutcome { report, ..outcome }
     }
+}
+
+/// Resolves a basic-system data file through the mod overlays, first match wins.
+///
+/// Overlays are searched highest priority last. Each overlay may either mirror the
+/// root directly (`overlay/Game.dat`) or the `BasicData` folder (`overlay/BasicData/
+/// Game.dat`, which is convenient when a mod was laid out like a data root). The base
+/// `BasicData` (or the root itself when it has no `BasicData`) is the final fallback.
+fn layered_path(root: &Path, basic: &Path, overlays: &[PathBuf], name: &str) -> PathBuf {
+    for overlay in overlays.iter().rev() {
+        for candidate in [overlay.join("BasicData").join(name), overlay.join(name)] {
+            if candidate.is_file() {
+                return candidate;
+            }
+        }
+    }
+    for candidate in [basic.join(name), root.join(name)] {
+        if candidate.is_file() {
+            return candidate;
+        }
+    }
+    basic.join(name)
+}
+
+fn layered_read(root: &Path, basic: &Path, overlays: &[PathBuf], name: &str) -> Option<Vec<u8>> {
+    std::fs::read(layered_path(root, basic, overlays, name)).ok()
 }
 
 fn read_events(path: &Path) -> Result<CommonEventData, GameError> {

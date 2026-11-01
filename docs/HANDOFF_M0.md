@@ -901,3 +901,9 @@ WOLF_DATA_ROOT="$PWD/work/Data" ./target/debug/wolf-cli.exe verify | tail -20
 
   * **清理（本轮，AGENTS §7）**：删除 target/debug/incremental、target/release、target/ver6 与临时文档块；
     du -sh . = 4.2G（target 3.8G、work 333M、work/Data 176M、.git 7.7M，保留可运行 debug 产物与 work/out/dist）。
+  * **2026-11-01（工具：`wolf-cli assets` 素材摆放目录）**：用户问「能否从游戏文件还原素材分布以降低重构摆放成本」→ 已把临时脚本固化为 `wolf-cli assets` 子命令（crates/wolf-cli/src/main.rs），文档见 docs/ASSETS.md。
+    * **能力**：聚合每个 op150 绘制的图片资产（asset/category/draw_sites/distinct_placements/scopes/first_placement）；`--coords` 逐点列出 scope/event/slot/action/anchor/layer/opacity/x/y/scale/blend；`--include-maps` 并入 MapData/*.mps 事件页；`--format tsv|json`；`--filter`；`--out`。
+    * **数据来源**：CommonEvent.dat 的 op150 params（head=arg0 kind/anchor/action、number=arg1 层槽、长形式 opacity/x/y/scale/blend），与 wolf-vm decode_picture 一致。
+    * **实测（本作数据）**：CE 侧 561 资产 / 2162 绘制点；并入 8 张地图后 660 资产 / 2431 绘制点。样例 cg/blackscreen.jpg 55 点 / 6 摆法 slot100@(0,36)。
+    * **验证**：cargo build -q -p wolf-cli exit0；cargo test -q -p wolf-cli 34 passed（含 3 条新增 asset 单测）；cargo test -q --workspace（无数据）exit0；json 输出经 Node 解析通过。
+    * **边界**：DB 默认值、引擎几何（九宫格窗口、文本度量、choice 越界、1/10 UI 缩放、过渡、present）不在数据里；kind 1/4 为字符串变量引用运行时求值。

@@ -153,6 +153,13 @@ fn main() -> ExitCode {
     // between two prints and be invisible. This makes the scheduler itself observable:
     // which runner events the engine actually starts, and when.
     let mut watch_start: Vec<u32> = Vec::new();
+    // `assets`: list every picture the scripts draw, the data-driven placement map.
+    // `--include-maps` also scans MapData/*.mps page commands; `--coords` prints one
+    // row per draw site; `--format` selects tsv (default) or json. It reuses --filter
+    // (asset substring) and --out (write to a file instead of stdout).
+    let mut assets_include_maps = false;
+    let mut assets_coords = false;
+    let mut assets_format = "tsv".to_owned();
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -238,6 +245,12 @@ fn main() -> ExitCode {
                     watch_start.push(id);
                 }
             }
+            // `assets --include-maps`: also walk every MapData/*.mps event page, not
+            // just CommonEvent.dat. `--coords`: one row per draw site instead of the
+            // per-file summary. `--format tsv|json`: output encoding.
+            "--include-maps" => assets_include_maps = true,
+            "--coords" => assets_coords = true,
+            "--format" => assets_format = args.next().unwrap_or_else(|| "tsv".to_owned()),
             "--map" | "-m" => {
                 map = args.next();
             }
@@ -468,6 +481,15 @@ fn main() -> ExitCode {
             watch,
         ),
         Some("list") => run_list(&root, filter.as_deref()),
+        Some("assets") => run_assets(
+            &root,
+            assets_include_maps,
+            assets_coords,
+            &assets_format,
+            event,
+            filter.as_deref(),
+            out.as_deref(),
+        ),
         Some("translations") => run_translations(
             &root,
             translations_template.as_deref(),
@@ -594,6 +616,8 @@ fn print_help() {
     println!("                                   [--debug] [--debug-var <ADDR,...>] [--stats]");
     println!("                                   [--hotkeys <FILE>]");
     println!("    wolf-cli [--root <DIR>] list [--filter <TEXT>]");
+    println!("    wolf-cli [--root <DIR>] assets [--include-maps] [--coords] [--format tsv|json]");
+    println!("                                   [--filter <TEXT>] [--out <FILE>]");
     println!(
         "    wolf-cli [--root <DIR>] translations [--template <FILE>] [--check <FILE>] [--strict]"
     );
@@ -616,15 +640,24 @@ fn print_help() {
     println!("                Same entry flags as capture: --map-run, --event, --load-save,");
     println!("                --boot (default) or --menu-only. --until <N> quits after N frames.");
     println!("    list        Print every common event: id, slots, real instructions, title.");
+    println!("    assets      List every picture the scripts draw: file, layer slot, x/y, scale,");
+    println!("                blend and opacity, plus which events use it. This is the original's");
+    println!("                placement data - the source of truth a scene must match, and a");
+    println!("                headless cross-check against any screenshot.");
     println!("    translations  Count the script's literal messages/choices, write a fill-in TSV");
     println!("                template, and check an existing catalog's coverage.");
     println!();
     println!("OPTIONS:");
     println!("    -e, --event <ID>  Common event id for 'run', or the scene entry for");
     println!("                      'capture'/'play' (unless --boot or --menu-only is given).");
+    println!("                      For 'assets', keep only draw sites in that event.");
     println!("    -f, --frames <N>  Frame budget for 'run' (default 600, one frame = 1/60 s).");
     println!("    -t, --trace       Print every host callback in 'run', not just the summary.");
     println!("    -o, --out <FILE>  PNG path for 'capture' (default work/out/title.png).");
+    println!("    --include-maps    'assets' also scans MapData/*.mps event pages.");
+    println!("    --coords          'assets' prints one row per draw site (file/event/slot/coords)");
+    println!("                      instead of the per-file summary.");
+    println!("    --format <F>      'assets' output: tsv (default) or json.");
     println!(
         "    -a, --answer <N>  Answer choice prompts with option N instead of holding the menu."
     );
@@ -2257,6 +2290,375 @@ fn map_file_list(dir: &Path) -> Vec<PathBuf> {
         .collect();
     files.sort();
     files
+}
+
+/// One 150 picture draw site discovered by assets.
+#[derive(Clone)]
+struct AssetSite {
+    scope: String,
+    event_id: u32,
+    slot: usize,
+    layer: i32,
+    action: u8,
+    anchor: u8,
+    opacity: i32,
+    x: i32,
+    y: i32,
+    scale: i32,
+    blend: i32,
+    file: String,
+}
+
+/// Read parameter word index of a command as a little-endian i32 (0 if absent).
+fn cmd_int(cmd: &wf::command::Command, index: usize) -> i32 {
+    let off = index * 4;
+    match cmd.params.get(off..off + 4) {
+        Some(bytes) => i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
+        None => 0,
+    }
+}
+
+/// True when a picture string names an image file (rather than inline text or an
+/// empty/unknown reference).
+fn looks_like_asset_path(file: &str) -> bool {
+    if file.is_empty() {
+        return false;
+    }
+    let lower = file.to_ascii_lowercase();
+    let known_ext = [".png", ".jpg", ".jpeg", ".bmp", ".webp", ".gif"]
+        .iter()
+        .any(|ext| lower.ends_with(ext));
+    known_ext && (file.contains('/') || file.contains('\\'))
+}
+
+/// First path component, used only to bucket assets in the summary.
+fn asset_category(file: &str) -> &'static str {
+    let lower = file.to_ascii_lowercase();
+    if lower.starts_with("cg/") || lower.starts_with("cg\\") {
+        "cg"
+    } else if lower.starts_with("picture/") || lower.starts_with("picture\\") {
+        "Picture"
+    } else if lower.starts_with("systemfile/") || lower.starts_with("systemfile\\") {
+        "SystemFile"
+    } else {
+        "other"
+    }
+}
+
+fn asset_action_name(action: u8) -> &'static str {
+    match action {
+        0 => "Draw",
+        1 => "Move",
+        2 => "Erase",
+        3 => "Hide",
+        _ => "Set",
+    }
+}
+
+fn asset_anchor_name(anchor: u8) -> &'static str {
+    match anchor {
+        0 => "topleft",
+        1 => "centre",
+        2 => "0x2000",
+        3 => "0x3000",
+        4 => "0x4000",
+        5 => "0x5000",
+        6 => "0x6000",
+        _ => "?",
+    }
+}
+
+/// Decode every opcode-150 picture draw in one command list into out.
+///
+/// The field layout matches wolf-vm's decode_picture (crates/wolf-vm/src/exec.rs) and
+/// picture.rs: arg 0 is the head word (kind/anchor/action), arg 1 the picture number
+/// (the layer slot), and the long-form value window is
+/// [flag, win_w, win_h, 1, opacity, x, y, scale%, blend, ...].
+fn asset_sites_in(
+    commands: &[wf::command::Slot],
+    scope: &str,
+    event_id: u32,
+    out: &mut Vec<AssetSite>,
+) {
+    for (slot, candidate) in commands.iter().enumerate() {
+        let wf::command::Slot::Command(cmd) = candidate else {
+            continue;
+        };
+        if cmd.opcode != 150 {
+            continue;
+        }
+        let head = cmd_int(cmd, 0);
+        let kind = ((head >> 4) & 0x07) as u8;
+        // Kinds 0 and 3 name a file directly; 1 and 4 are string-variable references
+        // resolved at run time and 2 is a text draw, so none can be placed statically.
+        if kind != 0 && kind != 3 {
+            continue;
+        }
+        let file = cmd.strings.first().cloned().unwrap_or_default();
+        if !looks_like_asset_path(&file) {
+            continue;
+        }
+        out.push(AssetSite {
+            scope: scope.to_owned(),
+            event_id,
+            slot,
+            layer: cmd_int(cmd, 1),
+            action: (head & 0x0F) as u8,
+            anchor: ((head >> 12) & 0x07) as u8,
+            opacity: cmd_int(cmd, 6),
+            x: cmd_int(cmd, 7),
+            y: cmd_int(cmd, 8),
+            scale: cmd_int(cmd, 9),
+            blend: cmd_int(cmd, 10),
+            file,
+        });
+    }
+}
+
+/// Escape a string for JSON output without pulling in a serializer dependency.
+fn json_str(value: &str) -> String {
+    let mut out = String::with_capacity(value.len() + 2);
+    out.push('"');
+    for ch in value.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+fn distinct_asset_files(sites: &[AssetSite]) -> usize {
+    let mut set: BTreeSet<&str> = BTreeSet::new();
+    for site in sites {
+        set.insert(site.file.as_str());
+    }
+    set.len()
+}
+
+fn run_assets(
+    root: &Path,
+    include_maps: bool,
+    coords: bool,
+    format: &str,
+    event: Option<u32>,
+    filter: Option<&str>,
+    out: Option<&Path>,
+) -> ExitCode {
+    let format = format.to_ascii_lowercase();
+    if format != "tsv" && format != "json" {
+        eprintln!("unknown --format '{format}' (use tsv or json)");
+        return ExitCode::from(2);
+    }
+    let basic = if root.join("BasicData").is_dir() {
+        root.join("BasicData")
+    } else {
+        root.to_path_buf()
+    };
+    let Some(bytes) = read(&basic.join("CommonEvent.dat")) else {
+        eprintln!("  ! CommonEvent.dat not found under {}", basic.display());
+        return ExitCode::FAILURE;
+    };
+    let common = match CommonEventData::parse(&bytes) {
+        Ok(value) => value,
+        Err(err) => {
+            eprintln!("  ! CommonEvent.dat: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let mut sites: Vec<AssetSite> = Vec::new();
+    for event in &common.events {
+        asset_sites_in(&event.commands, "CE", event.id, &mut sites);
+    }
+    let mut maps = 0usize;
+    if include_maps {
+        for path in map_file_list(&root.join("MapData")) {
+            let Some(map_bytes) = read(&path) else {
+                continue;
+            };
+            let map = match wf::mps::Map::parse(&map_bytes) {
+                Ok(value) => value,
+                Err(err) => {
+                    eprintln!("  ! {}: {err}", path.display());
+                    continue;
+                }
+            };
+            let stem = path
+                .file_stem()
+                .and_then(|name| name.to_str())
+                .unwrap_or("map")
+                .to_owned();
+            for event in &map.events {
+                for page in &event.pages {
+                    asset_sites_in(&page.commands, &stem, event.id, &mut sites);
+                }
+            }
+            maps += 1;
+        }
+    }
+    if let Some(id) = event {
+        sites.retain(|site| site.event_id == id);
+    }
+    if let Some(needle) = filter {
+        let needle = needle.to_ascii_lowercase();
+        sites.retain(|site| site.file.to_ascii_lowercase().contains(&needle));
+    }
+
+    let mut text = String::new();
+    if coords {
+        let mut rows = sites.clone();
+        rows.sort_by(|a, b| {
+            a.file
+                .cmp(&b.file)
+                .then(a.scope.cmp(&b.scope))
+                .then(a.event_id.cmp(&b.event_id))
+                .then(a.slot.cmp(&b.slot))
+        });
+        if format == "json" {
+            text.push_str("[\n");
+            for (index, site) in rows.iter().enumerate() {
+                if index > 0 {
+                    text.push_str(",\n");
+                }
+                text.push_str(&format!(
+                    "  {{\"asset\":{},\"category\":{},\"scope\":{},\"event\":{},\"slot\":{},\"action\":{},\"anchor\":{},\"layer\":{},\"opacity\":{},\"x\":{},\"y\":{},\"scale\":{},\"blend\":{}}}",
+                    json_str(&site.file),
+                    json_str(asset_category(&site.file)),
+                    json_str(&site.scope),
+                    site.event_id,
+                    site.slot,
+                    json_str(asset_action_name(site.action)),
+                    json_str(asset_anchor_name(site.anchor)),
+                    site.layer,
+                    site.opacity,
+                    site.x,
+                    site.y,
+                    site.scale,
+                    site.blend,
+                ));
+            }
+            text.push_str("\n]\n");
+        } else {
+            text.push_str("asset\tcategory\tscope\tevent\tslot\taction\tanchor\tlayer\topacity\tx\ty\tscale\tblend\n");
+            for site in &rows {
+                text.push_str(&format!(
+                    "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
+                    site.file,
+                    asset_category(&site.file),
+                    site.scope,
+                    site.event_id,
+                    site.slot,
+                    asset_action_name(site.action),
+                    asset_anchor_name(site.anchor),
+                    site.layer,
+                    site.opacity,
+                    site.x,
+                    site.y,
+                    site.scale,
+                    site.blend,
+                ));
+            }
+        }
+    } else {
+        struct Agg {
+            count: usize,
+            scopes: BTreeSet<String>,
+            placements: BTreeSet<String>,
+            first: String,
+        }
+        let mut agg: std::collections::BTreeMap<&str, Agg> = std::collections::BTreeMap::new();
+        for site in &sites {
+            let placement = format!(
+                "{},{},{},{},{},{},{},{}",
+                asset_action_name(site.action),
+                asset_anchor_name(site.anchor),
+                site.layer,
+                site.opacity,
+                site.x,
+                site.y,
+                site.scale,
+                site.blend,
+            );
+            let entry = agg.entry(site.file.as_str()).or_insert_with(|| Agg {
+                count: 0,
+                scopes: BTreeSet::new(),
+                placements: BTreeSet::new(),
+                first: placement.clone(),
+            });
+            entry.count += 1;
+            entry.scopes.insert(format!("{}:{}", site.scope, site.event_id));
+            entry.placements.insert(placement);
+        }
+        let mut rows: Vec<(&str, &Agg)> = agg.iter().map(|(file, agg)| (*file, agg)).collect();
+        rows.sort_by(|a, b| b.1.count.cmp(&a.1.count).then(a.0.cmp(b.0)));
+        if format == "json" {
+            text.push_str("[\n");
+            for (index, (file, agg)) in rows.iter().enumerate() {
+                if index > 0 {
+                    text.push_str(",\n");
+                }
+                let scopes: Vec<String> = agg.scopes.iter().map(|scope| json_str(scope)).collect();
+                text.push_str(&format!(
+                    "  {{\"asset\":{},\"category\":{},\"draw_sites\":{},\"distinct_placements\":{},\"scopes\":[{}],\"first_placement\":{}}}",
+                    json_str(file),
+                    json_str(asset_category(file)),
+                    agg.count,
+                    agg.placements.len(),
+                    scopes.join(","),
+                    json_str(&agg.first),
+                ));
+            }
+            text.push_str("\n]\n");
+        } else {
+            text.push_str("asset\tcategory\tdraw_sites\tdistinct_placements\tscopes\tfirst_placement(action,anchor,layer,opacity,x,y,scale,blend)\n");
+            for (file, agg) in &rows {
+                let scopes: Vec<&str> = agg.scopes.iter().map(String::as_str).collect();
+                text.push_str(&format!(
+                    "{}\t{}\t{}\t{}\t{}\t{}\n",
+                    file,
+                    asset_category(file),
+                    agg.count,
+                    agg.placements.len(),
+                    scopes.join(","),
+                    agg.first,
+                ));
+            }
+        }
+    }
+
+    let summary = format!(
+        "assets: {} file(s), {} draw site(s){}{}",
+        distinct_asset_files(&sites),
+        sites.len(),
+        if include_maps {
+            format!(" ({} map(s) included)", maps)
+        } else {
+            String::new()
+        },
+        if coords { " [coords]" } else { "" },
+    );
+    if let Some(path) = out {
+        if let Some(parent) = path.parent() {
+            if !parent.as_os_str().is_empty() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+        }
+        if let Err(err) = std::fs::write(path, &text) {
+            eprintln!("cannot write {}: {err}", path.display());
+            return ExitCode::FAILURE;
+        }
+        eprintln!("{summary} -> {}", path.display());
+    } else {
+        print!("{text}");
+        eprintln!("{summary}");
+    }
+    ExitCode::SUCCESS
 }
 
 fn read(path: &Path) -> Option<Vec<u8>> {
@@ -4268,3 +4670,74 @@ mod tests {
         }
     }
 }
+#[cfg(test)]
+mod asset_tests {
+    use super::*;
+    use wolf_format::command::{Command, Slot, Tail};
+
+    fn picture_command(
+        file: &str,
+        layer: i32,
+        opacity: i32,
+        x: i32,
+        y: i32,
+        scale: i32,
+        blend: i32,
+    ) -> Slot {
+        // head word: kind 0 (file), anchor 0 (top-left), action 0 (Draw) => 0.
+        let words: [i32; 11] = [0, layer, 0, 0, 0, 1, opacity, x, y, scale, blend];
+        let mut params = Vec::with_capacity(words.len() * 4);
+        for word in words {
+            params.extend_from_slice(&word.to_le_bytes());
+        }
+        Slot::Command(Box::new(Command {
+            param_count: (words.len() as u8) + 1,
+            opcode: 150,
+            params,
+            branch_depth: 0,
+            strings: vec![file.to_owned()],
+            tail: Tail::None,
+        }))
+    }
+
+    #[test]
+    fn decodes_a_picture_draw_to_its_placement_fields() {
+        let commands = vec![
+            Slot::Blank,
+            picture_command("cg/bg_001_03.jpg", -10, 255, 0, 0, 100, 0),
+            picture_command("Picture/stand_001_02.png", 900, 255, 241, 36, 100, 0),
+        ];
+        let mut sites = Vec::new();
+        asset_sites_in(&commands, "CE", 245, &mut sites);
+        assert_eq!(sites.len(), 2);
+        assert_eq!(sites[1].file, "Picture/stand_001_02.png");
+        assert_eq!(sites[1].layer, 900);
+        assert_eq!(sites[1].opacity, 255);
+        assert_eq!(sites[1].x, 241);
+        assert_eq!(sites[1].y, 36);
+        assert_eq!(sites[1].scale, 100);
+        assert_eq!(sites[1].blend, 0);
+        assert_eq!(sites[1].action, 0);
+        assert_eq!(sites[1].slot, 2);
+    }
+
+    #[test]
+    fn ignores_non_asset_strings_and_non_picture_opcodes() {
+        let text = picture_command("hello", 0, 255, 0, 0, 100, 0);
+        let mut message = picture_command("Picture/a.png", 0, 255, 0, 0, 100, 0);
+        if let Slot::Command(cmd) = &mut message {
+            cmd.opcode = 101;
+        }
+        let commands = vec![text, message];
+        let mut sites = Vec::new();
+        asset_sites_in(&commands, "CE", 1, &mut sites);
+        assert!(sites.is_empty(), "only opcode 150 with an image path should count");
+    }
+
+    #[test]
+    fn json_escapes_quotes_and_control_characters() {
+        assert_eq!(json_str("a\"b\\c"), "\"a\\\"b\\\\c\"");
+        assert_eq!(json_str("line\tbreak"), "\"line\\tbreak\"");
+    }
+}
+

@@ -2802,12 +2802,25 @@ fn drive_capture_frames(game: &mut Game, frames: usize, answers: &Answers) -> us
     peak
 }
 
-/// Composites one frame from a live game: tiles, then the picture layer, then the
-/// choice window and the message cursor. Both capture paths call this so
-/// `capture --map` cannot drift from `capture`.
-fn build_capture_frame(game: &mut Game) -> CaptureFrame {
+/// Composites one frame from a live game: the picture layer, then the choice window
+/// and the message cursor.
+///
+/// The tile layer is deliberately omitted on the gameplay path (`include_tiles ==
+/// false`). All five registered maps paint their tiles from the WOLF editor's stock
+/// sample chips (green ground / beige patch), and every frame is in practice repainted
+/// by a full-screen CG or `cg/blackscreen.jpg`; the stock chips are placeholder art the
+/// retail game never shows. Leaving them out lets any moment before a CG or the black
+/// screen covers the frame fall back to the renderer's black clear, instead of flashing
+/// placeholder tiles during the title fade-in and map switches. Only `capture --map`
+/// passes `include_tiles == true`, because that path exists to photograph the map data
+/// itself and must stay faithful to it.
+fn build_capture_frame(game: &mut Game, include_tiles: bool) -> CaptureFrame {
     let mut atlas = Atlas::new();
-    let mut sprites = game.tile_quads(&mut atlas);
+    let mut sprites = if include_tiles {
+        game.tile_quads(&mut atlas)
+    } else {
+        Vec::new()
+    };
     sprites.extend(game.picture_quads(&mut atlas));
     let mut texts = game.text_quads();
     // A WOLF script never draws its own choice frame: the engine paints a window skin and
@@ -3214,7 +3227,7 @@ fn run_capture(
         atlas,
         sprites,
         texts,
-    } = build_capture_frame(&mut game);
+    } = build_capture_frame(&mut game, false);
     let [atlas_w, atlas_h] = atlas.size();
 
     println!("capture");
@@ -3543,7 +3556,7 @@ fn run_capture_map(
         atlas,
         sprites,
         texts,
-    } = build_capture_frame(&mut game);
+    } = build_capture_frame(&mut game, true);
     let [atlas_w, atlas_h] = atlas.size();
 
     let map_w = map.width as i32 * wolf_game::tilemap::TILE_PX as i32;

@@ -136,3 +136,16 @@ Boot → 选 menu2（cursor=1，auto_choice 延迟 2 帧）→ 逐帧观察到�
   `cancel_closes_the_load_grid_but_does_not_reopen_the_title_menu` 仍断言“不恢复”，作为已知 gap 记录。
 - 实测：`capture --frames 900` 标题美术上现居中显示「▶ 开始游戏 / 读取存档 / 退出游戏」（见
   work/out/title_menu_final.png）。原版精确位置/是否改用 menuN 图片按钮仍属 H-MENU-1 未验证。
+
+## 8. 标题淡入「绿点/纯色+点状背景」闪烁根因（2026-11-01）
+
+用户实机反馈「开始游戏后闪出纯色+点状背景」。离屏逐帧取证定位为**地图占位瓦片层外露**：5 张注册地图
+的 tile 层全部是 WOLF 编辑器自带示例 chip（绿底白点草皮 + 米色块），实际画面永远由整屏 CG 或
+cg/blackscreen.jpg 覆盖；标题美术 30 帧淡入期间 CG 未到位，就透出这层占位瓦片（绿点）。同一原因也造成
+开场问候（SampleMapA ev0 只画妹妹立绘、未画房间 CG）透出米色块 → 用户看到的「黄色背景」。
+
+修复：玩法合成不再叠加占位瓦片层——crates/wolf-cli/src/main.rs 的 build_capture_frame 增加
+include_tiles 参数（普通 capture/report 传 false；capture --map 传 true 保留瓦片供调试），
+crates/wolf-cli/src/play.rs 的 rebuild 实时窗口只合成 picture 层。未覆盖瞬间回退到 renderer 黑场 clear。
+验证：标题 frame82 由绿→纯黑、frame110 标题美术+菜单正常；开场 frame390 由黄→黑；房间 CG 不受影响。
+详见 docs/HANDOFF_M0.md §11 同日「补充」条目。

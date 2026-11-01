@@ -874,3 +874,30 @@ WOLF_DATA_ROOT="$PWD/work/Data" ./target/debug/wolf-cli.exe verify | tail -20
       gap（`m3_title_mouse` 有用例断言取消后菜单不恢复；M3_TITLE_UX §4 建议#2 未实现），本轮未动，避免
       误触发 boot 与 EndGame。(c) H-MENU-1（原版标题菜单精确位置/是否用 menuN 图片按钮）仍未实测，
       当前用居中文本+中文标签为最小可见修复。
+
+  * **2026-11-01（补充：场景「闪烁 / 纯色+点状背景 / 黄色背景」根因与修复）：** 用户实机复现的两类
+    闪烁——「开始游戏后闪出纯色+点状背景」「确认属性到正式游玩前的对话背景是黄色」——经离屏逐帧取证，
+    定位为**地图占位瓦片层外露**：
+    * **根因**：5 张注册地图（TitleMap / SampleMapA / Map003 / Map024 / Map031）的 tile 层全部使用
+      WOLF 编辑器**自带示例 chip**（绿底白点草皮 autotile1 code0 + 米色块 code4），而实际画面永远由
+      整屏 CG 或 cg/blackscreen.jpg 覆盖。在标题画 30 帧淡入期间、开场问候（SampleMapA ev0
+      pc304-315 只画妹妹立绘、未画房间 CG）期间、以及地图切换（130）等「CG 尚未盖住」的瞬间，就透出这
+      层占位瓦片 → 绿点 / 米色。取证：capture 逐帧 pic 列表（frame400 只有 blackscreen alpha 0.00 +
+      妹妹 900-903、无房间 bg；frame600 有 bg_001_03 全屏）；work/out/map_*.png 逐图均为同一套示例 chip。
+    * **修复**：crates/wolf-cli/src/main.rs 的 build_capture_frame 增加 include_tiles: bool ——
+      **玩法路径**（普通 capture/report）传 false，不再叠加占位瓦片层，未覆盖瞬间回退到 renderer 的
+      黑场 clear；capture --map（拍照地图数据本身）仍传 true 保留瓦片。crates/wolf-cli/src/play.rs
+      的 rebuild（实时窗口）同样只合成 picture 层、不画瓦片。正常房间因整屏 CG 覆盖不受影响。
+    * **验证（绝对数据根，离屏逐帧像素统计）**：标题 frame82 由绿点→**纯黑**（black 100%），frame110/900
+      标题美术 + 「开始游戏/读取存档/退出游戏」菜单正常；开场问候 frame390 由黄→黑（black 72%，余为 HUD/
+      图标/消息框），frame410/470 黑，frame600/1400 与 --load-save SaveData01 均为正确的整屏房间线稿 CG
+      （mean≈195，black≈6%）；capture --map TitleMap 仍显示示例瓦片（green 46% / beige 22%），调试路径
+      未受影响。cargo build -q --workspace exit 0；cargo test -q --workspace（默认无数据、
+      WOLF_GAME_DIR 指不存在目录跳存档漂移）exit 0；WOLF_DATA_ROOT=<绝对> cargo test -q -p wolf-game
+      = 283 passed / 7 failed（与既有 7 条姊妹作期望值/事件语义差异完全相同，非回归）。注：studio logo 帧
+      （t_60）的橙米色是**合法 splash 美术**，非瓦片外露。
+    * **说明**：仍需用户实机复测确认真实窗口 present 路径下的「闪烁」已消失；离屏 capture 与实时窗口共用
+      同一合成逻辑（本次两处都已改），但 present/swapchain 侧若有独立抖动需另查。
+
+  * **清理（本轮，AGENTS §7）**：删除 target/debug/incremental、target/release、target/ver6 与临时文档块；
+    du -sh . = 4.2G（target 3.8G、work 333M、work/Data 176M、.git 7.7M，保留可运行 debug 产物与 work/out/dist）。

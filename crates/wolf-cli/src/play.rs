@@ -532,8 +532,13 @@ impl App {
     /// The panel is appended last so it composites over every script layer, which is
     /// what the engine does: a choice prompt is an engine overlay, not a picture slot.
     fn rebuild(&mut self) {
-        let mut quads = self.game.tile_quads(&mut self.atlas);
-        quads.extend(self.game.picture_quads(&mut self.atlas));
+        // The registered maps paint their tiles from the WOLF editor's stock sample chips
+        // (green ground / beige patch), and every frame is in practice repainted by a
+        // full-screen CG or `cg/blackscreen.jpg`. Those chips are placeholder art the
+        // retail game never shows, so the live window composites only the picture layer:
+        // an uncovered moment (title fade-in, map switch) falls back to the renderer's
+        // black clear instead of flashing green/beige placeholder tiles.
+        let quads = self.game.picture_quads(&mut self.atlas);
         let mut sprites: Vec<SpriteInstance> = quads.iter().map(Self::tint_instance).collect();
         let mut texts = self.game.text_quads();
         if let Some(choices) = &self.game.choices {

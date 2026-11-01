@@ -102,6 +102,13 @@ pub struct Message {
     pub frames: u32,
 }
 
+/// How many messages the M5-F history keeps.
+///
+/// The retail window replaces its one message on every 101, so a line the player has
+/// already advanced past is gone. Keeping the last two hundred is enough for a full
+/// in-game day of conversation while bounding memory at one short string per line.
+pub const HISTORY_LIMIT: usize = 200;
+
 /// A pending choice prompt.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Choices {
@@ -330,6 +337,8 @@ pub struct Game {
     pub audio: Option<wolf_audio::Engine>,
     /// Message windows on screen.
     pub messages: Vec<Message>,
+    /// M5-F transcript: every message shown since the current title/load, oldest first.
+    pub history: Vec<Message>,
     /// Pending choice prompt.
     pub choices: Option<Choices>,
     /// Counters.
@@ -476,6 +485,7 @@ impl Game {
             sounds: Vec::new(),
             audio: None,
             messages: Vec::new(),
+            history: Vec::new(),
             choices: None,
             stats: GameStats::default(),
             diagnostics: BTreeMap::new(),
@@ -1129,6 +1139,7 @@ impl Game {
     ///
     /// Fails when this build has no event 42.
     pub fn start_title(&mut self) -> Result<(), GameError> {
+        self.clear_message_history();
         if self.start_event(TITLE_EVENT) {
             Ok(())
         } else {
@@ -1244,6 +1255,23 @@ impl Game {
             cursor_offset,
             screen_w: crate::picture::SCREEN_W as f32,
         }
+    }
+
+    /// Every message shown since the current title screen or save load, oldest first.
+    ///
+    /// M5-F exposes this transcript through the F4 overlay. It is runtime-only: saves
+    /// keep their retail layout, so a transcript never travels between sessions.
+    #[must_use]
+    pub fn message_history(&self) -> &[Message] {
+        &self.history
+    }
+
+    /// Forgets the transcript.
+    ///
+    /// Called when the title screen or a load replaces the conversation, so the
+    /// overlay never mixes two unrelated scenes.
+    pub fn clear_message_history(&mut self) {
+        self.history.clear();
     }
 
     /// The newest 101 message, laid out with its inline styling.
@@ -1676,6 +1704,7 @@ impl Game {
             sounds: &mut self.sounds,
             audio: self.audio.as_mut(),
             messages: &mut self.messages,
+            history: &mut self.history,
             choices: &mut self.choices,
             translator: &self.translator,
             replies: &mut self.replies,
@@ -2054,6 +2083,7 @@ struct GameHost<'a> {
     /// `Host::sound` a pure recorder (tests, headless captures).
     audio: Option<&'a mut wolf_audio::Engine>,
     messages: &'a mut Vec<Message>,
+    history: &'a mut Vec<Message>,
     choices: &'a mut Option<Choices>,
     /// M5-D catalog; the host applies it where text leaves the VM.
     translator: &'a Translator,
@@ -2166,12 +2196,20 @@ impl Host for GameHost<'_> {
             .translator
             .translate(text)
             .map_or_else(|| text.to_owned(), str::to_owned);
-        self.messages.clear();
-        self.messages.push(Message {
+        let message = Message {
             text,
             face,
             frames: 0,
-        });
+        };
+        // The history copy is independent of the live window: advancing to the next
+        // line must not move the transcript cursor, so frames start at zero.
+        self.history.push(message.clone());
+        if self.history.len() > HISTORY_LIMIT {
+            let excess = self.history.len() - HISTORY_LIMIT;
+            self.history.drain(..excess);
+        }
+        self.messages.clear();
+        self.messages.push(message);
         self.stats.messages += 1;
     }
 
@@ -3177,6 +3215,7 @@ mod tests {
             sounds: &mut game.sounds,
             audio: game.audio.as_mut(),
             messages: &mut game.messages,
+            history: &mut game.history,
             choices: &mut game.choices,
             translator: &game.translator,
             replies: &mut game.replies,
@@ -3220,6 +3259,44 @@ mod tests {
             host.show_message("untranslated", None);
         }
         assert_eq!(game.messages[0].text, "untranslated");
+    }
+
+    #[test]
+    fn a_transcript_keeps_order_and_is_bounded() {
+        let Some(root) = have_data() else { return };
+        let mut game = Game::new(&root).expect("game");
+        for index in 0..(HISTORY_LIMIT + 3) {
+            let mut host = host(&mut game);
+            host.show_message(&format!("line {index}"), None);
+        }
+        let history = game.message_history();
+        assert_eq!(history.len(), HISTORY_LIMIT);
+        assert_eq!(history.first().expect("oldest").text, "line 3");
+        assert_eq!(
+            history.last().expect("newest").text,
+            format!("line {}", HISTORY_LIMIT + 2)
+        );
+        assert_eq!(game.messages.len(), 1, "the window still shows one line");
+        assert_eq!(game.messages[0].text, history[HISTORY_LIMIT - 1].text);
+        game.clear_message_history();
+        assert!(game.message_history().is_empty());
+    }
+
+    #[test]
+    fn loading_a_save_clears_the_transcript() {
+        let Some(root) = have_data() else { return };
+        let path = root.join("Save").join("SaveData01.sav");
+        if !path.is_file() {
+            return;
+        }
+        let mut game = Game::new(&root).expect("game");
+        {
+            let mut host = host(&mut game);
+            host.show_message("a line from the old scene", None);
+        }
+        assert_eq!(game.message_history().len(), 1);
+        game.load_save(&path).expect("retail save");
+        assert!(game.message_history().is_empty());
     }
 
     #[test]

@@ -691,3 +691,26 @@ WOLF_DATA_ROOT="$PWD/work/Data" ./target/debug/wolf-cli.exe verify | tail -20
   * **verify**：64 matched / 1 SKIP；verify --wolf 72 matched / 0 pending、1,361/1,361 bytes equal。
   * **当前进度**：M0–M4 完成（音频 DB-entry 遗留已清）；M5-A..E 完成第一切片。
     用户 m07499/m08440 授权持续推进。
+
+* 2026-11-01（M5-F：F4 消息回顾，第一切片）：
+  * **动机**：原版消息窗口只保留一条，101 一到上一句就被替换；误触确认或长对话后
+    无法重读。本切片把显示过的文本留在运行期，F4 打开只读回顾页，不改存档格式。
+  * **实现**：wolf-game 新增 HISTORY_LIMIT=200 与 Game::history；GameHost::show_message
+    在翻译后追加 frames=0 的副本并裁掉最旧端，活动 messages 仍只有一条；新增
+    message_history/clear_message_history，start_title 与 savegame::load_into 清空。
+    wolf-cli/play.rs 新增 App.backlog/backlog_scroll、纯函数 backlog_view（每页 18 条、
+    页范围与总数标题、正文拼成单个 TextItem 由 cosmic-text 换行）；F4 开关、PgUp/PgDn
+    翻页并夹紧到 len-18；打开时隐藏游戏文字并拦下键盘/鼠标输入，F10/F12 保留，F12
+    重启关闭回顾页；不新增依赖。
+  * **测试**：wolf-game 单测 a_transcript_keeps_order_and_is_bounded（203 条→200 条、
+    最旧 line 3、最新 line 202、窗口仍 1 条）与 loading_a_save_clears_the_transcript；
+    wolf-cli 3 条 backlog_view 测试（空历史、25 条首页第 8-25、PgUp 后 1-18、越界夹紧）。
+    cargo test -q -p wolf-cli play::tests = 8 passed；WOLF_DATA_ROOT=work/Data
+    cargo test -q -p wolf-game --lib = 255 passed；全 workspace 默认与数据根均
+    832 passed / 0 failed / 2 ignored。
+  * **verify**：64 matched / 1 SKIP；verify --wolf 72 matched / 0 pending，
+    1,361/1,361 bytes equal。
+  * **边界**：只保留运行期最近 200 条，不跨会话、不写 .sav；回顾页无背景面板/
+    鼠标点击/富文本；F4 固定热键，未做重绑定；翻译目录在入 history 前应用。
+  * **当前进度**：M0–M4 完成；M5-A..F 完成第一切片。用户 m07499/m08440/m10187
+    授权持续推进。

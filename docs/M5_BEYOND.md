@@ -1,6 +1,6 @@
 # M5 — 超越原版
 
-状态：**进行中（M5-A、M5-B、M5-C、M5-D、M5-E 已完成第一切片）**。M0–M4 已交付；M5 的目标是在数据级重写与
+状态：**进行中（M5-A、M5-B、M5-C、M5-D、M5-E、M5-F 已完成第一切片）**。M0–M4 已交付；M5 的目标是在数据级重写与
 逐像素对等之外，补上原版没有、玩家实际能感知的能力。
 
 | 切片 | 内容 | 状态 |
@@ -10,6 +10,7 @@
 | M5-C | 游戏倾向 / 里程碑汇总面板（F2 overlay） | 已完成第一切片（实时读取存档变量，无独立成就存档） |
 | M5-D | 多语言文本层（中/日/英） | 已完成第一切片（外部 TSV 翻译目录 + play/capture 应用） |
 | M5-E | Mod 数据/音频覆盖层 | 已完成第一切片（`--mod` 数据与 BGM/SE 覆盖，存档仍写 base） |
+| M5-F | 消息回顾（F4 转录） | 已完成第一切片（运行期保留最近 200 条，分页回看，不写存档） |
 
 ## M5-A：高分辨率与无级缩放
 
@@ -320,6 +321,63 @@ mod 目录示例（相对路径与数据根一致）：
 - BGM/SE 也按整文件覆盖；不重编码、不改混音/音量/淡入语义，mod 里的音频格式仍须被
   wolf-audio 解码器支持（ogg/mp3/wav）。
 - 存档格式与 base 完全一致；读档时地图对象匹配会同时扫描 overlay 与 base 的 MapData。
+
+## M5-F：消息回顾（F4 转录）
+
+原版的消息窗口只有一条：每执行一次 101，上一句就被替换掉，玩家误触确认或
+走完一段长对话后无法重读。本切片把已经显示过的文本留在运行期，用 F4 打开一个
+只读回顾页。
+
+### 玩家用法
+
+```bash
+# 正常游玩，按 F4 打开/关闭消息回顾
+wolf-cli play --load-save work/Data/Save/SaveData01.sav
+
+# 打开后：PgUp 往前翻 18 条，PgDn 往回翻；F4 关闭；F10 退出不变
+```
+
+回顾页是模态文本页：打开时暂时隐藏游戏自身的文字，并拦下键盘/鼠标游戏输入
+（脚本仍在后台运行，但不会因为误触而推进对话），避免两层文字叠在一起。标题行
+显示当前页范围与总数，正文白字 2 px 黑边，长句由 cosmic-text 在 1008 px 宽度内
+自动换行。F10 退出、F12 重开仍可用。
+
+### 实现
+
+- `crates/wolf-game/src/game.rs`
+  - 新增 `HISTORY_LIMIT = 200` 与 `Game::history: Vec<Message>`；
+    `GameHost::show_message` 在翻译之后把同一条消息（`frames = 0`）追加进 history，
+    超过上限从最旧端 `drain`。现行 `messages` 仍只保留一条。
+  - 新增 `message_history()` / `clear_message_history()`；`start_title` 与
+    `savegame::load_into` 清空，避免标题、读档把两段无关对话接在一起。
+- `crates/wolf-cli/src/play.rs`
+  - `App` 新增 `backlog` / `backlog_scroll`；F4 开关，PgUp/PgDn 每页 18 条，
+    滚动量 clamp 到 `len - BACKLOG_ROWS`，不会翻出空白页。
+  - `backlog_view(history, scroll) -> (header, body)` 是纯函数，负责页范围、
+    标题与正文拼接；`build_text_items` 在回顾页打开时直接返回这两条 TextItem。
+  - 打开/关闭时清空 held 与鼠标按键，打开期间键盘（除 F4/PgUp/PgDn/F10/F12）
+    与鼠标输入不送进游戏；F12 重启会关闭回顾页并清零滚动位置。
+- 不改存档格式、不新增外部依赖；回顾内容只存在于当前进程。
+
+### 测试
+
+- `wolf-game` 单测 `a_transcript_keeps_order_and_is_bounded`：连续 203 条消息后
+  history 恰好 200 条、最旧为 `line 3`、最新为 `line 202`，活动窗口仍只有 1 条；
+  `clear_message_history` 清空。
+- `wolf-cli` 单测：空历史、25 条消息的首页（第 8-25 条）、PgUp 后的第 1-18 条、
+  超出上限的滚动夹紧，均断言 header 与正文首尾行。
+- `cargo test -q -p wolf-cli play::tests` 8 passed；`cargo test -q -p wolf-game --lib`
+  在 `WOLF_DATA_ROOT=work/Data` 下 255 passed；全 workspace 默认与数据根均
+  832 passed / 0 failed / 2 ignored；verify 64 matched / 1 SKIP、
+  verify --wolf 72 matched / 0 pending（1,361/1,361 bytes equal）。
+
+### 边界
+
+- 只保留运行期最近 200 条；不提供跨会话历史，也不把转录写进 `.sav`（存档格式
+  继续与原版逐字节兼容）。
+- 回顾页复用文本 pass，没有背景面板、鼠标点击或富文本；F4 是固定热键，未做
+  键位重绑定。
+- 翻译目录（M5-D）在入 history 之前应用，因此回顾页显示的是玩家实际看到的文本。
 
 ## 后续切片的设计约束
 

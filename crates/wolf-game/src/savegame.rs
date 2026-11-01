@@ -73,6 +73,9 @@ pub fn load_into(game: &mut Game, path: &Path) -> Result<LoadedSave, String> {
         std::fs::read(path).map_err(|err| format!("cannot read {}: {err}", path.display()))?;
     let save =
         SaveFile::parse(&bytes).map_err(|err| format!("cannot parse {}: {err}", path.display()))?;
+    // A load starts a different conversation; the M5-F transcript belongs to the scene
+    // the player was in, not to the variables the save replaces.
+    game.clear_message_history();
     Ok(apply(game, &save))
 }
 

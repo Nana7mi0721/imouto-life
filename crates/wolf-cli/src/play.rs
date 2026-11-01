@@ -26,11 +26,15 @@ use winit::keyboard::{Key, NamedKey};
 use winit::window::{Fullscreen, Window, WindowId};
 
 use wolf_game::atlas::{Atlas, TextQuad};
-use wolf_game::{choice, key, Game};
+use wolf_game::{choice, key, Game, Message};
 use wolf_render::{Renderer, ScaleMode, SpriteInstance, TextItem, LOGICAL_H, LOGICAL_W};
 
 /// One frame at 60 Hz.
 const FRAME_TIME: Duration = Duration::from_micros(16_667);
+
+/// Messages the M5-F transcript shows at once. Eighteen 16 px lines fit under the
+/// header without touching the bottom HUD.
+const BACKLOG_ROWS: usize = 18;
 
 /// Window presentation chosen on the command line.
 #[derive(Clone, Copy, Debug)]
@@ -89,6 +93,35 @@ fn debug_slot(addr: u32) -> usize {
     } else {
         addr as usize
     }
+}
+
+/// Builds the M5-F transcript page: a header line and the visible messages.
+///
+/// `scroll` counts how many of the newest messages are hidden, so 0 is the live end
+/// of the conversation and a larger value walks backwards one page at a time. The
+/// body is one string rather than one item per message: cosmic-text then wraps a long
+/// line inside the panel instead of letting it run into the next message's row.
+fn backlog_view(history: &[Message], scroll: usize) -> (String, String) {
+    let total = history.len();
+    let scroll = scroll.min(total.saturating_sub(BACKLOG_ROWS));
+    let end = total - scroll;
+    let start = end.saturating_sub(BACKLOG_ROWS);
+    let header = if total == 0 {
+        "消息回顾 | 暂无消息 | F4 关闭".to_owned()
+    } else {
+        format!(
+            "消息回顾 | {}-{} / {} | PgUp/PgDn 滚动 | F4 关闭",
+            start + 1,
+            end,
+            total
+        )
+    };
+    let mut body = String::new();
+    for message in &history[start..end] {
+        body.push_str(message.text.trim_end());
+        body.push('\n');
+    }
+    (header, body)
 }
 
 /// Runs the title screen in a window until the user closes it (or `frames` pass).
@@ -204,6 +237,8 @@ pub fn run(
         debug_overlay: debug.overlay || !debug.vars.is_empty(),
         debug_vars: debug.vars,
         stats_overlay: debug.stats,
+        backlog: false,
+        backlog_scroll: 0,
         translation: translation.map(std::path::Path::to_path_buf),
         mods: mods.to_vec(),
     };
@@ -267,6 +302,10 @@ struct App {
     debug_vars: Vec<u32>,
     /// Whether the M5-C play-statistics / milestone overlay is visible.
     stats_overlay: bool,
+    /// Whether the M5-F message transcript is open (F4).
+    backlog: bool,
+    /// How many of the newest messages the transcript currently hides.
+    backlog_scroll: usize,
     /// M5-D catalog path, re-applied when F12 rebuilds the session.
     translation: Option<std::path::PathBuf>,
     /// M5-E mod data overlay roots, re-applied when F12 rebuilds the session.
@@ -421,6 +460,8 @@ impl App {
         self.game = game;
         self.held.clear();
         self.mouse_buttons = 0;
+        self.backlog = false;
+        self.backlog_scroll = 0;
         self.step();
         if let Some(renderer) = self.renderer.as_ref() {
             self.refresh_title(renderer);
@@ -508,6 +549,19 @@ impl App {
     }
 
     fn build_text_items(&self) -> Vec<TextItem> {
+        // The transcript is a modal read-only page: while it is open the script keeps
+        // running, but its glyphs are hidden so the two text layers cannot overlap.
+        if self.backlog {
+            let (header, body) = backlog_view(self.game.message_history(), self.backlog_scroll);
+            return vec![
+                TextItem::new(header, [8.0, 8.0, 1008.0, 20.0], 16.0)
+                    .with_colour([255, 224, 140])
+                    .with_outline(2, [0, 0, 0]),
+                TextItem::new(body, [8.0, 34.0, 1008.0, 520.0], 16.0)
+                    .with_colour([255, 255, 255])
+                    .with_outline(2, [0, 0, 0]),
+            ];
+        }
         let mut items: Vec<TextItem> = self
             .texts
             .iter()
@@ -754,12 +808,45 @@ impl ApplicationHandler for App {
                         }
                         return;
                     }
+                    // F4 opens the M5-F transcript. It is a read-only overlay: the
+                    // script keeps running underneath, and the ordinary game keys are
+                    // not consumed while it is closed.
+                    if matches!(event.logical_key, Key::Named(NamedKey::F4)) {
+                        if !event.repeat {
+                            self.backlog = !self.backlog;
+                            self.backlog_scroll = 0;
+                            // A modal page must not leak held keys/buttons into the
+                            // script that keeps running underneath it.
+                            self.held.clear();
+                            self.mouse_buttons = 0;
+                            println!("backlog: overlay {}", self.backlog);
+                        }
+                        return;
+                    }
+                    if self.backlog
+                        && matches!(
+                            event.logical_key,
+                            Key::Named(NamedKey::PageUp | NamedKey::PageDown)
+                        )
+                    {
+                        let total = self.game.message_history().len();
+                        let oldest = total.saturating_sub(BACKLOG_ROWS);
+                        if matches!(event.logical_key, Key::Named(NamedKey::PageUp)) {
+                            self.backlog_scroll = (self.backlog_scroll + BACKLOG_ROWS).min(oldest);
+                        } else {
+                            self.backlog_scroll = self.backlog_scroll.saturating_sub(BACKLOG_ROWS);
+                        }
+                        return;
+                    }
                     // manual01: F12 restarts the game. Ignore auto-repeat so a held key
                     // cannot reload the data root dozens of times a second.
                     if is_restart_key(&event.logical_key) {
                         if !event.repeat {
                             self.restart();
                         }
+                        return;
+                    }
+                    if self.backlog {
                         return;
                     }
                     if let Some(bit) = bit {
@@ -782,6 +869,9 @@ impl ApplicationHandler for App {
                 self.mouse_buttons = 0;
             }
             WindowEvent::MouseInput { state, button, .. } => {
+                if self.backlog {
+                    return;
+                }
                 let bit = match button {
                     MouseButton::Left => 1,
                     MouseButton::Right => 2,
@@ -893,9 +983,11 @@ fn wolf_bit(key: &Key) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::{
-        debug_lines, debug_slot, is_restart_key, parse_debug_vars, stats_lines, DebugSnapshot,
+        backlog_view, debug_lines, debug_slot, is_restart_key, parse_debug_vars, stats_lines,
+        DebugSnapshot, BACKLOG_ROWS,
     };
     use winit::keyboard::{Key, NamedKey};
+    use wolf_game::Message;
 
     /// manual01/F12_Reset: only F12 restarts; F10 stays the quit key and the ordinary
     /// gameplay keys must never trigger a reload.
@@ -990,6 +1082,57 @@ mod tests {
         assert_eq!(lines[2].1, [120, 255, 160]);
         assert_eq!(lines[3].0, "[ ] 百日纪念 - 在一起生活满 100 天");
         assert_eq!(lines[3].1, [180, 180, 180]);
+    }
+
+    fn transcript(count: usize) -> Vec<Message> {
+        (0..count)
+            .map(|index| Message {
+                text: format!("line {index}"),
+                face: None,
+                frames: 0,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn an_empty_transcript_says_so() {
+        let (header, body) = backlog_view(&[], 0);
+        assert_eq!(header, "消息回顾 | 暂无消息 | F4 关闭");
+        assert!(body.is_empty());
+    }
+
+    #[test]
+    fn the_transcript_shows_the_newest_page_and_scrolls_back() {
+        let history = transcript(BACKLOG_ROWS + 7);
+        let (header, body) = backlog_view(&history, 0);
+        assert_eq!(
+            header,
+            format!(
+                "消息回顾 | 8-{} / {} | PgUp/PgDn 滚动 | F4 关闭",
+                history.len(),
+                history.len()
+            )
+        );
+        let lines: Vec<&str> = body.lines().collect();
+        assert_eq!(lines.len(), BACKLOG_ROWS);
+        assert_eq!(lines[0], "line 7");
+        assert_eq!(
+            lines[BACKLOG_ROWS - 1],
+            format!("line {}", history.len() - 1)
+        );
+
+        let (header, body) = backlog_view(&history, BACKLOG_ROWS);
+        assert_eq!(
+            header,
+            format!(
+                "消息回顾 | 1-{} / {} | PgUp/PgDn 滚动 | F4 关闭",
+                BACKLOG_ROWS,
+                history.len()
+            )
+        );
+        assert_eq!(body.lines().next(), Some("line 0"));
+        // Scrolling past the oldest page clamps instead of showing an empty panel.
+        assert_eq!(backlog_view(&history, 999).0, header);
     }
 
     #[test]

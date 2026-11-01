@@ -120,6 +120,10 @@ fn main() -> ExitCode {
     let mut stats_overlay = false;
     // M5-D side-car content catalog: replaces exact message/choice strings at runtime.
     let mut translation: Option<PathBuf> = None;
+    // M5-D authoring tools for that catalog (the `translations` command).
+    let mut translations_template: Option<PathBuf> = None;
+    let mut translations_check: Option<PathBuf> = None;
+    let mut translations_strict = false;
     // M5-E mod data overlays, highest priority last.
     let mut mods: Vec<PathBuf> = Vec::new();
     let mut map: Option<String> = None;
@@ -293,6 +297,13 @@ fn main() -> ExitCode {
             "--translation" => {
                 translation = args.next().map(PathBuf::from);
             }
+            "--template" => {
+                translations_template = args.next().map(PathBuf::from);
+            }
+            "--check" => {
+                translations_check = args.next().map(PathBuf::from);
+            }
+            "--strict" => translations_strict = true,
             "--mod" => {
                 if let Some(path) = args.next() {
                     mods.push(PathBuf::from(path));
@@ -449,6 +460,13 @@ fn main() -> ExitCode {
             watch,
         ),
         Some("list") => run_list(&root, filter.as_deref()),
+        Some("translations") => run_translations(
+            &root,
+            translations_template.as_deref(),
+            translations_check.as_deref(),
+            translations_strict,
+            &mods,
+        ),
         Some("play") => {
             // `play` shares capture's entry-point resolution so a map script or a single
             // common event can be driven interactively, not just the boot chain.
@@ -526,6 +544,7 @@ fn print_help() {
     println!("                                   [--scale integer|fit-nearest|fit-linear] [--fullscreen]");
     println!("                                   [--debug] [--debug-var <ADDR,...>] [--stats]");
     println!("    wolf-cli [--root <DIR>] list [--filter <TEXT>]");
+    println!("    wolf-cli [--root <DIR>] translations [--template <FILE>] [--check <FILE>] [--strict]");
     println!();
     println!("COMMANDS:");
     println!(
@@ -545,6 +564,8 @@ fn print_help() {
     println!("                Same entry flags as capture: --map-run, --event, --load-save,");
     println!("                --boot (default) or --menu-only. --until <N> quits after N frames.");
     println!("    list        Print every common event: id, slots, real instructions, title.");
+    println!("    translations  Count the script's literal messages/choices, write a fill-in TSV");
+    println!("                template, and check an existing catalog's coverage.");
     println!();
     println!("OPTIONS:");
     println!("    -e, --event <ID>  Common event id for 'run', or the scene entry for");
@@ -579,6 +600,10 @@ fn print_help() {
     println!("                      catalog (original<TAB>translation; # comments); works in play/capture.");
     println!("    --mod <DIR>       Data overlay root mirroring the data tree (repeatable; later");
     println!("                      dirs win). Only files a mod ships replace the base data.");
+    println!("                      An optional <DIR>/mod.ini declares name/version/requires.");
+    println!("    --template <FILE> Write the 'translations' fill-in TSV catalog to FILE.");
+    println!("    --check <FILE>    Check a catalog's coverage against the script's static strings.");
+    println!("    --strict          With --check, exit 1 when any static string is untranslated.");
     println!("    --hold-message    Park on the first 101 message instead of dismissing it.");
     println!("    --audio           Play BGM/SE through the real mixer (silent null backend if no device).");
     println!("    --pointer <x,y>   Put the mouse pointer at a game pixel for the whole capture.");
@@ -1593,6 +1618,127 @@ fn short(text: &str) -> String {
 ///
 /// The real-instruction count excludes the NOP slots the editor leaves behind,
 /// which is why it is smaller than the slot count (docs/OPCODE_SPEC.md §0.1).
+/// `translations`: author and check the M5-D content catalog.
+///
+/// With no flags it prints how many literal message/choice strings the script has.
+/// `--template FILE` writes a fill-in TSV; `--check FILE` reports coverage against an
+/// existing catalog, and `--strict` turns missing static strings into exit status 1.
+/// Strings that interpolate variables are counted separately because their runtime
+/// text is not fixed and cannot be matched by an exact-string catalog.
+fn run_translations(
+    root: &Path,
+    template: Option<&Path>,
+    check: Option<&Path>,
+    strict: bool,
+    overlays: &[PathBuf],
+) -> ExitCode {
+    let path = wolf_game::layered_data_path(root, overlays, "CommonEvent.dat");
+    let Some(bytes) = read(&path) else {
+        eprintln!("translations: cannot read {}", path.display());
+        return ExitCode::FAILURE;
+    };
+    let events = match CommonEventData::parse(&bytes) {
+        Ok(events) => events,
+        Err(err) => {
+            eprintln!("translations: {}: {err}", path.display());
+            return ExitCode::FAILURE;
+        }
+    };
+    let scan = wolf_game::SourceScan::from_common_events(&events);
+    let (mut message_static, mut choice_static) = (0usize, 0usize);
+    let (mut message_dynamic, mut choice_dynamic) = (0usize, 0usize);
+    for text in &scan.texts {
+        match (text.context, text.is_static()) {
+            (wolf_game::TextContext::Message, true) => message_static += 1,
+            (wolf_game::TextContext::Message, false) => message_dynamic += 1,
+            (wolf_game::TextContext::Choice, true) => choice_static += 1,
+            (wolf_game::TextContext::Choice, false) => choice_dynamic += 1,
+        }
+    }
+    println!("source: {}", path.display());
+    println!(
+        "  {} static string(s) ({} message, {} choice), {} variable-dependent",
+        scan.static_count(),
+        message_static,
+        choice_static,
+        scan.dynamic_count()
+    );
+    println!(
+        "  {} static site(s); {} message / {} choice dynamic site string(s)",
+        scan.static_sites(),
+        message_dynamic,
+        choice_dynamic
+    );
+
+    let mut failed = false;
+    if let Some(path) = template {
+        match std::fs::write(path, scan.template()) {
+            Ok(()) => println!("template: {}", path.display()),
+            Err(err) => {
+                eprintln!("translations: cannot write {}: {err}", path.display());
+                failed = true;
+            }
+        }
+    }
+    if let Some(path) = check {
+        match wolf_game::Translator::load(path) {
+            Ok(translator) => {
+                let coverage = scan.coverage(&translator);
+                println!(
+                    "catalog: {} entr(ies) from {}",
+                    translator.len(),
+                    path.display()
+                );
+                let percent = if coverage.static_total == 0 {
+                    100.0
+                } else {
+                    coverage.covered as f64 * 100.0 / coverage.static_total as f64
+                };
+                println!(
+                    "coverage: {}/{} static ({percent:.1}%), {} missing, {} dynamic, {} unused",
+                    coverage.covered,
+                    coverage.static_total,
+                    coverage.missing.len(),
+                    coverage.dynamic_total,
+                    coverage.unused.len()
+                );
+                for (context, text) in coverage.missing.iter().take(10) {
+                    let mut preview: String = text.chars().take(48).collect();
+                    if text.chars().count() > 48 {
+                        preview.push('…');
+                    }
+                    println!("missing {}: {preview}", context.key());
+                }
+                if coverage.missing.len() > 10 {
+                    println!("  ... and {} more", coverage.missing.len() - 10);
+                }
+                for text in coverage.unused.iter().take(5) {
+                    println!("unused: {text}");
+                }
+                if coverage.unused.len() > 5 {
+                    println!("  ... and {} more unused", coverage.unused.len() - 5);
+                }
+                if strict && !coverage.missing.is_empty() {
+                    eprintln!(
+                        "translations: strict check failed, {} static string(s) missing",
+                        coverage.missing.len()
+                    );
+                    failed = true;
+                }
+            }
+            Err(err) => {
+                eprintln!("translations: {err}");
+                failed = true;
+            }
+        }
+    }
+    if failed {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
+    }
+}
+
 fn run_list(root: &Path, filter: Option<&str>) -> ExitCode {
     let basic = if root.join("BasicData").is_dir() {
         root.join("BasicData")
@@ -2882,13 +3028,16 @@ fn run_capture(
     }
     install_font_metrics(&mut game, root);
     if let Some(path) = translation {
-        match game.load_translation_file(path) {
+        match game.merge_translation_file(path) {
             Ok(entries) => println!("  translation: {entries} entr(ies) from {}", path.display()),
             Err(err) => {
                 eprintln!("translation: {err}");
                 return ExitCode::FAILURE;
             }
         }
+    }
+    for info in game.mods() {
+        println!("  mod       : {} ({})", info.label(), info.dir.display());
     }
     // A capture has no keyboard, so messages dismiss immediately. Choice prompts are
     // HELD by default: the title's first prompt is its menu, and answering it teleports
@@ -3263,13 +3412,16 @@ fn run_capture_map(
     }
     install_font_metrics(&mut game, root);
     if let Some(path) = translation {
-        match game.load_translation_file(path) {
+        match game.merge_translation_file(path) {
             Ok(entries) => println!("  translation: {entries} entr(ies) from {}", path.display()),
             Err(err) => {
                 eprintln!("translation: {err}");
                 return ExitCode::FAILURE;
             }
         }
+    }
+    for info in game.mods() {
+        println!("  mod       : {} ({})", info.label(), info.dir.display());
     }
     game.auto_advance = true;
     game.auto_events.set_enabled(answers.auto_events);

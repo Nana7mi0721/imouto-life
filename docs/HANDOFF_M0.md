@@ -714,3 +714,39 @@ WOLF_DATA_ROOT="$PWD/work/Data" ./target/debug/wolf-cli.exe verify | tail -20
     鼠标点击/富文本；F4 固定热键，未做重绑定；翻译目录在入 history 前应用。
   * **当前进度**：M0–M4 完成；M5-A..F 完成第一切片。用户 m07499/m08440/m10187
     授权持续推进。
+
+* 2026-11-01（M5-D2/E2：翻译工具与 mod 清单/文本补丁，M5 收口）：
+  * **动机**：M5 第一切片留下的两条已记录后续落地——翻译目录缺 authoring 工具和
+    细粒度上下文键；mod 覆盖层缺清单/依赖声明，且只能整文件替换。本轮按用户要求
+    继续 M5 剩余部分，不使用子代理。
+  * **D2 翻译工具**：`wolf-cli translations` 新增 `--template`/`--check`/`--strict`。
+    实测本作 **1,218 条静态字符串**（1,046 消息 + 172 选项）、**46 条变量相关**、
+    1,476 个静态出现点；`en.tsv` 5/1,218，`--strict` 返回 1。模板右列为空，
+    解析器把空翻译当占位（不会清空游戏文本）；原文列逐字匹配，含真实 TAB/CR/LF
+    的条目跳过并在模板头注明。含 `\v`/`\self` 等变量转义的句子不进入模板和覆盖率
+    分母。左列新增 `[msg]`/`[choice]` 前缀，作用域条目优先、无前缀条目兜底。
+    实现：`translate.rs` 的 `Context`、`translate_in`、`SourceScan::from_common_events`
+    （101/102 全事件扫描、`@n` 前缀剥离、NoVars 展开区分静态/动态）、`template`、
+    `coverage`；CLI 读取 CommonEvent.dat 走 mod overlay。数据测试
+    `m5_translation_scan.rs`，单测覆盖前缀/占位/覆盖率/未命中项。
+  * **E2 mod 清单/文本补丁**：新增 `<mod>/mod.ini`（`name`/`version`/`requires`，
+    `base` 为保留依赖名，缺省名用目录名）；加载前校验重名、保留名、自依赖、缺依赖，
+    只校验不重排（`--mod` 顺序仍是优先级）。每个 mod 可在根目录放
+    `translations.tsv`，按 mod 顺序合并，命令行 `--translation` 最后合并并最终生效；
+    play/capture 启动打印 `mod: name version (dir)`。实现：`crates/wolf-game/src/mods.rs`、
+    `GameError::Mod/Translate`、`Game::mods()/translator()/merge_translation_file`。
+    `m5_mod_overlay.rs` 新增 mod 文本补丁 + 缺依赖两条真实数据用例；单测覆盖清单解析
+    与全部依赖错误。
+  * **验证**：默认与 `WOLF_DATA_ROOT=work/Data` 的 `cargo test -q --workspace` 均
+    **exit 0，92 个 test result 全 ok**（wolf-game --lib 271、wolf-cli 21、
+    m5_mod_overlay 4、m5_translation_scan 1 等）；`verify` **PASS 64 / 1 SKIP**；
+    `verify --wolf` **PASS 72 / 0 pending**（1,361/1,361）。capture 实测：
+    `[choice]开始交流 → Scoped chat`、mod 内 `translations.tsv → Mod chat`，
+    90 帧夜菜单、0 warning。缺依赖报
+    `mod error: mod 'broken' requires 'absent', which is not in the --mod list`。
+  * **清理（AGENTS §7）**：删除 `target/debug/incremental`、`target/release`、
+    `target/ver6`、work/out 里的旧 probe exe/py 与临时模板；`du -sh .` = **3.3G**
+    （work 279M，其中 work/Data 176M；target 3.1G，保留可运行 debug 产物）。
+  * **当前进度**：M0–M5 完成（A–F 第一切片 + D2/E2）。剩余均为可选后续：
+    完整语言包内容、非文本文件的记录级二进制补丁、跨周目永久成就、键位重绑定。
+    本地提交（未推送远端）。

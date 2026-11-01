@@ -152,13 +152,16 @@ pub fn run(
     game.apply_settings();
     crate::install_font_metrics(&mut game, root);
     if let Some(path) = translation {
-        match game.load_translation_file(path) {
+        match game.merge_translation_file(path) {
             Ok(entries) => println!("translation: {entries} entr(ies) from {}", path.display()),
             Err(err) => {
                 eprintln!("translation: {err}");
                 return std::process::ExitCode::FAILURE;
             }
         }
+    }
+    for info in game.mods() {
+        println!("mod: {} ({})", info.label(), info.dir.display());
     }
     // The same entry-point rules `capture` uses: default boot (the TitleMap autorun
     // event and its three splashes), --menu-only for common event 42, --map-run for a

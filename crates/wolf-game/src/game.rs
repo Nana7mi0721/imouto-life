@@ -39,7 +39,7 @@ use crate::picture::{PictureKind, Screen, ANCHOR_CENTRE, SCREEN_H, SCREEN_W};
 use crate::tilemap::TileMap;
 use crate::tint::ScreenTint;
 use crate::transition::ScreenTransition;
-use crate::translate::Translator;
+use crate::translate::{Context as TextContext, Translator};
 
 /// The event the game opens with in this build (the "original title screen A").
 pub const TITLE_EVENT: u32 = 42;
@@ -211,6 +211,10 @@ pub enum GameError {
     /// No `Save/System.sav` template is available, so global settings cannot be read
     /// from it or persisted into it.
     MissingSettings,
+    /// A mod manifest is malformed or declares an unsatisfied dependency.
+    Mod(crate::mods::ModError),
+    /// A mod's text-level catalog (`translations.tsv`) is malformed.
+    Translate(crate::translate::TranslateError),
 }
 
 impl fmt::Display for GameError {
@@ -220,6 +224,8 @@ impl fmt::Display for GameError {
             Self::Format(err) => write!(f, "malformed game data: {err}"),
             Self::MissingEvent(id) => write!(f, "common event {id} is not in this build"),
             Self::MissingSettings => write!(f, "no Save/System.sav to hold the global settings"),
+            Self::Mod(err) => write!(f, "mod error: {err}"),
+            Self::Translate(err) => write!(f, "mod translation catalog: {err}"),
         }
     }
 }
@@ -231,6 +237,8 @@ impl std::error::Error for GameError {
             Self::Format(err) => Some(err),
             Self::MissingEvent(_) => None,
             Self::MissingSettings => None,
+            Self::Mod(err) => Some(err),
+            Self::Translate(err) => Some(err),
         }
     }
 }
@@ -406,6 +414,8 @@ pub struct Game {
     /// tree; a file present here is used instead of the base root. See
     /// [`Self::with_overlays`].
     overlays: Vec<PathBuf>,
+    /// Validated manifests for those overlays, in the same order (M5-E).
+    mods: Vec<crate::mods::ModInfo>,
 }
 
 impl Game {
@@ -433,6 +443,18 @@ impl Game {
         overlays: Vec<PathBuf>,
     ) -> Result<Self, GameError> {
         let root = root.into();
+        let mods = crate::mods::validate(&overlays).map_err(GameError::Mod)?;
+        // A mod may carry a text-level patch catalog at its root (M5-E second slice):
+        // it rewords individual messages/choices without replacing CommonEvent.dat.
+        // Mods merge in --mod order (later wins); the explicit --translation catalog
+        // is merged after the game is built, so it keeps the final say.
+        let mut translator = Translator::default();
+        for overlay in &overlays {
+            let path = overlay.join("translations.tsv");
+            if path.is_file() {
+                translator.merge(Translator::load(&path).map_err(GameError::Translate)?);
+            }
+        }
         let basic = if root.join("BasicData").is_dir() {
             root.join("BasicData")
         } else {
@@ -476,7 +498,7 @@ impl Game {
             font_metrics: None,
             text_font_gen: 0,
             text_cache: RefCell::new(TextQuadCache::default()),
-            translator: Translator::default(),
+            translator,
             tilemap: None,
             tilesets,
             assets: Assets::with_overlays(&root, overlays.clone()),
@@ -511,6 +533,7 @@ impl Game {
             system_save,
             root,
             overlays,
+            mods,
         };
         // The retail random source is the pre-generated table in Game.dat, read
         // verbatim (bytes masked to the editor's 7-bit output). A bare Vm keeps the
@@ -557,6 +580,12 @@ impl Game {
         &self.overlays
     }
 
+    /// The validated manifests of the loaded mod overlays, in layering order.
+    #[must_use]
+    pub fn mods(&self) -> &[crate::mods::ModInfo] {
+        &self.mods
+    }
+
     /// Installs an M5-D content catalog parsed in memory.
     pub fn set_translator(&mut self, translator: Translator) {
         self.translator = translator;
@@ -581,6 +610,31 @@ impl Game {
     #[must_use]
     pub fn translation_len(&self) -> usize {
         self.translator.len()
+    }
+
+    /// The installed catalog, after mod-level and explicit merges.
+    #[must_use]
+    pub fn translator(&self) -> &Translator {
+        &self.translator
+    }
+
+    /// Merges an M5-D catalog over the installed one and returns its entry count.
+    ///
+    /// Unlike [`Self::load_translation_file`], this keeps mod-level catalogs loaded by
+    /// [`Self::with_overlays`] and lets the explicit `--translation` file override
+    /// them. The incoming entries win.
+    ///
+    /// # Errors
+    ///
+    /// Propagates a read or syntax error from [`crate::translate::Translator::load`].
+    pub fn merge_translation_file(
+        &mut self,
+        path: impl AsRef<Path>,
+    ) -> Result<usize, crate::translate::TranslateError> {
+        let translator = Translator::load(path)?;
+        let entries = translator.len();
+        self.translator.merge(translator);
+        Ok(entries)
     }
 
     /// Turns on real audio output (M4). Safe on a machine with no device -- the engine
@@ -1861,6 +1915,20 @@ fn layered_read(root: &Path, basic: &Path, overlays: &[PathBuf], name: &str) -> 
     std::fs::read(layered_path(root, basic, overlays, name)).ok()
 }
 
+/// Resolves one `BasicData` file through the mod overlays.
+///
+/// This is the same lookup the game uses internally, exposed so tools such as the
+/// translation scanner read the same file the runtime would.
+#[must_use]
+pub fn layered_data_path(root: &Path, overlays: &[PathBuf], name: &str) -> PathBuf {
+    let basic = if root.join("BasicData").is_dir() {
+        root.join("BasicData")
+    } else {
+        root.to_path_buf()
+    };
+    layered_path(root, &basic, overlays, name)
+}
+
 fn read_events(path: &Path) -> Result<CommonEventData, GameError> {
     let bytes = std::fs::read(path).map_err(|source| GameError::Io {
         path: path.to_path_buf(),
@@ -2194,7 +2262,7 @@ impl Host for GameHost<'_> {
         // text rather than stacking behind it.
         let text = self
             .translator
-            .translate(text)
+            .translate_in(TextContext::Message, text)
             .map_or_else(|| text.to_owned(), str::to_owned);
         let message = Message {
             text,
@@ -2228,7 +2296,7 @@ impl Host for GameHost<'_> {
             .iter()
             .map(|option| {
                 self.translator
-                    .translate(option)
+                    .translate_in(TextContext::Choice, option)
                     .map_or_else(|| option.clone(), str::to_owned)
             })
             .collect();

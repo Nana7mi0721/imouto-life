@@ -1,6 +1,6 @@
 # M5 — 超越原版
 
-状态：**进行中（M5-A、M5-B、M5-C、M5-D、M5-E、M5-F 已完成第一切片）**。M0–M4 已交付；M5 的目标是在数据级重写与
+状态：**M5-A..F 已完成第一切片；M5-D2（翻译工具/上下文键）与 M5-E2（mod 清单/依赖/文本级补丁）已完成**。M0–M4 已交付；M5 的目标是在数据级重写与
 逐像素对等之外，补上原版没有、玩家实际能感知的能力。
 
 | 切片 | 内容 | 状态 |
@@ -8,8 +8,8 @@
 | M5-A | 高分辨率与无级缩放（窗口 fit / 全屏） | 已完成第一切片 |
 | M5-B | 运行时调试器（F3 overlay） | 已完成第一切片 |
 | M5-C | 游戏倾向 / 里程碑汇总面板（F2 overlay） | 已完成第一切片（实时读取存档变量，无独立成就存档） |
-| M5-D | 多语言文本层（中/日/英） | 已完成第一切片（外部 TSV 翻译目录 + play/capture 应用） |
-| M5-E | Mod 数据/音频覆盖层 | 已完成第一切片（`--mod` 数据与 BGM/SE 覆盖，存档仍写 base） |
+| M5-D | 多语言文本层（中/日/英） | 已完成（含 D2 工具与上下文键） |
+| M5-E | Mod 数据/音频覆盖层 | 已完成（含 E2 清单/依赖与文本级补丁） |
 | M5-F | 消息回顾（F4 转录） | 已完成第一切片（运行期保留最近 200 条，分页回看，不写存档） |
 
 ## M5-A：高分辨率与无级缩放
@@ -249,6 +249,71 @@ headless capture 仍输出不带 overlay 的 1024x576 证据帧。
 - 只覆盖 opcode 101 消息与 opcode 102 选项，不覆盖图片内文字、F2/F3 overlay 标签。
 - 目录语言不限，中/日/英都只是同一格式的文件；完整词条需要人工整理。
 
+## M5-D2：翻译目录工具与上下文键
+
+第一切片只有一个固定的精确匹配表；要判断「还差多少句」只能靠人工。第二切片补上
+authoring 工具和更细的匹配键，仍然不改数据、不写存档。
+
+### 玩家/译者用法
+
+```bash
+# 统计脚本里的字面文本
+wolf-cli translations --root work/Data
+
+# 生成待翻译模板（右列为空）
+wolf-cli translations --root work/Data --template work/out/i18n_template.tsv
+
+# 检查现有目录覆盖率；--strict 在有静态句未翻译时退出 1
+wolf-cli translations --root work/Data --check docs/translations/en.tsv
+wolf-cli translations --root work/Data --check docs/translations/en.tsv --strict
+```
+
+实测本作：**1,218 条静态字符串**（1,046 消息 + 172 选项）、**46 条变量相关字符串**、
+1,476 个静态出现点（同一句在多个事件里计多次）。`en.tsv` 的 5 条夜菜单示例覆盖
+5/1,218，`--strict` 正确返回 1。
+
+### 上下文键
+
+左列可以加前缀，只命中对应上下文：
+
+    [msg]同じ台詞	Spoken line
+    [choice]同じ台詞	Menu label
+    同じ台詞	Both contexts (fallback)
+
+带前缀的条目优先于无前缀条目；另一种上下文仍回退到无前缀条目。解析器仍做精确
+匹配，不做正则或模糊匹配。
+
+### 模板语义
+
+- 模板每行是 `原文<TAB>`，右列为空；**空翻译列被解析器忽略**，所以模板本身可以
+  直接交给 `--translation` 而不会把游戏文本清空。
+- 原文列逐字匹配（解析器不对原文做反转义）；原文含真实 TAB/CR/LF 的条目会跳过，
+  并在模板头注明条数。
+- 不含变量的 `\c[6]`、`\n`、`@1` 等显示标记保留在原文里，照常精确匹配。
+- 含 `\v[12]`、`\self[3]` 等变量转义的字符串运行时文本不固定，因此不进入模板，
+  也不计入覆盖率分母；工具单独报告这类字符串数量。
+
+### 实现
+
+- `crates/wolf-game/src/translate.rs`：`Context`、`Translator::translate_in`、
+  `[msg]`/`[choice]` 前缀、空翻译占位、`keys/has_in/merge`；
+  `SourceScan::from_common_events` 遍历全部事件，收集 101/102 字符串，
+  用 `wolf_vm::text::expand(..., NoVars)` 区分静态与变量相关，
+  并剥掉消息的 `@n` 说话人前缀（与 VM 的 `split_face` 一致）。
+- `SourceScan::template()` / `coverage()`；`Coverage` 报告静态总数、已覆盖、缺失、
+  动态总数与未命中目录项。
+- `crates/wolf-cli/src/main.rs`：`translations` 子命令、`--template`/`--check`/`--strict`；
+  读取 CommonEvent.dat 时走 mod overlay，和运行时同一份文件。
+- 单测覆盖前缀优先级、空翻译、模板占位、覆盖率与未命中项；
+  `crates/wolf-game/tests/m5_translation_scan.rs` 在真实数据上验证 1,000+ 条静态句、
+  夜菜单选项、模板可解析且为空目录。
+
+### 边界
+
+- 仍是精确匹配；同一句在不同上下文语义不同时用前缀区分，不做自动语义判断。
+- 只覆盖 opcode 101/102 文本，不覆盖图片内文字与 overlay 标签。
+- 完整语言包仍是内容工作；工具只保证「不漏句、不瞎翻」。
+
 ## M5-E：Mod 数据/音频覆盖层
 
 原版把地图、公共事件、数据库、图片和 BGM/SE 都放在安装目录的数据树里，改一个文件就得备份整包。
@@ -322,6 +387,71 @@ mod 目录示例（相对路径与数据根一致）：
   wolf-audio 解码器支持（ogg/mp3/wav）。
 - 存档格式与 base 完全一致；读档时地图对象匹配会同时扫描 overlay 与 base 的 MapData。
 
+## M5-E2：Mod 清单、依赖与文本级补丁
+
+第一切片按目录整体覆盖，无法声明「我是谁、我依赖谁」，想改一句台词也只能替换整个
+`CommonEvent.dat`。第二切片补上一个可选的 `mod.ini`，并让每个 mod 可以带一份文本
+目录补丁。
+
+### 清单格式
+
+`<mod 目录>/mod.ini`，UTF-8，`key=value`，支持 `#` / `;` 注释：
+
+    # mods/example/mod.ini
+    name=Example Mod
+    version=1.0
+    requires=base-ui, extra-maps
+
+- `name` 缺省时用目录名；同一组 `--mod` 里名字必须唯一。
+- `requires` 用逗号/空白分隔；每一项必须出现在同一组 `--mod` 里。保留名 `base`
+  表示未修改的原始数据，永远满足。
+- 依赖只做校验，不重排加载顺序：`--mod` 的先后就是覆盖优先级（后者优先），
+  避免隐式改序让玩家看不懂。
+- 错误会在加载数据前报出：清单语法/未知键、重名、保留名 base、自依赖、缺依赖。
+- 没有 `mod.ini` 的目录照旧可用，目录名就是 mod 名。
+
+启动时 play/capture 会打印实际加载的清单：
+
+    mod: Example Mod 1.0 (mods/example)
+
+### 文本级补丁
+
+每个 mod 可以在根目录放 `translations.tsv`，格式与 M5-D 目录相同。它只替换
+opcode 101/102 的字面文本，不必提供完整的 `CommonEvent.dat`：
+
+    # mods/example/translations.tsv
+    开始交流 	Start a chat
+
+合并顺序：`--mod` 先后（后者覆盖前者）→ 命令行的 `--translation` 最后合并。
+因此显式目录永远拥有最终解释权，mod 之间也能分层覆盖。
+
+### 实现
+
+- `crates/wolf-game/src/mods.rs`：`ModManifest` 解析、`validate` 依赖/重名/保留名
+  检查、`ModInfo::label`；`Game::with_overlays` 在读取任何数据文件前调用。
+- `GameError::Mod` / `GameError::Translate`；`Game::mods()` 暴露已校验清单。
+- `Game::with_overlays` 读取每个 overlay 根目录的 `translations.tsv` 并按序
+  `Translator::merge`；新增 `Game::merge_translation_file` 与 `Game::translator()`，
+  `--translation` 改用 merge，保证显式目录最后生效。
+- `play`/`capture` 启动时打印 mod 清单；装载失败时直接报出具体依赖名。
+
+### 测试
+
+- `mods.rs` 单测 8 条：清单解析/注释、缺省名与未知键、默认清单、重名、自依赖、
+  base 依赖、缺依赖、保留名。
+- `crates/wolf-game/tests/m5_mod_overlay.rs` 4 条真实数据用例：图片覆盖、音频覆盖、
+  mod 文本补丁 + 显式目录最后合并、缺依赖在读数前失败。
+- capture 实测：带 `translations.tsv` 的 mod 让夜菜单第一项变为 “Mod chat”；
+  缺依赖时报 `mod error: mod 'broken' requires 'absent'...`。
+- `Translator::merge` 单测覆盖同名条目后者覆盖、作用域条目覆盖、无前缀条目保留。
+
+### 边界
+
+- 文本补丁仍是精确字符串替换，不做逐行二进制补丁；`CommonEvent.dat`/数据库等
+  非文本文件仍只能整文件覆盖。
+- 依赖只校验存在性，不处理版本区间、循环依赖或自动下载；mod 仍需用户自己准备。
+- 清单不注入代码、不改变 exe 或渲染参数。
+
 ## M5-F：消息回顾（F4 转录）
 
 原版的消息窗口只有一条：每执行一次 101，上一句就被替换掉，玩家误触确认或
@@ -381,7 +511,11 @@ wolf-cli play --load-save work/Data/Save/SaveData01.sav
 
 ## 后续切片的设计约束
 
-- M5-D 已采用 side-car TSV 目录（不直接改 CP932/GBK 解码）；后续可补完整语言包与
-  更细的上下键（同句多义）。
-- M5-E 已采用 --mod 目录覆盖 data 与 BGM/SE 文件，不碰 exe；后续可补 mod 清单/依赖与
-  更细粒度的补丁（当前是整文件替换）。
+- M5-D 的目录格式与上下文键已定；工具已能列出全部静态句并检查覆盖率。剩余工作是
+  完整语言包的内容本身（人工/社区翻译），以及变量相关句的运行时翻译策略（当前
+  不进入模板）。
+- M5-E 已有 `--mod` 数据/音频覆盖、`mod.ini` 清单/依赖与 `translations.tsv` 文本补丁。
+  剩余工作是**非文本文件的记录级二进制补丁**（当前仍整文件替换），以及版本区间/
+  循环依赖检查；这些都需要独立的补丁格式设计，不与现有覆盖层混在一起。
+- M5-C 跨周目永久成就仍按原计划单独设计新存档字段与迁移，当前 F2 只读存档变量。
+- M5-F 的 F4/PgUp/PgDn 仍是固定热键，键位重绑定不在本里程碑内。

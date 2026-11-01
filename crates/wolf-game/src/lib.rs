@@ -31,6 +31,7 @@ pub mod game;
 pub mod key;
 pub mod map_runtime;
 pub mod message;
+pub mod mods;
 pub mod picture;
 pub mod savegame;
 pub mod settings;
@@ -47,11 +48,15 @@ pub use assets::{AssetError, Assets, ImageData};
 pub use atlas::{Atlas, AtlasRect, SpriteQuad, TextQuad, ATLAS_SIZE};
 pub use choice::{layout as choice_layout, ChoiceLayout};
 pub use fontmetrics::FontMetrics;
-pub use game::{Choices, FrameOutcome, Game, GameError, GameStats, Message, TITLE_EVENT};
+pub use game::{
+    layered_data_path, Choices, FrameOutcome, Game, GameError, GameStats, Message, TITLE_EVENT,
+};
 pub use map_runtime::{MapRuntime, PageSlot, Trigger};
 pub use picture::{Picture, PictureKind, Screen, ScreenQuad, UNCHANGED};
 pub use tilemap::{autotile_src, base_src, cull_range, TileMap, QUADRANT_PX, TILE_NUMBER, TILE_PX};
 pub use tint::ScreenTint;
 pub use transition::ScreenTransition;
-pub use translate::{TranslateError, Translator};
+pub use translate::{
+    Context as TextContext, Coverage, SourceScan, SourceText, TranslateError, Translator,
+};
 pub use window::{nine_slice, WindowPiece, PANEL_PICTURE};

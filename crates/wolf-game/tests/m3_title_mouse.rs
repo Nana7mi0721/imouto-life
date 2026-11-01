@@ -77,6 +77,11 @@ fn open_title() -> Option<Game> {
     for _ in 0..240 {
         game.frame();
         if game.choices.is_some() {
+            // The title renderer (event 43) only runs while the menu is up, so give it
+            // a few frames to paint the Picture/menu*_* buttons after the prompt appears.
+            for _ in 0..3 {
+                game.frame();
+            }
             return Some(game);
         }
     }
@@ -260,9 +265,16 @@ fn synthetic_relocation_makes_the_three_rows_mouse_hittable() {
 
     let lines = row_rects(&game);
     assert_eq!(lines.len(), 3);
+    // The title menu is the script's own image buttons, drawn at fixed 50 px pitch
+    // (y = 400/450/500); the hit rows mirror exactly those rows, not choice::LINE_HEIGHT.
     assert!(
-        (lines[1][1] - lines[0][1] - wolf_game::choice::LINE_HEIGHT).abs() < 0.01,
-        "rows use choice::LINE_HEIGHT: {lines:?}"
+        (lines[1][1] - lines[0][1] - 50.0).abs() < 0.01,
+        "title image rows sit 50 px apart: {lines:?}"
+    );
+    assert!(
+        game.screen.iter().any(|p| p.file.contains("menu1")),
+        "event 43 paints the real Picture/menu1_* button, not a text panel: {:?}",
+        game.screen.iter().map(|p| p.file.clone()).collect::<Vec<_>>()
     );
     for (row, line) in lines.iter().enumerate() {
         let (x, y) = row_centre(line);
@@ -433,6 +445,25 @@ fn right_button_closes_the_load_grid_through_the_opcode_123_bridge() {
         "CE14 has ended after the right click"
     );
     assert_eq!(game.stats.warnings, 0, "right-click cancel is warning-free");
+}
+
+#[test]
+fn the_title_cursor_is_mirrored_into_sys20_for_the_image_highlighter() {
+    let Some(mut game) = open_title() else {
+        return;
+    };
+    // Event 43 picks the bright menu*_a.png by reading Sys20 == 0/1/2, so the port mirrors
+    // the choice cursor there every frame; otherwise the highlight never moves.
+    game.set_choice_cursor(0);
+    game.frame();
+    assert_eq!(game.sys(20), 0, "cursor 0 lights the first title button");
+    game.set_choice_cursor(1);
+    game.frame();
+    assert_eq!(game.sys(20), 1, "cursor 1 lights the second title button");
+    game.set_choice_cursor(2);
+    game.frame();
+    assert_eq!(game.sys(20), 2, "cursor 2 lights the third title button");
+    assert_eq!(game.stats.warnings, 0);
 }
 
 #[test]

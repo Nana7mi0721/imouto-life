@@ -187,6 +187,11 @@ pub fn layout_at_sized(
     if options.is_empty() {
         return None;
     }
+    // The original title menu is real image buttons painted by event 43; the port must
+    // not paint an inferred text panel over them, but it still needs the fixed hit rows.
+    if is_title_image_menu(options) {
+        return Some(title_image_layout(cursor));
+    }
     let panel = build(options, cursor, x as f32, y as f32, font_px);
     let on_screen = panel.rect[0] < SCREEN_W as f32
         && panel.rect[1] < SCREEN_H as f32
@@ -205,6 +210,45 @@ pub fn layout_at_sized(
         let cx = ((SCREEN_W as f32) - width) / 2.0;
         let cy = ((SCREEN_H as f32) - height) / 2.0;
         Some(build(options, cursor, cx.round(), cy.round(), font_px))
+    }
+}
+
+/// Whether `options` are the three internal keys the shipped title event hands to
+/// opcode `102` (`menu1`/`menu2`/`menu3`).
+///
+/// The original title menu is not a text window at all: three hand-drawn image buttons
+/// (`Picture/menu1_a.png` .. `menu3_a.png`) are painted at fixed screen rows by the
+/// conditional title event 43, and the bright/dim variant follows system variable 20.
+/// Recognising these exact keys lets the port skip the inferred text panel and let the
+/// script's own images be the menu (see [`title_image_layout`] for the hit rows).
+#[must_use]
+pub fn is_title_image_menu(options: &[String]) -> bool {
+    options.len() == 3
+        && options[0] == "menu1"
+        && options[1] == "menu2"
+        && options[2] == "menu3"
+}
+
+/// Fixed screen rows of the original title image-button menu.
+///
+/// CE43 draws `menu1_*`/`menu2_*`/`menu3_*` at x=10, y=400/450/500, each 240x52. These
+/// rectangles are used only for the mouse hit test; the visible menu is the script's own
+/// pictures, so nothing is painted from this layout.
+fn title_image_layout(cursor: usize) -> ChoiceLayout {
+    const X: f32 = 10.0;
+    const Y: f32 = 400.0;
+    const W: f32 = 240.0;
+    const H: f32 = 52.0;
+    const GAP: f32 = 50.0;
+    let mut lines = Vec::with_capacity(3);
+    for index in 0..3 {
+        lines.push([X, Y + index as f32 * GAP, W, H]);
+    }
+    let cursor_rect = lines.get(cursor).copied().unwrap_or(lines[0]);
+    ChoiceLayout {
+        rect: [X, Y, W, H + 2.0 * GAP],
+        lines,
+        cursor: cursor_rect,
     }
 }
 
@@ -280,7 +324,7 @@ pub fn overlay(
     options: &[String],
     cursor: usize,
 ) -> (Vec<SpriteQuad>, Vec<TextQuad>) {
-    if options.is_empty() {
+    if options.is_empty() || is_title_image_menu(options) {
         return (Vec::new(), Vec::new());
     }
     let panel = layout(options, cursor);
@@ -299,6 +343,9 @@ pub fn overlay_at(
     x: i32,
     y: i32,
 ) -> Option<(Vec<SpriteQuad>, Vec<TextQuad>)> {
+    if is_title_image_menu(options) {
+        return Some((Vec::new(), Vec::new()));
+    }
     let panel = layout_at(options, cursor, x, y)?;
     Some(draw(atlas, assets, options, cursor, &panel))
 }
@@ -313,6 +360,9 @@ pub fn overlay_at_sized(
     y: i32,
     font_px: f32,
 ) -> Option<(Vec<SpriteQuad>, Vec<TextQuad>)> {
+    if is_title_image_menu(options) {
+        return Some((Vec::new(), Vec::new()));
+    }
     let panel = layout_at_sized(options, cursor, x, y, font_px)?;
     Some(draw(atlas, assets, options, cursor, &panel))
 }

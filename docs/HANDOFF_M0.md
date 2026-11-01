@@ -907,3 +907,14 @@ WOLF_DATA_ROOT="$PWD/work/Data" ./target/debug/wolf-cli.exe verify | tail -20
     * **实测（本作数据）**：CE 侧 561 资产 / 2162 绘制点；并入 8 张地图后 660 资产 / 2431 绘制点。样例 cg/blackscreen.jpg 55 点 / 6 摆法 slot100@(0,36)。
     * **验证**：cargo build -q -p wolf-cli exit0；cargo test -q -p wolf-cli 34 passed（含 3 条新增 asset 单测）；cargo test -q --workspace（无数据）exit0；json 输出经 Node 解析通过。
     * **边界**：DB 默认值、引擎几何（九宫格窗口、文本度量、choice 越界、1/10 UI 缩放、过渡、present）不在数据里；kind 1/4 为字符串变量引用运行时求值。
+* 2026-11-02（标题界面修正：原版图片按钮菜单，替换此前的居中文字面板）：
+  * **起因**：用户（m01452）指出「标题界面你就实现错了」。核对 prt sc 实机截图（原版标题截图 = prt sc/{925C85F6-AA44-470B-8C47-A1EEBA03388B}.png，NCC 0.978 对 work/Data/SystemFile/TitleGraphic2.png）后确认：原版标题菜单是**三张手写风格图片按钮**，位于 x=10、y=400/450/500（各 240x52），由条件事件 **CE43「┗オリジナルタイトル画面Ｂ」** 绘制；此前实现的「屏幕居中深色文字面板 + menu1→开始游戏 中文标签」与原版不符，已废弃。
+  * **数据证据**：CE43 run_condition==2，条件 global v0(2000000)==0（仅标题成立）；[5-7] 画 menu1_b/2_b/3_b 于 (10,400/450/500) layer 3/4/5，[8] op111 按 Sys20==0/1/2 叠画对应 menu*_a 高亮；[55] 结束。全 CommonEvent 无事件调用 500043，仅 TitleMap ev2 slot[57] op210 调 CE42；CE43 由自动调度器在标题运行。
+  * **实现**：
+    * crates/wolf-game/src/auto_events.rs：SKIPPED 由 &[43] 改为 &[]，模块文档改写为「CE43 是标题菜单渲染器，须正常调度」；并新增 `title_menu_active` 门控——仅三键标题菜单打开时允许 CE43 运行（其 v0==0 条件在合成/边界状态也会成立，否则标题按钮会画到玩法场景上）。
+    * crates/wolf-game/src/game.rs frame()：choice 打开且为标题三键菜单时，把 choice_cursor 镜像进 Sys20（vm.vars.set_sys(20, cursor)），使 CE43 高亮跟随。
+    * crates/wolf-game/src/choice.rs：新增 is_title_image_menu() 与 title_image_layout()（固定命中行 (10,400,240,52)/(10,450)/(10,500)）；layout_at_sized 对标题菜单返回该图片行布局（供鼠标命中，与 -1000 锚点无关）；overlay/overlay_at/overlay_at_sized 对标题菜单返回空绘制，不再画文字面板。option_label 中文映射保留但标题路径不再用。
+  * **测试**：crates/wolf-game/tests/m3_title_visibility.rs / m3_title_mouse.rs 改为断言固定图片行布局、屏上存在 Picture/menu1_*、无文字面板；新增 the_title_cursor_is_mirrored_into_sys20_for_the_image_highlighter（cursor 0/1/2 → Sys20 0/1/2）。CE43 加标题门控后，crates/wolf-game/tests/m2_daily_loop.rs 的 CE251 直启用例无需改动即恢复 pictures=74。
+  * **验证**：cargo build -q --workspace exit0；默认无数据 cargo test -q --workspace exit0；WOLF_DATA_ROOT=<绝对> WOLF_GAME_DIR=<不存在> cargo test -q -p wolf-game = **283 passed / 7 failed**，7 条与干净 HEAD 完全相同的既有姊妹作期望值/事件语义差异（db 2 + auto_events 3 + game 2），**非本轮回归**；标题套件 title_visibility 4 / title_mouse 8 全过（绝对数据根实跑）。wolf-cli verify **PASS 64 / 1 SKIP**。
+  * **离屏实证**：capture --menu-only --frames 200 输出 pic -2 标题美术 + pic 3/4/5 = Picture/menu1_b/2_b/3_b 于 (10,400/450/500)，choice 锚点仍 (-1000,-1000)、engine rect [10,400,240,152]、text 0 项，画面与原版截图一致；capture --answer 0（新游戏）进入 19:30 场景后屏幕无任何 menu*_* 图片，证明 v0 进入游戏后已非 0、CE43 不泄漏到玩法。
+  * **仍未闭环**：M3_TITLE_UX §4 建议 #2（取消读档后重启标题）仍未实现，软锁依旧（m3_title_mouse 有用例断言“不恢复”）。

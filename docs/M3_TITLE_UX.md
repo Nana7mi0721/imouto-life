@@ -5,7 +5,7 @@
 并与日文原版（JP 原版 *.wolf）解包结果逐条比对；未在本机运行原版 Game.exe，凡涉及原版运行时行为的判断
 均标注为“未验证”。
 
-（2026-11-01 更新：已据第 4 节建议 #1 在 crates/wolf-game/src/choice.rs 实现「越界锚点回退居中 + 裸键中文标签映射」，本节所述「未改动 src」已过时，详见文末 §7。）
+（2026-11-01 更新：曾据第 4 节建议 #1 实现「越界锚点回退居中 + 裸键中文标签映射」，但该文字面板方案与原版不符，2026-11-02 已改为原版图片按钮菜单（CE43 渲染 + Sys20 高亮镜像），详见文末 §7。）
 
 ## 1. 结论摘要
 
@@ -120,22 +120,37 @@ Boot → 选 menu2（cursor=1，auto_choice 延迟 2 帧）→ 逐帧观察到�
 
 数据缺失版（WOLF_DATA_ROOT=/nonexistent/path）同样 4 passed、exit 0。
 
-## 7. 后续实现状态（2026-11-01）
+## 7. 后续实现状态（2026-11-01，2026-11-02 修正为原版图片菜单）
 
-据第 4 节「最小修复建议 #1」已在 src 落地（本轮把文档里“仅新增测试”的定位更新为已实现）：
+> **重要修正**：上一版把标题菜单做成「屏幕居中文字面板 + menu1→开始游戏 的中文标签映射」，
+> 与实机原版不符（用户指出「标题界面你就实现错了」）。经 prt sc 实机截图 + CE43 脚本复核，
+> 原版标题菜单是**三张手写风格图片按钮**，由条件事件 **CE43「┗オリジナルタイトル画面Ｂ」**
+> 在 x=10、y=400/450/500 画 `Picture/menu1_b..menu3_b`（暗），再按系统变量 Sys20==0/1/2 叠画
+> 对应 `menu*_a`（亮）。文字面板方案已废弃。
 
-- `crates/wolf-game/src/choice.rs`：`layout_at_sized` 的越界分支由返回 `None` 改为回退到
-  **屏内居中面板** (`(SCREEN_W-width)/2, (SCREEN_H-height)/2`)；新增 `fn option_label`：
-  menu1→"开始游戏"、menu2→"读取存档"、menu3→"退出游戏"（依据 CE42 分支体注释
-  menu1=はじめから / menu2=つづきから / menu3=おわる），`size()` 与 `draw()` 都按显示标签测宽/绘制。
-  `game.choices.options` 原始键不变，脚本分支与测试仍用 menu1..3。
-- 测试更新：`tests/m3_title_visibility.rs` 用例改名 `title_menu_options_fall_back_to_a_visible_centred_panel`
-  （断言面板在屏内、3 行）；`tests/m3_title_mouse.rs` 用例改名 `title_prompt_falls_back_to_a_hittable_centred_panel`
-  （断言 anchor 仍 -1000、面板在屏内、三行中心 `choice_row_at` 命中）。§6 里列的旧用例名已过时。
+现行实现（本轮落地）：
+
+- `crates/wolf-game/src/auto_events.rs`：`SKIPPED` 由 `&[43]` 改为 `&[]`——CE43 不是死代码，
+  而是标题菜单渲染器，须按普通 `run_condition == 2` 事件调度；模块文档同步改写。
+  另加 `title_menu_active` 门控：仅当三键标题菜单打开时允许 CE43 运行（其 v0==0 条件在合成/边界
+  状态也可能成立，否则标题按钮会画到玩法场景上）。
+- `crates/wolf-game/src/game.rs` `frame()`：choice 打开且是标题三键菜单时，把
+  `choice_cursor` 镜像进 Sys20（`set_sys(20, cursor)`），让 CE43 的高亮跟随玩家选择。
+- `crates/wolf-game/src/choice.rs`：新增 `is_title_image_menu(options)`（== menu1/menu2/menu3）与
+  `title_image_layout(cursor)`（固定命中行 (10,400,240,52)/(10,450,..)/(10,500,..)）；
+  `layout_at_sized` 对标题菜单直接返回该图片行布局（供鼠标命中，与 -1000 锚点无关）；
+  `overlay / overlay_at / overlay_at_sized` 对标题菜单一律返回空绘制，**不再画文字面板**，
+  屏幕上的菜单完全由 CE43 的图片负责。`option_label` 的中文映射保留但标题路径不再使用。
+- 测试：`tests/m3_title_visibility.rs`、`tests/m3_title_mouse.rs` 改为断言固定图片行布局、
+  屏上存在 `Picture/menu1_*` 图片、且无文字面板；新增
+  `the_title_cursor_is_mirrored_into_sys20_for_the_image_highlighter`（cursor 0/1/2 → Sys20 0/1/2）。
+  CE43 加标题门控后，`tests/m2_daily_loop.rs` 的 CE251 直启用例无需改动即恢复 pictures=74。
+- 实测：`capture --menu-only --frames 200` 输出 pic -2 标题美术 + pic 3/4/5 = menu1_b/2_b/3_b
+  于 (10,400/450/500)，choice 锚点仍 (-1000,-1000)、engine rect [10,400,240,152]、text 0 项；
+  画面与原版 prt sc 截图一致。`capture --answer 0`（新游戏）进入 19:30 场景后屏幕无任何
+  menu*_* 图片，证明 v0 在进入游戏后已非 0、CE43 不会泄漏到玩法。
 - §4 建议 #2（取消读档后重启标题）**仍未实现**，软锁依旧；`m3_title_mouse`
   `cancel_closes_the_load_grid_but_does_not_reopen_the_title_menu` 仍断言“不恢复”，作为已知 gap 记录。
-- 实测：`capture --frames 900` 标题美术上现居中显示「▶ 开始游戏 / 读取存档 / 退出游戏」（见
-  work/out/title_menu_final.png）。原版精确位置/是否改用 menuN 图片按钮仍属 H-MENU-1 未验证。
 
 ## 8. 标题淡入「绿点/纯色+点状背景」闪烁根因（2026-11-01）
 

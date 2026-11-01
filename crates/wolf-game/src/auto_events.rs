@@ -13,15 +13,18 @@
 //! That matches WOLF's page lifecycle ("created while the condition holds, discarded
 //! when it fails") without turning a one-shot event into a per-frame loop.
 //!
-//! ## A deliberate exception
+//! ## The title menu renderer (event 43)
 //!
-//! Event 43 (`┗オリジナルタイトル画面Ｂ`) is dead code in this data set: it has zero
-//! 210/211/300 call sites, it draws pictures 3/4/5 which the title picture 12000
-//! completely covers, and its only visible effect outside those pictures is a write
-//! to Sys20 (the choice cursor position). Its run condition is true at boot (v0 == 0),
-//! so a literal scheduler would start it; the measured title screen is pixel-identical
-//! without it (docs/ENGINE_EVENTS.md section 1, conclusion 5). It is listed in
-//! [`SKIPPED`] and recorded in the capture diagnostics instead.
+//! Event 43 (`┗オリジナルタイトル画面Ｂ`) has zero 210/211/300 call sites, but it is
+//! NOT dead code: it is the original title screen's menu renderer. On its own page life
+//! it draws the three hand-drawn image buttons `Picture/menu1_b`/`menu2_b`/`menu3_b`
+//! at x=10, y=400/450/500, and overlays the bright variant (`menu*_a`) of whichever row
+//! system variable 20 selects. Its run condition (global v0 == 0) holds only at the title,
+//! so it must be scheduled exactly like every other `run_condition == 2` event; the port
+//! then mirrors the choice cursor into Sys20 each frame so the highlight tracks the
+//! player's selection (see [`crate::game::Game::frame`]). The previous port excluded it
+//! as a "dead title variant" and painted an inferred text panel instead, which is why the
+//! title menu looked wrong; see docs/M3_TITLE_UX.md.
 
 use std::collections::BTreeMap;
 
@@ -47,9 +50,10 @@ pub struct AutoEvent {
 
 /// Events this scheduler deliberately does not start.
 ///
-/// Event 43 is dead code in this data set; see the module documentation and
-/// docs/ENGINE_EVENTS.md section 1 conclusion 5.
-pub const SKIPPED: &[u32] = &[43];
+/// Empty: every `run_condition == 2` event in this data set is live. Event 43, once
+/// listed here as a "dead title variant", is actually the title menu renderer and is
+/// scheduled normally; see the module documentation.
+pub const SKIPPED: &[u32] = &[];
 
 /// `run_condition == 0` events that the engine never starts on its own but that
 /// this runtime must start from a condition variable, because the battle flow
@@ -89,6 +93,10 @@ pub struct AutoEvents {
     /// second start is allowed (edge trigger).
     running: BTreeMap<u32, InstanceId>,
     enabled: bool,
+    /// Whether the title menu is actually up. The title menu renderer (event 43) has a
+    /// script condition (global v0 == 0) that can also hold in synthetic states where v0
+    /// was never set; gating it here keeps the title buttons from painting over a scene.
+    title_menu_active: bool,
 }
 
 impl AutoEvents {
@@ -116,7 +124,17 @@ impl AutoEvents {
             latched: BTreeMap::new(),
             running: BTreeMap::new(),
             enabled: true,
+            title_menu_active: false,
         }
+    }
+
+    /// Tells the scheduler whether the title menu (the three `menu1/2/3` options) is up.
+    ///
+    /// Event 43 (the title menu renderer) is only allowed to run while this is true, so
+    /// its `v0 == 0` script condition cannot light it up in a scene where v0 happens to
+    /// be 0 for unrelated reasons.
+    pub fn set_title_menu_active(&mut self, active: bool) {
+        self.title_menu_active = active;
     }
 
     /// Number of tracked events (98 = 96 `run==2` + 2 gated `run==0` calls).
@@ -174,9 +192,11 @@ impl AutoEvents {
             return report;
         }
         for event in &self.events {
-            let now = condition_value(vm, event.variable).map_or(false, |left| {
+            let header_condition = condition_value(vm, event.variable).map_or(false, |left| {
                 condition_met(event.operator, left, event.value)
             });
+            // Event 43 is the title menu renderer: only run it while the title menu is up.
+            let now = header_condition && (event.id != 43 || self.title_menu_active);
             let before = self.latched.get(&event.id).copied().unwrap_or(false);
             if now && !before {
                 if let Some(instance) = vm.start_event(event.id) {

@@ -107,6 +107,11 @@ fn boot_to_title_choices() -> Option<(Game, Vec<String>, bool)> {
             break;
         }
     }
+    // The title renderer (event 43) only runs while the menu is up; give it a few frames
+    // to paint the Picture/menu*_* buttons after the prompt first appears.
+    for _ in 0..3 {
+        game.frame();
+    }
     let options = game.choices.as_ref().map(|c| c.options.clone())?;
     Some((game, options, saw_271))
 }
@@ -140,10 +145,16 @@ fn title_menu_options_fall_back_to_a_visible_centred_panel() {
     assert_eq!(game.sys(3), -1000, "Sys3 (choice window X)");
     assert_eq!(game.sys(4), -1000, "Sys4 (choice window Y)");
 
-    // A fully off-screen anchor now falls back to the centred default position, so the
-    // title prompt is visible and clickable instead of silently painting nothing.
+    // The title menu is the script's own image buttons, so the port returns the fixed
+    // image-button hit rows (y = 400/450/500) instead of a text panel, regardless of the
+    // script's -1000/-1000 anchor.
     let panel = wolf_game::choice::layout_at_sized(&options, 0, -1000, -1000, 20.0)
-        .expect("an off-screen anchor must fall back to a visible panel, not None");
+        .expect("the title image menu always has on-screen hit rows");
+    assert!(
+        game.screen.iter().any(|p| p.file.contains("menu1")),
+        "event 43 paints the real Picture/menu1_* title button: {:?}",
+        game.screen.iter().map(|p| p.file.clone()).collect::<Vec<_>>()
+    );
     assert!(
         panel.rect[0] >= 0.0
             && panel.rect[1] >= 0.0

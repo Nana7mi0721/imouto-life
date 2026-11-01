@@ -1812,8 +1812,26 @@ impl Game {
         // condition that became true last frame is running now (docs/ENGINE_EVENTS.md
         // section 2.2). This is edge-triggered: a condition that stays true does not
         // restart a coroutine that already ended on its own.
+        // The title menu renderer (event 43) may only run while the title menu is up;
+        // its `v0 == 0` script condition also holds in synthetic states where v0 was
+        // never set, and running it there would paint the title buttons over a scene.
+        let title_menu_active = self
+            .choices
+            .as_ref()
+            .is_some_and(|choices| crate::choice::is_title_image_menu(&choices.options));
+        self.auto_events.set_title_menu_active(title_menu_active);
         self.auto_events.sync(&mut self.vm);
         self.handle_choice_input();
+        // Mirror the choice cursor into system variable 20 so the conditional title event
+        // 43 can light up the matching Picture/menu*_a.png button (it reads Sys20 == 0/1/2
+        // to pick the bright over the dim image). Only the three-key title prompt uses it.
+        let title_cursor = self.choices.as_ref().and_then(|choices| {
+            crate::choice::is_title_image_menu(&choices.options)
+                .then(|| self.choice_cursor.min(choices.options.len().saturating_sub(1)))
+        });
+        if let Some(cursor) = title_cursor {
+            self.vm.vars.set_sys(20, cursor as i32);
+        }
         // A fresh press can also be an action-key activation of the map event under
         // the pointer. Run it before the VM step so the started page executes this
         // same frame, exactly like an automatic page restarted at the frame's end.

@@ -348,6 +348,19 @@ pub struct Game {
     pub raw_pad_keys: Vec<i32>,
     /// Last BGM/SE volumes handed to the mixer, so a CE132 edit is applied once.
     applied_volumes: (u32, u32),
+    /// Frames each repeatable key has been held, for the engine key repeat.
+    ///
+    /// Index order follows [`Self::repeat_bits`]: decide, cancel, sub, pause, up,
+    /// down, left, right. CE48 seeds Sys15 (initial delay) and Sys16 (interval) from
+    /// the キーリピート速度 row at boot, and CE115 rewrites them whenever the
+    /// settings screen changes the speed.
+    key_hold: [u32; 8],
+    /// Keys the engine key repeat allows this frame (wait polls only).
+    ///
+    /// A held key is reported when it goes down, again after Sys15 frames, then every
+    /// Sys16 frames. The report lasts one frame: a poll that is not running on that
+    /// frame sees nothing, exactly like the retail engine's timed repeat.
+    repeat_bits: u32,
     /// Sounds requested during the current frame.
     pub sounds: Vec<SoundCmd>,
     /// M4 audio output. `None` keeps the pure-logic and test paths silent and
@@ -528,6 +541,8 @@ impl Game {
             raw_keys: Vec::new(),
             raw_pad_keys: Vec::new(),
             applied_volumes: (u32::MAX, u32::MAX),
+            key_hold: [0; 8],
+            repeat_bits: 0,
             runtime: MapRuntime::new(),
             last_action_event: None,
             auto_events,
@@ -766,6 +781,46 @@ impl Game {
             audio.set_bgm_volume(settings.bgm_gain());
             audio.set_se_volume(settings.se_gain());
         }
+    }
+
+    /// Advance the engine key repeat and publish the keys it may report this frame.
+    ///
+    /// WOLF reports a held key once when it goes down, then again after Sys15 frames
+    /// and every Sys16 frames after that; CE115 maps the キーリピート速度 level onto
+    /// exactly those two variables, and the settings screen calls it when the speed
+    /// changes. Only the `123` polls with the wait bit use this (see
+    /// [`Host::key_code`]): they are the menu input loop, so holding a direction
+    /// steps the cursor at the configured speed instead of once per frame. A
+    /// non-wait poll stays a raw level read, which is what CE132's key-capture loop
+    /// needs to implement its own repeat.
+    fn update_key_repeat(&mut self) {
+        const ORDER: [u32; 8] = [
+            crate::key::OK,
+            crate::key::CANCEL,
+            crate::key::SUB,
+            crate::key::PAUSE,
+            crate::key::UP,
+            crate::key::DOWN,
+            crate::key::LEFT,
+            crate::key::RIGHT,
+        ];
+        // Zero means "the script never set it"; falling back to 1 reproduces the
+        // old once-per-frame behaviour instead of locking the key out.
+        let delay = u32::try_from(self.sys(15).max(1)).unwrap_or(1);
+        let interval = u32::try_from(self.sys(16).max(1)).unwrap_or(1);
+        let mut out = 0;
+        for (index, bit) in ORDER.iter().enumerate() {
+            let hold = &mut self.key_hold[index];
+            if self.key_bits & bit == 0 {
+                *hold = 0;
+                continue;
+            }
+            if *hold == 0 || (*hold >= delay && (*hold - delay) % interval == 0) {
+                out |= bit;
+            }
+            *hold = hold.saturating_add(1);
+        }
+        self.repeat_bits = out;
     }
 
     /// True when the live volumes differ from the last persisted template.
@@ -1752,6 +1807,7 @@ impl Game {
     /// Advances one frame at 1/60 s.
     pub fn frame(&mut self) -> FrameOutcome {
         self.sounds.clear();
+        self.update_key_repeat();
         // Start or stop the conditional background events before anything runs, so a
         // condition that became true last frame is running now (docs/ENGINE_EVENTS.md
         // section 2.2). This is edge-triggered: a condition that stays true does not
@@ -1778,6 +1834,7 @@ impl Game {
             diagnostics: &mut self.diagnostics,
             stats: &mut self.stats,
             key_bits: self.key_bits,
+            repeat_bits: self.repeat_bits,
             raw_keys: &self.raw_keys,
             raw_pad_keys: &self.raw_pad_keys,
             auto_advance: self.auto_advance,
@@ -2181,6 +2238,8 @@ struct GameHost<'a> {
     diagnostics: &'a mut BTreeMap<String, u64>,
     stats: &'a mut GameStats,
     key_bits: u32,
+    /// Keys the engine key repeat allows this frame (wait polls only).
+    repeat_bits: u32,
     /// Raw keyboard codes held this frame (scancode+100), for the device polls of
     /// opcode 123 that the key-config screen uses.
     raw_keys: &'a [i32],
@@ -2816,7 +2875,12 @@ impl Host for GameHost<'_> {
                 // decide must read 0 while the player holds a direction. A mouse
                 // click joins the held keyboard bits as an edge, so the command
                 // menus (opcode 123) react to the mouse too.
-                let held = self.key_bits | self.mouse_key_bits();
+                let base = if query.wait {
+                    self.repeat_bits
+                } else {
+                    self.key_bits
+                };
+                let held = base | self.mouse_key_bits();
                 crate::key::code_for(held, query, crate::key::from_wolf_bits(banned))
             }
         }
@@ -2829,7 +2893,14 @@ impl Host for GameHost<'_> {
         if query.device != 0 {
             return self.key_code(query, banned);
         }
-        let held = self.key_bits | crate::key::from_wolf_bits(auto) | self.mouse_key_bits();
+        // A script-driven press is already an intent for this frame; the repeat
+        // timing only applies to keys the player holds down.
+        let base = if query.wait {
+            self.repeat_bits
+        } else {
+            self.key_bits
+        };
+        let held = base | crate::key::from_wolf_bits(auto) | self.mouse_key_bits();
         crate::key::code_for(held, query, crate::key::from_wolf_bits(banned))
     }
 
@@ -3329,6 +3400,7 @@ mod tests {
             diagnostics: &mut game.diagnostics,
             stats: &mut game.stats,
             key_bits: game.key_bits,
+            repeat_bits: game.repeat_bits,
             raw_keys: &game.raw_keys,
             raw_pad_keys: &game.raw_pad_keys,
             auto_advance: game.auto_advance,

@@ -213,6 +213,40 @@ fn press(game: &mut Game, bits: u32) -> usize {
     30
 }
 
+/// Hold `bits` until `done`, then settle.
+///
+/// The engine reports a held key again after Sys15 frames (キーリピート速度), so a
+/// fixed-length hold would step the grid more than once. Waiting for the observable
+/// result instead gives exactly one report, like a player tapping the key.
+fn hold_until(
+    game: &mut Game,
+    bits: u32,
+    frames: usize,
+    mut done: impl FnMut(&Game) -> bool,
+) -> usize {
+    game.key_bits = bits;
+    let mut n = 0;
+    while n < frames && !done(game) {
+        game.frame();
+        n += 1;
+    }
+    game.key_bits = 0;
+    for _ in 0..8 {
+        game.frame();
+        n += 1;
+    }
+    n
+}
+
+/// CE131's grid cursor as `(row, column)` self variables.
+fn grid_cursor(game: &Game) -> Option<(i32, i32)> {
+    game.vm
+        .instances()
+        .iter()
+        .find(|inst| inst.event == 131)
+        .map(|inst| (inst.self_vars.get(610), inst.self_vars.get(611)))
+}
+
 /// Guards the Save/ directory: snapshots every file, and on drop restores the
 /// snapshot and deletes anything created during the test.  Also exposes the
 /// pre-test fingerprints so existing files can be checked untouched mid-test
@@ -351,12 +385,20 @@ fn save_ui_writes_slot3_then_loads_it_back() {
 
     // Cursor starts on slot 1 (top-left); one DOWN moves to the bottom row,
     // where slot 3 lives, then OK confirms.
-    press(&mut game, wolf_game::key::DOWN);
+    // The grid is a four-row list; slot 3 is row 2. Hold until the cursor is there
+    // (the engine's repeat makes one hold walk several rows).
+    hold_until(&mut game, wolf_game::key::DOWN, 80, |g| {
+        grid_cursor(g).map(|(row, _)| row) == Some(2)
+    });
     assert!(
         is_running(&game, 131),
         "save UI closed after moving the cursor"
     );
-    press(&mut game, wolf_game::key::OK);
+
+    hold_until(&mut game, wolf_game::key::OK, 80, |_| {
+        save_file(SLOT).exists()
+    });
+
     for _ in 0..60 {
         game.frame();
     }
@@ -477,9 +519,13 @@ fn save_ui_writes_slot3_then_loads_it_back() {
         text_at(&loader, 12002)
     );
 
-    // Move to slot 3's row and confirm the load.
-    frames_run += press(&mut loader, wolf_game::key::DOWN);
-    frames_run += press(&mut loader, wolf_game::key::OK);
+    // Move to slot 3's row and confirm the load, one report per key like a tap.
+    frames_run += hold_until(&mut loader, wolf_game::key::DOWN, 80, |g| {
+        grid_cursor(g).map(|(row, _)| row) == Some(2)
+    });
+    frames_run += hold_until(&mut loader, wolf_game::key::OK, 80, |g| {
+        g.vm.vars.get(20) == 77
+    });
     for _ in 0..150 {
         loader.frame();
         frames_run += 1;

@@ -277,3 +277,80 @@ fn no_registered_map_uses_the_player_touch_trigger() {
         }
     }
 }
+
+/// Holding a direction steps the cursor at the configured repeat speed.
+///
+/// CE48 seeds Sys15 (initial delay) and Sys16 (interval) from the キーリピート速度
+/// row at boot, and CE115 rewrites them when the settings screen changes the speed.
+/// The engine polls that use the wait bit apply that timing; a raw (non-wait) poll
+/// stays a level read so CE132's own capture loop can implement its own repeat.
+#[test]
+fn holding_a_direction_steps_the_settings_cursor_at_the_repeat_speed() {
+    let Some(mut game) = open_game() else { return };
+    game.start_engine_events();
+    for _ in 0..30 {
+        game.frame();
+    }
+    assert!(
+        game.sys(15) > 0 && game.sys(16) > 0,
+        "CE48 seeds the key-repeat timing at boot, got Sys15={} Sys16={}",
+        game.sys(15),
+        game.sys(16)
+    );
+
+    assert!(game.start_event(132), "CE132 starts");
+    let id = game
+        .vm
+        .instances()
+        .iter()
+        .find(|inst| inst.event == 132)
+        .map(|inst| inst.id)
+        .expect("CE132 instance");
+    for _ in 0..30 {
+        game.frame();
+    }
+    assert_eq!(self_slot(&game, id, 10), 0, "cursor starts on row 0");
+
+    // Long delay: one step on the press, nothing after it. The values are re-set
+    // every frame because the row CE132 lands on (キーリピート速度) re-applies the
+    // stored level through CE115 while the cursor sits there.
+    game.key_bits = key::DOWN;
+    for _ in 0..40 {
+        game.vm.vars.set_sys(15, 600);
+        game.vm.vars.set_sys(16, 600);
+        game.frame();
+    }
+    game.key_bits = 0;
+    for _ in 0..6 {
+        game.frame();
+    }
+    assert_eq!(
+        self_slot(&game, id, 10),
+        1,
+        "a 600-frame delay must give exactly one step"
+    );
+
+    // Short delay: the same hold walks several rows.
+    game.key_bits = key::DOWN;
+    let mut steps = 0;
+    let mut last = self_slot(&game, id, 10);
+    for _ in 0..30 {
+        game.vm.vars.set_sys(15, 2);
+        game.vm.vars.set_sys(16, 2);
+        game.frame();
+        let row = self_slot(&game, id, 10);
+        if row != last {
+            steps += 1;
+            last = row;
+        }
+    }
+    game.key_bits = 0;
+    for _ in 0..6 {
+        game.frame();
+    }
+    assert!(
+        steps >= 3,
+        "Sys15/Sys16 = 2/2 should walk several rows in 30 frames, walked {steps}"
+    );
+    assert_eq!(game.stats.warnings, 0, "warnings");
+}

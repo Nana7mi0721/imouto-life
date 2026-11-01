@@ -779,7 +779,15 @@ WOLF_DATA_ROOT="$PWD/work/Data" ./target/debug/wolf-cli.exe verify | tail -20
     `[v, 下界, 0, 0x600]` / `[v, 上界, 0, 0x700]`（CE36 `v3=clamp(v3,1,v82)`）。
   * **音量实时生效**：`Game::frame` 检测 Sys100/102 变化即送混音器，设置界面里改音量
     立刻可听（原来只在下一次 boot 生效）。
-  * **测试**：新增 `crates/wolf-game/tests/m6_input_parity.rs` 4 条（CE132 改键捕获、
+  * **按键重复**：用户实机确认原版按住方向键会按「キーリピート速度」连续滚动。
+    `Game::update_key_repeat` 用 Sys15（首次延迟）/Sys16（重复间隔）实现：首帧回报、
+    延迟后回报、之后每间隔回报一次（回报只在该帧有效，与原版按时间节拍一致）。
+    只有带等待位的 `123` 用它，非等待轮询仍是原始电平（CE132 的改键捕获循环自己
+    读 Sys16 实现重复，正好印证这个划分）。CE48 启动时调 CE115 写入这两个值，
+    设置界面改速度也即时生效。既有测试改成按「可观察结果」等待（`hold_until`），
+    不再用固定帧数按住。
+  * **测试**：新增 `crates/wolf-game/tests/m6_input_parity.rs` 5 条（CE132 改键捕获、
+    按住方向的重复速度、
     CE251 点击继续阻塞、音量实时进混音、注册地图无 PlayerTouch）+ key.rs/exec.rs 单测
     （选项字解码、过滤、WOLF 位序、126 模式切换）。同时把依赖真实时序的既有测试
     改为在 `WaitState::Key` 时喂一帧决定键（m2_daily_loop、m3_audio_settings、

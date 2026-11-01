@@ -1,13 +1,13 @@
 # M5 — 超越原版
 
-状态：**进行中（M5-A、M5-B 已完成第一切片）**。M0–M4 已交付；M5 的目标是在数据级重写与
+状态：**进行中（M5-A、M5-B、M5-C 已完成第一切片）**。M0–M4 已交付；M5 的目标是在数据级重写与
 逐像素对等之外，补上原版没有、玩家实际能感知的能力。
 
 | 切片 | 内容 | 状态 |
 |---|---|---|
 | M5-A | 高分辨率与无级缩放（窗口 fit / 全屏） | 已完成第一切片 |
 | M5-B | 运行时调试器（F3 overlay） | 已完成第一切片 |
-| M5-C | 成就 / 游戏倾向汇总面板 | 计划，需先钉住 CE296 变量语义 |
+| M5-C | 游戏倾向 / 里程碑汇总面板（F2 overlay） | 已完成第一切片（实时读取存档变量，无独立成就存档） |
 | M5-D | 多语言文本层（中/日/英） | 计划，需先做翻译数据格式 |
 | M5-E | Mod 数据覆盖层 | 计划，风险与范围待定 |
 
@@ -138,12 +138,72 @@ headless capture 仍输出不带调试层的 1024x576 证据帧。
 - 只读状态，不改 VM、变量或存档；变量越界按 `Variables::get` 的默认值显示。
 - 不做 console/远程调试协议；后续若需要可另开切片。
 
+## M5-C：游戏倾向 / 里程碑汇总（F2 overlay）
+
+原版 CE296 的「■プレイ傾向」把文本写死在事件脚本里，且只显示四到八行。本切片在
+不修改 CE296、不改存档格式的前提下，从同一组权威变量读取一份结构化快照，并在
+play 窗口叠加显示（F2 开关）。第一切片是实时统计 + 里程碑，不是独立成就存档：
+解锁状态每帧按当前变量重算，因此换存档/新游戏都会即时变化。
+
+### 变量来源（已由 m3_stats_collection 钉住）
+
+| 字段 | 变量 | 含义 |
+|---|---|---|
+| days | v99 | 経過日数 |
+| trust | v20 | 妹信頼度 |
+| interest | v21 | 妹性興味 |
+| sensitivity | v22 | 妹感度 |
+| mood | v23 | 妹機嫌 |
+| alert | v154 | 警戒度 |
+| interactions | v187 | イカせた回数（显示为“共同经历”） |
+| cleared | v199 | クリア |
+| hundred_days | v201 | 100日到達 |
+| pants_complete | v202 | パンツコンプリート |
+
+### 玩家用法
+
+    # 启动时显示统计/里程碑层（运行中按 F2 开关）
+    wolf-cli play --load-save work/Data/Save/SaveData01.sav --stats
+
+    # 也可以与 F3 调试层同时打开；两层按行顺序堆叠，不会互相覆盖
+    wolf-cli play --load-save work/Data/Save/SaveData01.sav --debug --stats
+
+overlay 顶部两行是统计摘要与成就计数，下面每条 [x] 标题 - 说明 是里程碑；未解锁
+显示灰色，已解锁显示绿色。全部是文字，沿用游戏字体与 fallback，无新依赖。
+
+### 实现
+
+- 新增 crates/wolf-game/src/achievements.rs：
+  - PlayStats { days, trust, interest, sensitivity, mood, alert, interactions,
+    cleared, hundred_days, pants_complete }，from_vars(&Variables) 按上表读取；
+  - Milestone { id, title, detail, unlocked } 与 milestones(&PlayStats)：9 条
+    保守里程碑（10/30/100 天、信赖 100/350、兴致 100、共同经历 10 次、服饰收集、
+    完成流程）。阈值直接沿用 CE296 的 100/200/350 分档，不凭报告臆造。
+- crates/wolf-game/src/lib.rs 导出 achievements、PlayStats、Milestone、milestones。
+- crates/wolf-game/src/game.rs 新增只读 Game::play_stats() 与 Game::milestones()。
+- crates/wolf-cli/src/play.rs：DebugOptions 增加 stats 字段、App.stats_overlay、
+  stats_lines(&PlayStats, &[Milestone]) 负责行/颜色；F2 切换；与 F3 层按行堆叠。
+- crates/wolf-cli/src/main.rs：--stats 参数与帮助文本；未新增外部依赖。
+
+### 测试
+
+- achievements::tests::play_stats_reads_the_authoritative_slots；
+- achievements::tests::milestones_unlock_from_thresholds_and_flags；
+- achievements::tests::a_fresh_game_has_no_milestones；
+- play::tests::stats_overlay_reports_progress_and_milestones（摘要行、成就计数、
+  绿色/灰色颜色）。
+
+验收：cargo test -q -p wolf-game --lib 246 passed；cargo test -q -p wolf-cli 18 passed；
+窗口 smoke：play --load-save work/Data/Save/SaveData01.sav --scale fit-nearest --stats --until 5。
+headless capture 仍输出不带 overlay 的 1024x576 证据帧。
+
+### 边界
+
+- 第一切片不写独立成就文件、不改 Save/System.sav；解锁状态完全由现有存档变量决定。
+- 变量越界按 Variables::get 返回 0；不使用可空或猜测变量。
+- 后续若要做跨周目永久成就，再单独设计新存档字段与迁移，不与本次混在一起。
+
 ## 后续切片的设计约束
 
-- M5-C 成就必须先把 CE296 / プレイ傾向 的变量语义（v99/v180/v187/v189/v200/v202）
-  在真实存档与新游戏两条路径上钉住，再定义本地成就清单，不能凭报告臆造。
 - M5-D 多语言要单独设计翻译键与回退规则，不能直接改 CP932/GBK 混排解码。
 - M5-E Mod 数据覆盖层风险与范围待定，优先只覆盖 data 文件，不碰 exe。
-- M5-C 成就必须先把 CE296 / プレイ傾向 的变量语义（v99/v180/v187/v189/v200/v202）
-  在真实存档与新游戏两条路径上钉住，再定义本地成就清单，不能凭报告臆造。
-- M5-D 多语言要单独设计翻译键与回退规则，不能直接改 CP932/GBK 混排解码。

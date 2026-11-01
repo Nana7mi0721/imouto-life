@@ -598,3 +598,25 @@ WOLF_DATA_ROOT="$PWD/work/Data" ./target/debug/wolf-cli.exe verify | tail -20
     exit0、141 frame、0 warning。capture 仍输出不带 overlay 的 1024x576 证据帧。
   * **文档**：`docs/M5_BEYOND.md` 增 M5-B 用法/实现/测试/边界，表内 M5-B 标已完成第一切片。
   * **当前进度**：M0–M4 完成；M5-A/M5-B 完成，M5-C..E 待做。用户 m07499 授权持续推进。
+
+* 2026-10-31（M5-C：F2 游戏倾向/里程碑 overlay，第一切片）：
+  * **动机**：原版 CE296「■プレイ傾向」把文本写死、只显示少量行；本切片在现有存档变量上
+    做只读结构化快照和保守里程碑，不改 CE296、不改存档格式、不新建成就文件。
+  * **变量来源**：v99 経過日数、v20 妹信頼度、v21 妹性興味、v22 妹感度、v23 妹機嫌、
+    v154 警戒度、v187 イカせた回数（显示为“共同经历”）、v199 クリア、v201 100日到達、
+    v202 パンツコンプリート；全部已在 m3_stats_collection 中钉住。
+  * **实现**：
+    * 新增 `crates/wolf-game/src/achievements.rs`：`PlayStats::from_vars`、
+      `Milestone { id,title,detail,unlocked }`、`milestones(&PlayStats)` 9 条（10/30/100 天、
+      信赖 100/350、兴致 100、共同经历 10 次、服饰收集、完成流程）；阈值沿用 CE296 的
+      100/200/350 分档。
+    * `crates/wolf-game/src/lib.rs` 导出 `achievements`/`PlayStats`/`Milestone`/`milestones`；
+      `crates/wolf-game/src/game.rs` 新增 `Game::play_stats()` 与 `Game::milestones()`。
+    * `crates/wolf-cli/src/play.rs`：`DebugOptions` 增 `stats` 字段、`App.stats_overlay`、
+      `stats_lines`（摘要 + `[x] 标题 - 说明`，解锁绿色/未解锁灰色）；F2 切换，与 F3 层按行堆叠；
+      `crates/wolf-cli/src/main.rs` 新增 `--stats` 与帮助文本。无新依赖。
+  * **测试**：achievements 3 条；play stats 1 条；`cargo test -q -p wolf-game --lib` 246 passed，
+    `cargo test -q -p wolf-cli` 18 passed。窗口 smoke：
+    `play --load-save work/Data/Save/SaveData01.sav --scale fit-nearest --stats --until 5` exit0。
+  * **文档**：`docs/M5_BEYOND.md` 增 M5-C 变量/用法/实现/测试/边界，表内 M5-C 标已完成第一切片。
+  * **当前进度**：M0–M4 完成；M5-A/M5-B/M5-C 完成，M5-D/E 待做。用户 m07499 授权持续推进。

@@ -117,6 +117,7 @@ fn main() -> ExitCode {
     let mut fullscreen = false;
     let mut debug_overlay = false;
     let mut debug_vars: Vec<u32> = Vec::new();
+    let mut stats_overlay = false;
     let mut map: Option<String> = None;
     let mut map_run: Option<String> = None;
     // `dump` seeds inputs into a real Game and reads state back out. It is the probe
@@ -284,6 +285,7 @@ fn main() -> ExitCode {
             }
             "--fullscreen" => fullscreen = true,
             "--debug" => debug_overlay = true,
+            "--stats" => stats_overlay = true,
             "--debug-var" => {
                 let value = args.next().unwrap_or_default();
                 match play::parse_debug_vars(&value) {
@@ -462,6 +464,7 @@ fn main() -> ExitCode {
                 play::DebugOptions {
                     overlay: debug_overlay,
                     vars: debug_vars,
+                    stats: stats_overlay,
                 },
             )
         }
@@ -503,7 +506,7 @@ fn print_help() {
     println!("    wolf-cli [--root <DIR>] play [--until <N>] [--map-run <NAME> --event <ID>]");
     println!("                                   [--event <ID> | --load-save <FILE>]");
     println!("                                   [--scale integer|fit-nearest|fit-linear] [--fullscreen]");
-    println!("                                   [--debug] [--debug-var <ADDR,...>]");
+    println!("                                   [--debug] [--debug-var <ADDR,...>] [--stats]");
     println!("    wolf-cli [--root <DIR>] list [--filter <TEXT>]");
     println!();
     println!("COMMANDS:");
@@ -551,6 +554,9 @@ fn print_help() {
     println!("    --debug           Start 'play' with the F3 debug overlay visible.");
     println!("    --debug-var <A,..> Variables the overlay lists, by flat slot or magic address");
     println!("                      (implies --debug when non-empty; F3 toggles the overlay).");
+    println!(
+        "    --stats           Start 'play' with the F2 statistics/milestone overlay visible."
+    );
     println!("    --hold-message    Park on the first 101 message instead of dismissing it.");
     println!("    --audio           Play BGM/SE through the real mixer (silent null backend if no device).");
     println!("    --pointer <x,y>   Put the mouse pointer at a game pixel for the whole capture.");

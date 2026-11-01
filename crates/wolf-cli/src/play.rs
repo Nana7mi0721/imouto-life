@@ -57,6 +57,8 @@ pub struct DebugOptions {
     pub overlay: bool,
     /// Variables to list by flat slot or magic address while the overlay is open.
     pub vars: Vec<u32>,
+    /// Show the M5-C play-statistics / milestone overlay on startup (F2 toggles it).
+    pub stats: bool,
 }
 
 /// Parse a comma separated variable list for `--debug-var`.
@@ -190,6 +192,7 @@ pub fn run(
         display,
         debug_overlay: debug.overlay || !debug.vars.is_empty(),
         debug_vars: debug.vars,
+        stats_overlay: debug.stats,
     };
     if let Err(err) = event_loop.run_app(&mut app) {
         eprintln!("event loop failed: {err}");
@@ -249,6 +252,8 @@ struct App {
     debug_overlay: bool,
     /// Variables the overlay lists, in flat or magic address form.
     debug_vars: Vec<u32>,
+    /// Whether the M5-C play-statistics / milestone overlay is visible.
+    stats_overlay: bool,
 }
 
 /// The primitive values the overlay renders, separated from `App` so the text can be
@@ -295,6 +300,50 @@ fn debug_lines(snapshot: &DebugSnapshot) -> Vec<String> {
     ];
     for (addr, value) in &snapshot.vars {
         lines.push(format!("v{addr} = {value}"));
+    }
+    lines
+}
+
+/// Lines and colours for the M5-C statistics overlay.
+///
+/// Kept separate from `App` so the layout can be tested without a Game, window or data
+/// root. Unlocked milestones are green, locked ones grey; the summary rows stay white.
+fn stats_lines(
+    stats: &wolf_game::PlayStats,
+    milestones: &[wolf_game::Milestone],
+) -> Vec<(String, [u8; 3])> {
+    const WHITE: [u8; 3] = [255, 255, 255];
+    const GREEN: [u8; 3] = [120, 255, 160];
+    const GREY: [u8; 3] = [180, 180, 180];
+    let unlocked = milestones.iter().filter(|m| m.unlocked).count();
+    let mut lines = vec![
+        (
+            format!(
+                "统计 | 天数 {} | 信赖 {} | 兴致 {} | 感度 {} | 心情 {} | 警戒 {}",
+                stats.days, stats.trust, stats.interest, stats.sensitivity, stats.mood, stats.alert
+            ),
+            WHITE,
+        ),
+        (
+            format!(
+                "共同经历 {} | 成就 {}/{}",
+                stats.interactions,
+                unlocked,
+                milestones.len()
+            ),
+            WHITE,
+        ),
+    ];
+    for milestone in milestones {
+        lines.push((
+            format!(
+                "[{}] {} - {}",
+                if milestone.unlocked { "x" } else { " " },
+                milestone.title,
+                milestone.detail
+            ),
+            if milestone.unlocked { GREEN } else { GREY },
+        ));
     }
     lines
 }
@@ -471,6 +520,7 @@ impl App {
                 items.push(item);
             }
         }
+        let mut overlay_row = 0usize;
         if self.debug_overlay {
             let watch: Vec<(u32, i32)> = self
                 .debug_vars
@@ -491,10 +541,26 @@ impl App {
                 last_action_event: self.game.last_action_event,
                 vars: watch,
             };
-            for (line, text) in debug_lines(&snapshot).into_iter().enumerate() {
-                let y = 8.0 + line as f32 * 18.0;
+            for text in debug_lines(&snapshot) {
+                let y = 8.0 + overlay_row as f32 * 18.0;
+                overlay_row += 1;
                 let item = TextItem::new(text, [8.0, y, 1000.0, 20.0], 16.0)
                     .with_colour([255, 255, 255])
+                    .with_outline(2, [0, 0, 0]);
+                items.push(item);
+            }
+        }
+        if self.stats_overlay {
+            if overlay_row > 0 {
+                overlay_row += 1;
+            }
+            let stats = self.game.play_stats();
+            let milestones = self.game.milestones();
+            for (text, colour) in stats_lines(&stats, &milestones) {
+                let y = 8.0 + overlay_row as f32 * 18.0;
+                overlay_row += 1;
+                let item = TextItem::new(text, [8.0, y, 1000.0, 20.0], 16.0)
+                    .with_colour(colour)
                     .with_outline(2, [0, 0, 0]);
                 items.push(item);
             }
@@ -648,6 +714,14 @@ impl ApplicationHandler for App {
                         }
                         return;
                     }
+                    // F2 toggles the M5-C statistics/milestone overlay.
+                    if matches!(event.logical_key, Key::Named(NamedKey::F2)) {
+                        if !event.repeat {
+                            self.stats_overlay = !self.stats_overlay;
+                            println!("stats: overlay {}", self.stats_overlay);
+                        }
+                        return;
+                    }
                     // F3 toggles the M5-B debug overlay. It is an ordinary text overlay,
                     // not a separate UI, so it rides the same glyph pass as the game.
                     if matches!(event.logical_key, Key::Named(NamedKey::F3)) {
@@ -795,7 +869,9 @@ fn wolf_bit(key: &Key) -> Option<u32> {
 
 #[cfg(test)]
 mod tests {
-    use super::{debug_lines, debug_slot, is_restart_key, parse_debug_vars, DebugSnapshot};
+    use super::{
+        debug_lines, debug_slot, is_restart_key, parse_debug_vars, stats_lines, DebugSnapshot,
+    };
     use winit::keyboard::{Key, NamedKey};
 
     /// manual01/F12_Reset: only F12 restarts; F10 stays the quit key and the ordinary
@@ -851,6 +927,46 @@ mod tests {
         assert_eq!(debug_slot(350), 350);
         assert_eq!(debug_slot(2_000_350), 350);
         assert_eq!(debug_slot(154), 154);
+    }
+
+    #[test]
+    fn stats_overlay_reports_progress_and_milestones() {
+        let stats = wolf_game::PlayStats {
+            days: 31,
+            trust: 210,
+            interest: 45,
+            sensitivity: 3,
+            mood: 2,
+            alert: 6,
+            interactions: 12,
+            cleared: false,
+            hundred_days: false,
+            pants_complete: true,
+        };
+        let milestones = vec![
+            wolf_game::Milestone {
+                id: "days_10",
+                title: "十日同行",
+                detail: "在一起生活满 10 天",
+                unlocked: true,
+            },
+            wolf_game::Milestone {
+                id: "days_100",
+                title: "百日纪念",
+                detail: "在一起生活满 100 天",
+                unlocked: false,
+            },
+        ];
+        let lines = stats_lines(&stats, &milestones);
+        assert_eq!(
+            lines[0].0,
+            "统计 | 天数 31 | 信赖 210 | 兴致 45 | 感度 3 | 心情 2 | 警戒 6"
+        );
+        assert_eq!(lines[1].0, "共同经历 12 | 成就 1/2");
+        assert_eq!(lines[2].0, "[x] 十日同行 - 在一起生活满 10 天");
+        assert_eq!(lines[2].1, [120, 255, 160]);
+        assert_eq!(lines[3].0, "[ ] 百日纪念 - 在一起生活满 100 天");
+        assert_eq!(lines[3].1, [180, 180, 180]);
     }
 
     #[test]

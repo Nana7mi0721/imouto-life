@@ -20,6 +20,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod achievements;
 pub mod assets;
 pub mod atlas;
 pub mod auto_events;
@@ -40,6 +41,7 @@ pub mod tint;
 pub mod transition;
 pub mod window;
 
+pub use achievements::{milestones, Milestone, PlayStats};
 pub use assets::{AssetError, Assets, ImageData};
 pub use atlas::{Atlas, AtlasRect, SpriteQuad, TextQuad, ATLAS_SIZE};
 pub use choice::{layout as choice_layout, ChoiceLayout};

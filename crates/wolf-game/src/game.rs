@@ -1356,6 +1356,18 @@ impl Game {
         }
     }
 
+    /// Read-only progress snapshot for the M5-C statistics overlay.
+    #[must_use]
+    pub fn play_stats(&self) -> crate::achievements::PlayStats {
+        crate::achievements::PlayStats::from_vars(&self.vm.vars)
+    }
+
+    /// Local milestones computed from the current variable bank.
+    #[must_use]
+    pub fn milestones(&self) -> Vec<crate::achievements::Milestone> {
+        crate::achievements::milestones(&self.play_stats())
+    }
+
     /// Loads a WOLF save file: normal variables, the choice anchor and the whole picture
     /// layer. The script state is deliberately left alone - `220` load is driven by the
     /// save-menu coroutine, which keeps running after the load and is what restarts the

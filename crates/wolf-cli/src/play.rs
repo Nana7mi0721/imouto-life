@@ -50,6 +50,45 @@ impl Default for DisplayOptions {
     }
 }
 
+/// M5-B runtime debug overlay: an F3-toggleable text block drawn over the game.
+#[derive(Clone, Debug, Default)]
+pub struct DebugOptions {
+    /// Show the overlay on startup (F3 still toggles it).
+    pub overlay: bool,
+    /// Variables to list by flat slot or magic address while the overlay is open.
+    pub vars: Vec<u32>,
+}
+
+/// Parse a comma separated variable list for `--debug-var`.
+///
+/// Accepts spaces around entries so both `154,155` and `154, 155` work. An empty
+/// entry is ignored, but a non-numeric one is reported rather than silently dropped.
+pub fn parse_debug_vars(text: &str) -> Result<Vec<u32>, String> {
+    let mut vars = Vec::new();
+    for part in text.split(',') {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+        let addr = part
+            .parse::<u32>()
+            .map_err(|_| format!("invalid debug variable '{part}'"))?;
+        vars.push(addr);
+    }
+    Ok(vars)
+}
+
+/// Accept either the flat variable slot (350) or the script's magic address
+/// (2_000_000 + 350) so `--debug-var 2000350` and `--debug-var 350` mean the same slot.
+fn debug_slot(addr: u32) -> usize {
+    const VAR_BASE: u32 = 2_000_000;
+    if (VAR_BASE..VAR_BASE + 1_000_000).contains(&addr) {
+        (addr - VAR_BASE) as usize
+    } else {
+        addr as usize
+    }
+}
+
 /// Runs the title screen in a window until the user closes it (or `frames` pass).
 ///
 /// A non-zero frame budget makes the window self-closing, which is how the interactive
@@ -60,6 +99,7 @@ pub fn run(
     frames: Option<u64>,
     entry: crate::Entry<'_>,
     display: DisplayOptions,
+    debug: DebugOptions,
 ) -> std::process::ExitCode {
     let mut game = match Game::new(root) {
         Ok(game) => game,
@@ -146,7 +186,10 @@ pub fn run(
         next_frame: Instant::now(),
         fps_frames: 0,
         fps_since: Instant::now(),
+        fps: 0,
         display,
+        debug_overlay: debug.overlay || !debug.vars.is_empty(),
+        debug_vars: debug.vars,
     };
     if let Err(err) = event_loop.run_app(&mut app) {
         eprintln!("event loop failed: {err}");
@@ -198,8 +241,62 @@ struct App {
     next_frame: Instant,
     fps_frames: u32,
     fps_since: Instant,
+    /// Frames per second from the last completed one-second window.
+    fps: u32,
     /// Window mode selected at startup and updated by F9/F11.
     display: DisplayOptions,
+    /// Whether the F3 debug overlay is visible.
+    debug_overlay: bool,
+    /// Variables the overlay lists, in flat or magic address form.
+    debug_vars: Vec<u32>,
+}
+
+/// The primitive values the overlay renders, separated from `App` so the text can be
+/// unit-tested without a window, GPU or data root.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct DebugSnapshot {
+    frame: u64,
+    fps: u32,
+    instructions: u64,
+    pictures: u64,
+    warnings: u64,
+    sprites: usize,
+    texts: usize,
+    pointer: [i32; 2],
+    buttons: u32,
+    key_bits: u32,
+    last_action_event: Option<u32>,
+    vars: Vec<(u32, i32)>,
+}
+
+fn debug_lines(snapshot: &DebugSnapshot) -> Vec<String> {
+    let pointer = if snapshot.pointer[0] < 0 || snapshot.pointer[1] < 0 {
+        "outside".to_owned()
+    } else {
+        format!("{},{}", snapshot.pointer[0], snapshot.pointer[1])
+    };
+    let event = snapshot
+        .last_action_event
+        .map_or_else(|| "none".to_owned(), |id| id.to_string());
+    let mut lines = vec![
+        format!(
+            "debug | frame {} | {} fps | {} inst",
+            snapshot.frame, snapshot.fps, snapshot.instructions
+        ),
+        format!(
+            "pictures {} | warnings {} | sprites {} | texts {}",
+            snapshot.pictures, snapshot.warnings, snapshot.sprites, snapshot.texts
+        ),
+        format!(
+            "pointer {} | buttons {} | keys {:#06x}",
+            pointer, snapshot.buttons, snapshot.key_bits
+        ),
+        format!("last action event {event}"),
+    ];
+    for (addr, value) in &snapshot.vars {
+        lines.push(format!("v{addr} = {value}"));
+    }
+    lines
 }
 
 impl App {
@@ -374,6 +471,34 @@ impl App {
                 items.push(item);
             }
         }
+        if self.debug_overlay {
+            let watch: Vec<(u32, i32)> = self
+                .debug_vars
+                .iter()
+                .map(|addr| (*addr, self.game.vm.vars.get(debug_slot(*addr))))
+                .collect();
+            let snapshot = DebugSnapshot {
+                frame: self.game.stats.frames,
+                fps: self.fps,
+                instructions: self.game.stats.instructions,
+                pictures: self.game.stats.pictures,
+                warnings: self.game.stats.warnings,
+                sprites: self.sprites.len(),
+                texts: self.texts.len(),
+                pointer: self.mouse,
+                buttons: self.mouse_buttons,
+                key_bits: self.bits(),
+                last_action_event: self.game.last_action_event,
+                vars: watch,
+            };
+            for (line, text) in debug_lines(&snapshot).into_iter().enumerate() {
+                let y = 8.0 + line as f32 * 18.0;
+                let item = TextItem::new(text, [8.0, y, 1000.0, 20.0], 16.0)
+                    .with_colour([255, 255, 255])
+                    .with_outline(2, [0, 0, 0]);
+                items.push(item);
+            }
+        }
         items
     }
 
@@ -416,7 +541,7 @@ impl App {
             self.game.stats.frames,
             self.sprites.len(),
             if text_count > 0 { ", text pending" } else { "" },
-            self.fps_frames
+            self.fps
         ));
     }
 }
@@ -523,6 +648,15 @@ impl ApplicationHandler for App {
                         }
                         return;
                     }
+                    // F3 toggles the M5-B debug overlay. It is an ordinary text overlay,
+                    // not a separate UI, so it rides the same glyph pass as the game.
+                    if matches!(event.logical_key, Key::Named(NamedKey::F3)) {
+                        if !event.repeat {
+                            self.debug_overlay = !self.debug_overlay;
+                            println!("debug: overlay {}", self.debug_overlay);
+                        }
+                        return;
+                    }
                     // manual01: F12 restarts the game. Ignore auto-repeat so a held key
                     // cannot reload the data root dozens of times a second.
                     if is_restart_key(&event.logical_key) {
@@ -612,6 +746,7 @@ impl ApplicationHandler for App {
             }
             self.fps_frames += 1;
             if self.fps_since.elapsed() >= Duration::from_secs(1) {
+                self.fps = self.fps_frames;
                 if let Some(renderer) = self.renderer.as_ref() {
                     self.refresh_title(renderer);
                 }
@@ -660,11 +795,64 @@ fn wolf_bit(key: &Key) -> Option<u32> {
 
 #[cfg(test)]
 mod tests {
-    use super::is_restart_key;
+    use super::{debug_lines, debug_slot, is_restart_key, parse_debug_vars, DebugSnapshot};
     use winit::keyboard::{Key, NamedKey};
 
     /// manual01/F12_Reset: only F12 restarts; F10 stays the quit key and the ordinary
     /// gameplay keys must never trigger a reload.
+    #[test]
+    fn debug_overlay_reports_frame_pointer_and_watched_vars() {
+        let snapshot = DebugSnapshot {
+            frame: 120,
+            fps: 59,
+            instructions: 3456,
+            pictures: 7,
+            warnings: 1,
+            sprites: 12,
+            texts: 3,
+            pointer: [100, 200],
+            buttons: 1,
+            key_bits: 0x20,
+            last_action_event: Some(21),
+            vars: vec![(154, 7), (2_000_350, 2)],
+        };
+        let lines = debug_lines(&snapshot);
+        assert_eq!(lines[0], "debug | frame 120 | 59 fps | 3456 inst");
+        assert_eq!(lines[1], "pictures 7 | warnings 1 | sprites 12 | texts 3");
+        assert_eq!(lines[2], "pointer 100,200 | buttons 1 | keys 0x0020");
+        assert_eq!(lines[3], "last action event 21");
+        assert_eq!(lines[4], "v154 = 7");
+        assert_eq!(lines[5], "v2000350 = 2");
+    }
+
+    #[test]
+    fn debug_overlay_marks_an_outside_pointer_and_no_event() {
+        let snapshot = DebugSnapshot {
+            pointer: [-1, -1],
+            ..DebugSnapshot::default()
+        };
+        let lines = debug_lines(&snapshot);
+        assert_eq!(lines[2], "pointer outside | buttons 0 | keys 0x0000");
+        assert_eq!(lines[3], "last action event none");
+    }
+
+    #[test]
+    fn parse_debug_vars_accepts_commas_and_rejects_garbage() {
+        assert_eq!(
+            parse_debug_vars("154, 155,, 2000350").unwrap(),
+            vec![154, 155, 2_000_350]
+        );
+        assert!(parse_debug_vars("").unwrap().is_empty());
+        assert!(parse_debug_vars("154,nope").is_err());
+    }
+
+    #[test]
+    fn debug_slot_accepts_flat_and_magic_addresses() {
+        assert_eq!(debug_slot(350), 350);
+        assert_eq!(debug_slot(2_000_350), 350);
+        assert_eq!(debug_slot(154), 154);
+    }
+
     #[test]
     fn f12_is_the_restart_key() {
         assert!(is_restart_key(&Key::Named(NamedKey::F12)));

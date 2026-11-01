@@ -115,6 +115,8 @@ fn main() -> ExitCode {
     // integer pixel grid; `fit-*` fills a 16:9 window instead of leaving bars.
     let mut scale_mode = ScaleMode::Integer;
     let mut fullscreen = false;
+    let mut debug_overlay = false;
+    let mut debug_vars: Vec<u32> = Vec::new();
     let mut map: Option<String> = None;
     let mut map_run: Option<String> = None;
     // `dump` seeds inputs into a real Game and reads state back out. It is the probe
@@ -281,6 +283,17 @@ fn main() -> ExitCode {
                 }
             }
             "--fullscreen" => fullscreen = true,
+            "--debug" => debug_overlay = true,
+            "--debug-var" => {
+                let value = args.next().unwrap_or_default();
+                match play::parse_debug_vars(&value) {
+                    Ok(mut vars) => debug_vars.append(&mut vars),
+                    Err(err) => {
+                        eprintln!("{err}");
+                        return ExitCode::from(2);
+                    }
+                }
+            }
             "--filter" | "-F" => {
                 filter = args.next();
             }
@@ -446,6 +459,10 @@ fn main() -> ExitCode {
                     mode: scale_mode,
                     fullscreen,
                 },
+                play::DebugOptions {
+                    overlay: debug_overlay,
+                    vars: debug_vars,
+                },
             )
         }
         Some("run") => match (map.as_deref(), event) {
@@ -486,6 +503,7 @@ fn print_help() {
     println!("    wolf-cli [--root <DIR>] play [--until <N>] [--map-run <NAME> --event <ID>]");
     println!("                                   [--event <ID> | --load-save <FILE>]");
     println!("                                   [--scale integer|fit-nearest|fit-linear] [--fullscreen]");
+    println!("                                   [--debug] [--debug-var <ADDR,...>]");
     println!("    wolf-cli [--root <DIR>] list [--filter <TEXT>]");
     println!();
     println!("COMMANDS:");
@@ -530,6 +548,9 @@ fn print_help() {
     println!("                      fit-nearest or fit-linear (fractional, fills the window).");
     println!("                      F9 cycles the mode at runtime.");
     println!("    --fullscreen      Start 'play' borderless-fullscreen; F11 toggles it.");
+    println!("    --debug           Start 'play' with the F3 debug overlay visible.");
+    println!("    --debug-var <A,..> Variables the overlay lists, by flat slot or magic address");
+    println!("                      (implies --debug when non-empty; F3 toggles the overlay).");
     println!("    --hold-message    Park on the first 101 message instead of dismissing it.");
     println!("    --audio           Play BGM/SE through the real mixer (silent null backend if no device).");
     println!("    --pointer <x,y>   Put the mouse pointer at a game pixel for the whole capture.");

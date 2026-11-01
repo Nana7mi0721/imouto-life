@@ -579,3 +579,22 @@ WOLF_DATA_ROOT="$PWD/work/Data" ./target/debug/wolf-cli.exe verify | tail -20
   * **文档**：新增 `docs/M5_BEYOND.md`，docs/README 登记 M5 行，根 README 状态更新；
     M5-B 调试器 / M5-C 成就 / M5-D 多语言 / M5-E Mod 列计划与约束。
   * **当前进度**：M0–M4 完成；M5-A 完成，M5-B..E 待做。用户 m07499 授权持续推进。
+
+* 2026-10-31（M5-B：F3 运行时调试 overlay，第一切片）：
+  * **动机**：M5 超越原版的第二切片。原版没有可观察的运行时状态；给玩家/开发者一个
+    不依赖外部调试器的轻量 overlay，复用现有字体的符号 fallback。
+  * **实现**：
+    * `crates/wolf-cli/src/play.rs` 新增 `DebugOptions { overlay, vars }`、`run(..., display, debug)`
+      与 `App { debug_overlay, debug_vars, fps }`；`build_text_items` 在消息之后追加
+      `DebugSnapshot` 行（帧/fps/指令/picture/warning/sprite/text/鼠标/键位/最近事件/
+      `--debug-var` 变量），16 px 白字 2 px 黑边，同一 glyph pass；F3 切换；fps 每秒结算。
+    * `parse_debug_vars` 接受逗号/空格/空项并拒绝非数字；`debug_slot` 支持平面槽或
+      magic `2_000_000+n`。
+    * `crates/wolf-cli/src/main.rs` 新增 `--debug`、`--debug-var <ADDR,...>` 与帮助文本；
+      未新增外部依赖。
+  * **测试**：play tests 4 条（字段/变量行格式、outside pointer/no event、parse 拒绝垃圾、
+    flat/magic slot），`cargo test -q -p wolf-cli` 17 passed。窗口 smoke：
+    `play --load-save work/Data/Save/SaveData01.sav --scale fit-nearest --debug --debug-var 154,155 --until 5`
+    exit0、141 frame、0 warning。capture 仍输出不带 overlay 的 1024x576 证据帧。
+  * **文档**：`docs/M5_BEYOND.md` 增 M5-B 用法/实现/测试/边界，表内 M5-B 标已完成第一切片。
+  * **当前进度**：M0–M4 完成；M5-A/M5-B 完成，M5-C..E 待做。用户 m07499 授权持续推进。

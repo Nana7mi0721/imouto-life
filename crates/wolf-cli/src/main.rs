@@ -5,6 +5,7 @@
 //! in `docs/BASELINE.json`. Those numbers are a regression ratchet — if a
 //! parser change moves one of them, the change is a bug until proven otherwise.
 
+mod hotkeys;
 mod play;
 
 /// `--audio` turns on real audio output for every command that builds a [`Game`] (M4).
@@ -118,6 +119,10 @@ fn main() -> ExitCode {
     let mut debug_overlay = false;
     let mut debug_vars: Vec<u32> = Vec::new();
     let mut stats_overlay = false;
+    // Optional rebind of the simulator's function keys (`--hotkeys <FILE>`).
+    // No file means the built-in F-key mapping, which is also the default table
+    // the parser falls back to on an unreadable or malformed entry.
+    let mut hotkeys_path: Option<PathBuf> = None;
     // M5-D side-car content catalog: replaces exact message/choice strings at runtime.
     let mut translation: Option<PathBuf> = None;
     // M5-D authoring tools for that catalog (the `translations` command).
@@ -294,6 +299,9 @@ fn main() -> ExitCode {
             "--fullscreen" => fullscreen = true,
             "--debug" => debug_overlay = true,
             "--stats" => stats_overlay = true,
+            "--hotkeys" => {
+                hotkeys_path = args.next().map(PathBuf::from);
+            }
             "--translation" => {
                 translation = args.next().map(PathBuf::from);
             }
@@ -487,6 +495,9 @@ fn main() -> ExitCode {
                 CaptureEntry::Boot => Entry::Boot,
                 CaptureEntry::Menu => Entry::Menu,
             };
+            // Resolve the simulator hotkeys before entering the event loop so a bad
+            // file is reported up front and the loop always gets a usable table.
+            let hotkeys = load_hotkeys(hotkeys_path.as_deref());
             play::run(
                 &root,
                 frame_limit,
@@ -502,6 +513,7 @@ fn main() -> ExitCode {
                 },
                 translation.as_deref(),
                 &mods,
+                hotkeys,
             )
         }
         Some("run") => match (map.as_deref(), event) {
@@ -528,6 +540,43 @@ fn main() -> ExitCode {
     }
 }
 
+/// Load the simulator hotkey table from `path`, or the built-in mapping when no
+/// file is given.
+///
+/// Parse errors are printed and the affected action keeps its default; an
+/// unreadable file also leaves the built-in table in place. Either way `play`
+/// still starts, which is the desired "never let a config typo stop the game"
+/// behaviour.
+fn load_hotkeys(path: Option<&Path>) -> hotkeys::HotkeyConfig {
+    let Some(path) = path else {
+        return hotkeys::HotkeyConfig::builtin();
+    };
+    match hotkeys::HotkeyConfig::load(path) {
+        Ok((config, errors)) => {
+            for error in &errors {
+                eprintln!("hotkeys: {error} (keeping the default binding)");
+            }
+            if errors.is_empty() {
+                println!("hotkeys: loaded {}", path.display());
+            } else {
+                println!(
+                    "hotkeys: loaded {} with {} warning(s); defaults kept for rejected lines",
+                    path.display(),
+                    errors.len()
+                );
+            }
+            config
+        }
+        Err(error) => {
+            eprintln!(
+                "hotkeys: cannot read {}: {error} (using the built-in mapping)",
+                path.display()
+            );
+            hotkeys::HotkeyConfig::builtin()
+        }
+    }
+}
+
 fn print_help() {
     println!("wolf-cli — WOLF RPG Editor data diagnostics");
     println!();
@@ -543,6 +592,7 @@ fn print_help() {
     println!("                                   [--event <ID> | --load-save <FILE>]");
     println!("                                   [--scale integer|fit-nearest|fit-linear] [--fullscreen]");
     println!("                                   [--debug] [--debug-var <ADDR,...>] [--stats]");
+    println!("                                   [--hotkeys <FILE>]");
     println!("    wolf-cli [--root <DIR>] list [--filter <TEXT>]");
     println!(
         "    wolf-cli [--root <DIR>] translations [--template <FILE>] [--check <FILE>] [--strict]"
@@ -598,6 +648,9 @@ fn print_help() {
     println!(
         "    --stats           Start 'play' with the F2 statistics/milestone overlay visible."
     );
+    println!("    --hotkeys <FILE>  Rebind the simulator function keys from a UTF-8 config");
+    println!("                      file (action = key lines); omitted actions keep defaults.");
+    println!("                      See docs/M7_HOTKEYS.md. The in-game keys are unaffected.");
     println!("    --translation <FILE>  Replace exact message/choice strings using a UTF-8 TSV");
     println!("                      catalog (original<TAB>translation; # comments); works in play/capture.");
     println!("    --mod <DIR>       Data overlay root mirroring the data tree (repeatable; later");

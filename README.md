@@ -11,6 +11,8 @@
 - M3 完整运行时：完成并推送
 - M4 对等打磨：完成并推送（HUD、设置界面、状态面板相对坐标、夜菜单、tile/text 缓存、音频语义、打包）
 - M5 超越原版：完成，M5-A（高分辨率 / 无级缩放 / 全屏）、M5-B（F3 运行时调试 overlay）、M5-C（F2 统计/里程碑 overlay）、M5-D（TSV 内容翻译目录 + 覆盖检查工具/上下文键）、M5-E（--mod 数据/音频覆盖层 + mod 清单/依赖/文本补丁）、M5-F（F4 消息回顾）已落地
+- M6 输入层对等：完成（`123` 选项字/掩码过滤/等待位、原始键码与改键闭环、`125`/`126` 编码、`121` min-max）
+- M7 三项增强：完成（完整英语语言包 `docs/translations/en.full.tsv`、mod 记录级二进制补丁、模拟器热键重绑定 `--hotkeys`；本地提交）
 
 最新详细状态、已验证数字与遗留缺口见 **[docs/HANDOFF_M0.md](docs/HANDOFF_M0.md)** 的「§11 进度」。
 开工前必读协作约定见 **[AGENTS.md](AGENTS.md)**。
@@ -32,7 +34,7 @@ source tools/env.sh
 
 cargo build -q --workspace
 cargo test -q --workspace                          # 无数据时数据用例自动 skip，仍须 exit 0
-WOLF_DATA_ROOT=work/Data cargo test -q --workspace # 真正跑本作数据
+WOLF_DATA_ROOT="$PWD/work/Data" cargo test -q --workspace  # 真正跑本作数据（须绝对路径；cargo 以各 crate 根为 cwd，相对路径会静默 skip）
 WOLF_DATA_ROOT=work/Data ./target/debug/wolf-cli.exe verify
 ```
 

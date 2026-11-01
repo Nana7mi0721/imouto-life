@@ -32,6 +32,7 @@ pub mod key;
 pub mod map_runtime;
 pub mod message;
 pub mod mods;
+pub mod patch;
 pub mod picture;
 pub mod savegame;
 pub mod settings;

@@ -30,6 +30,9 @@
 | [M4_V8_AUDIT.md](M4_V8_AUDIT.md) | 已完成 | 普通变量 v8 语义专项：夜间可活动上限 23..26，不是行动力 |
 | [M5_BEYOND.md](M5_BEYOND.md) | 已完成 | M5 超越原版：A–F 第一切片，D2 翻译工具/上下文键，E2 mod 清单/依赖/文本级补丁 |
 | [M6_INPUT.md](M6_INPUT.md) | 已完成 | M6 输入层对等：`123` 选项字解码/掩码过滤/等待位阻塞、原始键码与改键闭环、`125`/`126` 编码修正、`121` 0x600/0x700 min-max |
+| [M7_I18N.md](M7_I18N.md) | 已完成 | M7 完整英语语言包：TSV 双列转义、模板 1218 静态句、`en.full.tsv` 100% 覆盖 |
+| [M7_PATCH.md](M7_PATCH.md) | 已完成 | M7 mod 记录级二进制补丁：`Database` 字节级序列化 + 结构化 `set_cell` + 两阶段字节补丁 |
+| [M7_HOTKEYS.md](M7_HOTKEYS.md) | 已完成 | M7 模拟器热键重绑定：`--hotkeys` 配置文件 + 命名键解析 |
 | [PACKAGING.md](PACKAGING.md) | 已完成 | 发布打包：`work/out/dist/<version>/` 的 exe、README、启动器、校验和 |
 
 ## 4. M3 专题审计（按主题）

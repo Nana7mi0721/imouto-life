@@ -9,11 +9,14 @@
 //! The catalog is a UTF-8 TSV file, one entry per line: an original string, a literal
 //! TAB, then its replacement. Lines starting with # are comments.
 //!
-//! Blank lines and lines whose first non-space character is '#' are ignored. The first
-//! column is matched exactly against the runtime string; the second is used verbatim,
-//! except for the escapes \n, \t and \\. Duplicate originals keep the last translation.
-//! A line whose translation column is empty is a placeholder: it is kept out of the
-//! catalog so a generated template can be loaded without hiding any text.
+//! Blank lines and lines whose first non-space character is '#' are ignored. Both
+//! columns understand the escapes \n, \t, \r and \\, so a source that itself contains
+//! a literal TAB, CR, LF or backslash can be written on one physical line (the emitted
+//! template uses this to list every static string). Any other backslash sequence is
+//! copied through untouched, which keeps display markup such as \c[6] and \v[12]
+//! literal. Duplicate originals keep the last translation. A line whose translation
+//! column is empty is a placeholder: it is kept out of the catalog so a generated
+//! template can be loaded without hiding any text.
 //!
 //! A source may be prefixed with `[msg]` or `[choice]` to target only messages or only
 //! choices; an unprefixed entry stays the fallback for both. This is the finer key for
@@ -137,7 +140,11 @@ impl Translator {
                 continue;
             }
             let translated = unescape(translated);
-            let mut source = original;
+            // The source column uses the same escaping as the translation column, so
+            // a literal TAB/CR/LF/backslash written as \t/\r/\n/\\ recovers the exact
+            // runtime string. Other backslash sequences (display markup) stay literal.
+            let unescaped = unescape(original);
+            let mut source: &str = unescaped.as_str();
             let mut context = None;
             for candidate in [Context::Message, Context::Choice] {
                 if let Some(rest) = source.strip_prefix(candidate.key()) {
@@ -251,7 +258,11 @@ impl Translator {
     }
 }
 
-/// Expands the three escapes a TSV cell cannot express literally.
+/// Expands the escapes a TSV cell cannot express literally: \n, \t, \r and \\.
+///
+/// An unrecognised backslash sequence (display markup such as \c[6] or \v[12]) is
+/// copied through unchanged, so both the escaped template form and a plain
+/// hand-written catalog round-trip the same way.
 fn unescape(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut chars = text.chars();
@@ -263,12 +274,29 @@ fn unescape(text: &str) -> String {
         match chars.next() {
             Some('n') => out.push('\n'),
             Some('t') => out.push('\t'),
+            Some('r') => out.push('\r'),
             Some('\\') => out.push('\\'),
             Some(other) => {
                 out.push('\\');
                 out.push(other);
             }
             None => out.push('\\'),
+        }
+    }
+    out
+}
+
+/// Escapes a TSV cell so a string containing a literal TAB, CR, LF or backslash fits
+/// on one physical line. The inverse of unescape; used by SourceScan::template.
+fn escape(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for ch in text.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '\t' => out.push_str("\\t"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            other => out.push(other),
         }
     }
     out
@@ -399,9 +427,10 @@ impl SourceScan {
     /// Builds a fill-in TSV template: every static string, an empty translation
     /// column, and a header explaining the format.
     ///
-    /// The source column is verbatim (the loader matches it without unescaping), so
-    /// a source containing a literal TAB or newline is left out and counted in the
-    /// header instead of producing a broken row.
+    /// The source column uses the same escaping as the translation column, so a string
+    /// containing a literal TAB/CR/LF (or a backslash) stays on one physical line and
+    /// round-trips through Translator::parse. Every static string is listed, so the row
+    /// count always equals static_count().
     #[must_use]
     pub fn template(&self) -> String {
         let mut out = String::new();
@@ -413,22 +442,12 @@ impl SourceScan {
         ));
         out.push_str("# Fill the empty column after the TAB; an empty translation is ignored.\n");
         out.push_str("# Prefix a source with [msg] or [choice] to target one context only.\n");
-        out.push_str("# The source column is matched verbatim; only the translation column\n");
-        out.push_str("# understands \\n, \\t and \\\\.\n");
-        let mut skipped = 0usize;
+        out.push_str("# Both columns understand \\n, \\t, \\r and \\\\ escapes, so a source\n");
+        out.push_str("# containing a literal TAB/CR/LF still occupies a single line.\n");
         for text in self.texts.iter().filter(|text| text.is_static()) {
-            if text.text.chars().any(|ch| matches!(ch, '\t' | '\n' | '\r')) {
-                skipped += 1;
-                continue;
-            }
-            out.push_str(&text.text);
+            out.push_str(&escape(&text.text));
             out.push('\t');
             out.push('\n');
-        }
-        if skipped != 0 {
-            out.push_str(&format!(
-                "# {skipped} static string(s) contain a literal TAB/CR/LF and were skipped.\n"
-            ));
         }
         out
     }
@@ -658,5 +677,81 @@ mod tests {
         assert_eq!(coverage.missing, vec![(Context::Choice, "no".to_owned())]);
         assert_eq!(coverage.unused, vec!["stale".to_owned()]);
         assert_eq!(coverage.dynamic_total, 0);
+    }
+
+    #[test]
+    fn a_source_with_a_literal_tab_round_trips_through_the_template() {
+        use super::Context;
+        let scan = scan_of(&[(Context::Message, 212, "a\tb")]);
+        assert_eq!(scan.static_count(), 1);
+        let template = scan.template();
+        assert!(template.contains("a\\tb\t\n"), "{template:?}");
+        let translator = Translator::parse("a\\tb\tA then B\n").expect("catalog");
+        assert_eq!(translator.translate("a\tb"), Some("A then B"));
+        let coverage = scan.coverage(&translator);
+        assert_eq!(coverage.static_total, 1);
+        assert_eq!(coverage.covered, 1);
+        assert!(coverage.unused.is_empty());
+    }
+
+    #[test]
+    fn a_source_with_a_literal_newline_is_escaped_and_parsed() {
+        use super::Context;
+        let scan = scan_of(&[(Context::Message, 7, "one\ntwo")]);
+        let template = scan.template();
+        assert!(template.contains("one\\ntwo\t\n"), "{template:?}");
+        let translator = Translator::parse("one\\ntwo\tfirst\\nsecond\n").expect("catalog");
+        assert_eq!(translator.translate("one\ntwo"), Some("first\nsecond"));
+        assert_eq!(scan.coverage(&translator).covered, 1);
+    }
+
+    #[test]
+    fn a_literal_backslash_in_a_source_round_trips() {
+        use super::Context;
+        let scan = scan_of(&[(Context::Message, 9, "line\\nbreak")]);
+        let template = scan.template();
+        assert!(template.contains("line\\\\nbreak\t\n"), "{template:?}");
+        let translator = Translator::parse("line\\\\nbreak\tLine break\n").expect("catalog");
+        assert_eq!(translator.translate("line\\nbreak"), Some("Line break"));
+        assert_eq!(scan.coverage(&translator).covered, 1);
+    }
+
+    #[test]
+    fn a_carriage_return_escape_is_expanded() {
+        let translator = Translator::parse("x\tA\\rB\n").expect("catalog");
+        assert_eq!(translator.translate("x"), Some("A\rB"));
+    }
+
+    #[test]
+    fn an_unescaped_source_with_display_markup_still_matches() {
+        use super::Context;
+        let scan = scan_of(&[(Context::Message, 3, "\\E\\f[24]hello")]);
+        let translator = Translator::parse("\\E\\f[24]hello\tHello\n").expect("catalog");
+        assert_eq!(translator.translate("\\E\\f[24]hello"), Some("Hello"));
+        assert_eq!(scan.coverage(&translator).covered, 1);
+    }
+
+    #[test]
+    fn the_template_lists_every_static_string_even_with_control_characters() {
+        use super::Context;
+        let scan = scan_of(&[
+            (Context::Message, 1, "plain"),
+            (Context::Message, 2, "tab\there"),
+            (Context::Message, 3, "line\nbreak"),
+            (Context::Choice, 4, "carriage\rreturn"),
+        ]);
+        assert_eq!(scan.static_count(), 4);
+        let template = scan.template();
+        let rows: Vec<&str> = template
+            .lines()
+            .filter(|line| !line.starts_with('#'))
+            .collect();
+        assert_eq!(rows.len(), 4, "{template:?}");
+        for line in rows {
+            let (source, translation) = line.split_once('\t').expect("row has a tab");
+            assert!(!source.chars().any(|ch| matches!(ch, '\t' | '\n' | '\r')));
+            assert!(translation.is_empty());
+        }
+        assert!(!template.contains("were skipped"));
     }
 }

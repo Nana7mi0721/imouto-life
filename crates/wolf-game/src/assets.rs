@@ -23,6 +23,8 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::patch::PatchSet;
+
 /// Extensions probed when an asset name carries none, in the order WOLF tries them.
 pub const PROBE_EXTENSIONS: [&str; 5] = ["png", "jpg", "bmp", "jpeg", "webp"];
 
@@ -199,6 +201,9 @@ pub struct Assets {
     /// `Picture/word_effect* -> hword/` author typo). The game layer drains these into
     /// its diagnostics so a silent path fix stays visible.
     fallbacks: Vec<String>,
+    /// Byte-range patches declared by the mod overlays, applied to raw file bytes
+    /// before decoding (see [`crate::patch`] and `docs/M7_PATCH.md`).
+    patches: PatchSet,
 }
 
 impl Assets {
@@ -216,12 +221,22 @@ impl Assets {
     /// only has to carry the files it replaces.
     #[must_use]
     pub fn with_overlays(root: impl Into<PathBuf>, overlays: Vec<PathBuf>) -> Self {
+        // A malformed patch set is reported and ignored: a broken mod must not stop
+        // the game from loading its own assets.
+        let patches = match PatchSet::load_from_overlays(&overlays) {
+            Ok(set) => set,
+            Err(error) => {
+                eprintln!("mod patch: cannot load asset patches: {error}");
+                PatchSet::default()
+            }
+        };
         Self {
             root: root.into(),
             overlays,
             cache: HashMap::new(),
             missing: HashSet::new(),
             fallbacks: Vec::new(),
+            patches,
         }
     }
 
@@ -328,16 +343,24 @@ impl Assets {
                 })
             }
         };
-        if let Some(alias) = alias {
+        if let Some(alias) = &alias {
             let message = format!("asset fallback: {name} -> {alias}");
             if !self.fallbacks.iter().any(|existing| existing == &message) {
                 self.fallbacks.push(message);
             }
         }
-        let bytes = std::fs::read(&path).map_err(|source| AssetError::Io {
+        let mut bytes = std::fs::read(&path).map_err(|source| AssetError::Io {
             name: name.to_owned(),
             source,
         })?;
+        // Byte patches run on the raw file bytes, before the decoder sees them.
+        let mut candidates: Vec<&str> = vec![name];
+        if let Some(alias) = alias.as_deref() {
+            candidates.push(alias);
+        }
+        if let Err(error) = self.patches.apply_bytes(&mut bytes, &candidates) {
+            eprintln!("mod patch: asset {name}: {error}");
+        }
         let decoded = image::load_from_memory(&bytes).map_err(|source| AssetError::Decode {
             name: name.to_owned(),
             source,

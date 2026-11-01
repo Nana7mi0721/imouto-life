@@ -24,7 +24,7 @@ cd '/e/Study/github program/Imouto Life' && source tools/env.sh >/dev/null 2>&1
 
 - 数据根是 **work/Data**（已解包的本作数据，175MB，已 gitignore）。不要把它提交进 git。
 - 默认 `cargo test -q --workspace` 会跳过需要数据的用例（缺数据就 eprintln skipping 后 return），必须保持 exit 0。
-- 真正跑本作数据测试用：`WOLF_DATA_ROOT=work/Data cargo test -q -p <crate>`。
+- 真正跑本作数据测试用：`WOLF_DATA_ROOT="$PWD/work/Data" cargo test -q -p <crate>`。**必须绝对路径**——`cargo test` 以各 crate 根为工作目录，`work/Data` 这类相对路径会被解析到 crate 目录而静默 skip（于是假「全绿」）；已知本作数据上跑整套 `-p wolf-game` 会有若干姊妹作期望值/事件语义差异用例失败（长期记录于 HANDOFF §11），不是缺陷。
 - 每个里程碑结束跑：`cargo test -q --workspace`、`WOLF_DATA_ROOT=work/Data ./target/debug/wolf-cli.exe verify`（PASS 64 / 1 SKIP 为 M0 基线），需要时再跑 `verify --wolf <安装目录>/Data.wolf`。
 - 本作自己的期望值在 docs/BASELINE.json；**不要照抄姊妹作 imoto life 的 BASELINE.json**（那是第一部游戏的数值）。
 

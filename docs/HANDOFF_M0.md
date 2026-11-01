@@ -803,3 +803,43 @@ WOLF_DATA_ROOT="$PWD/work/Data" ./target/debug/wolf-cli.exe verify | tail -20
     命中框 (976,544) 起），不是端口偏差；边界仍由 `m3_map_click` 钉住。
   * **当前进度**：M0–M6 完成。可选后续只剩增强项：完整翻译内容、mod 记录级二进制
     补丁、跨周目成就、模拟器热键重绑定。本地提交并推送。
+
+* 2026-11-01（M7：三项增强——完整英语语言包 / mod 记录级二进制补丁 / 模拟器热键重绑定）：
+  * **范围**：用户要求补齐三项增强（跨周目成就未选）：① 完整语言包内容；② 非文本文件
+    的记录级二进制 mod 补丁（原先只能整文件覆盖）；④ 模拟器热键重绑定（原先固定
+    F2/F3/F4/F10/F12）。Lead 定默认：英语完整包、记录级补丁+字节区间兜底、配置文件+CLI。
+  * **① 语言包（wolf-game/translate.rs + docs/translations/en.full.tsv）**：模板/目录两列
+    都支持 `\n \t \r \\` 转义；`SourceScan::template()` 不再跳过含字面 TAB/CR/LF 的静态句，
+    模板 1218 static（1046 message / 172 choice）+ 46 动态、共 1224 行无 skipped；
+    `Translator::parse` 先对源列 unescape（其它反斜杠序列如 `\c[6]`/`\v[12]` 原样透传），
+    向后兼容旧目录。产出 `docs/translations/en.full.tsv` 全量英文 1218 行，
+    `wolf-cli translations --strict` **1218/1218 static (100%)，0 missing / 0 unused**。
+    新增 docs/M7_I18N.md、补 docs/translations/README.md。译文为机翻风格、完整对齐，
+    如需出版级可后续人工润色（非缺陷）。
+  * **② 记录级补丁（wolf-format/database.rs + wolf-game/patch.rs）**：`Database` 新增字节
+    级序列化 `to_bytes`（保留 version_header/trailing 与每串原始 t_str chunk，未改串逐字节
+    重放、改过的按 UTF-8 重编码）与结构化 `set_number/set_text/set_cell`（ColumnRef
+    Index|Name）。真实数据三库 `parse→to_bytes` **逐字节一致**（DataBase/CDataBase/
+    SysDatabase，`WOLF_DATA_ROOT` 绝对路径实跑 3 passed）。`PatchSet::apply_bytes` 两阶段
+    （先全量校验等长/越界/expect，任一不符整文件不写），`apply_records` 落 set_cell；
+    db.rs 在 parse 前应用字节补丁、引擎默认值后应用记录补丁，assets.rs 在解码前应用资产
+    字节补丁；坏补丁 eprintln 忽略、不 panic、不加 CLI 参数。新增 docs/M7_PATCH.md、
+    tests/database_serializer.rs(3)、tests/m7_patch.rs(5)。
+  * **④ 热键重绑定（wolf-cli/hotkeys.rs）**：`HotkeyConfig`（stats/debug/backlog/scale/
+    fullscreen/quit/restart）+ `parse/load` + `parse_named_key`（F1..F12 与常用命名键），
+    非法键/未知动作回退该动作默认；main.rs 加 `--hotkeys <FILE>`，play.rs 7 处硬编码 F 键
+    改查配置。默认映射与原固定键一致（F2/F3/F4/F9/F11/F10/F12）。新增 docs/M7_HOTKEYS.md、
+    tests/help_hotkeys.rs。
+  * **验证**：`cargo build -q --workspace` exit 0。`cargo test -q --workspace`（默认无数据）
+    **exit 0**；`WOLF_DATA_ROOT=work/Data` 用**绝对路径**真跑时，除 7 条**既有、非本轮**
+    的姊妹作期望值/事件语义差异失败外全绿（用 HEAD 干净工作树复现同样 7 条，属早已记录的
+    已知差异，不是回归；本轮未改这些模块语义）；本轮新增的序列化往返 3 + m7_patch 5 +
+    翻译/热键测试全过。`wolf-cli verify` **PASS 64 / 1 SKIP**。
+  * **重要提醒（数据测试路径）**：`cargo test` 以各 crate 根为工作目录，`WOLF_DATA_ROOT=work/Data`
+    这类相对路径会被解析到 crate 目录而**静默 skip**（于是「全绿」）；要真跑必须用绝对路径
+    （如 `WOLF_DATA_ROOT="$PWD/work/Data"`）。已在 README 快速开始与 AGENTS §2 补注。
+  * **清理（AGENTS §7）**：删除 target/debug/incremental、target/release、target/ver6、
+    work/out 下临时日志/翻译中间件；`du -sh .` = **4.1G**（work 251M、work/Data 176M、
+    target 3.8G，保留可运行 debug 产物）。
+  * **当前进度**：M0–M7 完成。可选后续仅剩：跨周目永久成就；语言包可人工润色；补丁/
+    热键的更多用法。本地提交（未推送远端）。

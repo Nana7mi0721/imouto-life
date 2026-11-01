@@ -29,6 +29,8 @@ use wolf_game::atlas::{Atlas, TextQuad};
 use wolf_game::{choice, key, Game, Message};
 use wolf_render::{Renderer, ScaleMode, SpriteInstance, TextItem, LOGICAL_H, LOGICAL_W};
 
+use crate::hotkeys::HotkeyConfig;
+
 /// One frame at 60 Hz.
 const FRAME_TIME: Duration = Duration::from_micros(16_667);
 
@@ -54,14 +56,14 @@ impl Default for DisplayOptions {
     }
 }
 
-/// M5-B runtime debug overlay: an F3-toggleable text block drawn over the game.
+/// M5-B runtime debug overlay: a toggleable text block drawn over the game.
 #[derive(Clone, Debug, Default)]
 pub struct DebugOptions {
-    /// Show the overlay on startup (F3 still toggles it).
+    /// Show the overlay on startup (the debug hotkey still toggles it).
     pub overlay: bool,
     /// Variables to list by flat slot or magic address while the overlay is open.
     pub vars: Vec<u32>,
-    /// Show the M5-C play-statistics / milestone overlay on startup (F2 toggles it).
+    /// Show the M5-C play-statistics / milestone overlay on startup (the stats hotkey toggles it).
     pub stats: bool,
 }
 
@@ -137,6 +139,7 @@ pub fn run(
     debug: DebugOptions,
     translation: Option<&std::path::Path>,
     mods: &[std::path::PathBuf],
+    hotkeys: HotkeyConfig,
 ) -> std::process::ExitCode {
     let mut game = match Game::with_overlays(root, mods.to_vec()) {
         Ok(game) => game,
@@ -245,6 +248,7 @@ pub fn run(
         backlog_scroll: 0,
         translation: translation.map(std::path::Path::to_path_buf),
         mods: mods.to_vec(),
+        hotkeys,
     };
     if let Err(err) = event_loop.run_app(&mut app) {
         eprintln!("event loop failed: {err}");
@@ -277,7 +281,7 @@ pub fn run(
 
 struct App {
     game: Game,
-    /// Data root the game was built from, kept so F12 can rebuild the session in place.
+    /// Data root the game was built from, kept so the restart key can rebuild the session.
     root: std::path::PathBuf,
     atlas: Atlas,
     sprites: Vec<SpriteInstance>,
@@ -304,22 +308,24 @@ struct App {
     fps_since: Instant,
     /// Frames per second from the last completed one-second window.
     fps: u32,
-    /// Window mode selected at startup and updated by F9/F11.
+    /// Window mode selected at startup and updated by the scale/fullscreen hotkeys.
     display: DisplayOptions,
-    /// Whether the F3 debug overlay is visible.
+    /// Whether the debug overlay is visible.
     debug_overlay: bool,
     /// Variables the overlay lists, in flat or magic address form.
     debug_vars: Vec<u32>,
     /// Whether the M5-C play-statistics / milestone overlay is visible.
     stats_overlay: bool,
-    /// Whether the M5-F message transcript is open (F4).
+    /// Whether the M5-F message transcript is open (backlog hotkey).
     backlog: bool,
     /// How many of the newest messages the transcript currently hides.
     backlog_scroll: usize,
     /// M5-D catalog path, re-applied when F12 rebuilds the session.
     translation: Option<std::path::PathBuf>,
-    /// M5-E mod data overlay roots, re-applied when F12 rebuilds the session.
+    /// M5-E mod data overlay roots, re-applied when the restart key rebuilds.
     mods: Vec<std::path::PathBuf>,
+    /// Rebindable simulator function keys (default mapping when no file is given).
+    hotkeys: HotkeyConfig,
 }
 
 /// The primitive values the overlay renders, separated from `App` so the text can be
@@ -452,7 +458,8 @@ impl App {
         self.rebuild();
     }
 
-    /// F12 = restart (manual01, `F12_Reset=1` in Game.ini).
+    /// Restart the session (default hotkey F12; the retail `Game.ini` ships
+    /// `F12_Reset=1`).
     ///
     /// Rebuilds the whole `Game` from the data root and boots it into the title map,
     /// exactly like starting `play` afresh, without tearing down the window, the
@@ -497,7 +504,7 @@ impl App {
         if let Some(renderer) = self.renderer.as_ref() {
             self.refresh_title(renderer);
         }
-        println!("restart: F12 booted the title map again");
+        println!("restart: rebooted the title map");
     }
 
     /// Rebuilds the draw list: script pictures, the runtime choice panel, and text.
@@ -787,13 +794,14 @@ impl ApplicationHandler for App {
                 let bit = fixed_bit(event.physical_key);
                 let raw = raw_key_code(event.physical_key);
                 if event.state == ElementState::Pressed {
-                    if matches!(event.logical_key, Key::Named(NamedKey::F10)) {
+                    if self.hotkeys.is_quit(&event.logical_key) {
                         event_loop.exit();
                         return;
                     }
-                    // F9 cycles integer -> fit-nearest -> fit-linear. F11 toggles a
-                    // borderless fullscreen window; both are M5 presentation controls.
-                    if matches!(event.logical_key, Key::Named(NamedKey::F9)) {
+                    // The scale hotkey cycles integer -> fit-nearest -> fit-linear; the
+                    // fullscreen hotkey toggles a borderless window. Both are M5
+                    // presentation controls with rebindable keys.
+                    if self.hotkeys.is_scale(&event.logical_key) {
                         if !event.repeat {
                             self.display.mode = self.display.mode.next();
                             if let Some(renderer) = self.renderer.as_mut() {
@@ -806,7 +814,7 @@ impl ApplicationHandler for App {
                         }
                         return;
                     }
-                    if matches!(event.logical_key, Key::Named(NamedKey::F11)) {
+                    if self.hotkeys.is_fullscreen(&event.logical_key) {
                         if !event.repeat {
                             self.display.fullscreen = !self.display.fullscreen;
                             if let Some(window) = self.window.as_ref() {
@@ -823,27 +831,27 @@ impl ApplicationHandler for App {
                         }
                         return;
                     }
-                    // F2 toggles the M5-C statistics/milestone overlay.
-                    if matches!(event.logical_key, Key::Named(NamedKey::F2)) {
+                    // The statistics hotkey toggles the M5-C statistics/milestone overlay.
+                    if self.hotkeys.is_stats(&event.logical_key) {
                         if !event.repeat {
                             self.stats_overlay = !self.stats_overlay;
                             println!("stats: overlay {}", self.stats_overlay);
                         }
                         return;
                     }
-                    // F3 toggles the M5-B debug overlay. It is an ordinary text overlay,
-                    // not a separate UI, so it rides the same glyph pass as the game.
-                    if matches!(event.logical_key, Key::Named(NamedKey::F3)) {
+                    // The debug hotkey toggles the M5-B debug overlay. It is an ordinary
+                    // text overlay, not a separate UI, so it rides the same glyph pass.
+                    if self.hotkeys.is_debug(&event.logical_key) {
                         if !event.repeat {
                             self.debug_overlay = !self.debug_overlay;
                             println!("debug: overlay {}", self.debug_overlay);
                         }
                         return;
                     }
-                    // F4 opens the M5-F transcript. It is a read-only overlay: the
-                    // script keeps running underneath, and the ordinary game keys are
-                    // not consumed while it is closed.
-                    if matches!(event.logical_key, Key::Named(NamedKey::F4)) {
+                    // The backlog hotkey opens the M5-F transcript. It is a read-only
+                    // overlay: the script keeps running underneath, and the ordinary
+                    // game keys are not consumed while it is closed.
+                    if self.hotkeys.is_backlog(&event.logical_key) {
                         if !event.repeat {
                             self.backlog = !self.backlog;
                             self.backlog_scroll = 0;
@@ -871,9 +879,9 @@ impl ApplicationHandler for App {
                         }
                         return;
                     }
-                    // manual01: F12 restarts the game. Ignore auto-repeat so a held key
-                    // cannot reload the data root dozens of times a second.
-                    if is_restart_key(&event.logical_key) {
+                    // The restart key (default F12) restarts the game. Ignore auto-repeat
+                    // so a held key cannot reload the data root dozens of times a second.
+                    if self.hotkeys.is_restart(&event.logical_key) {
                         if !event.repeat {
                             self.restart();
                         }
@@ -996,14 +1004,6 @@ impl ApplicationHandler for App {
 /// Several physical keys share a bit on purpose: the original game honours Enter/Z/Space
 /// for confirm and Escape/X for cancel, and a port that only accepted one of them would
 /// feel broken to anyone used to the original.
-/// True for the physical key that restarts the session.
-///
-/// manual01 lists F12 as 「再起动」 and `Game.ini` ships `F12_Reset=1`, so the port
-/// mirrors that binding instead of reserving F12 for anything else.
-fn is_restart_key(key: &Key) -> bool {
-    matches!(key, Key::Named(NamedKey::F12))
-}
-
 /// Keys that always carry a logical meaning, independent of the player's config.
 ///
 /// manual01 lists 決定 = Enter / Z / left click and キャンセル = backspace / X /
@@ -1145,9 +1145,10 @@ fn raw_key_code(code: winit::keyboard::PhysicalKey) -> Option<i32> {
 #[cfg(test)]
 mod tests {
     use super::{
-        backlog_view, debug_lines, debug_slot, is_restart_key, parse_debug_vars, stats_lines,
-        DebugSnapshot, BACKLOG_ROWS,
+        backlog_view, debug_lines, debug_slot, parse_debug_vars, stats_lines, DebugSnapshot,
+        BACKLOG_ROWS,
     };
+    use crate::hotkeys::HotkeyConfig;
     use winit::keyboard::{Key, NamedKey};
     use wolf_game::Message;
 
@@ -1298,8 +1299,9 @@ mod tests {
     }
 
     #[test]
-    fn f12_is_the_restart_key() {
-        assert!(is_restart_key(&Key::Named(NamedKey::F12)));
+    fn the_restart_key_defaults_to_f12_and_follows_the_config() {
+        let config = HotkeyConfig::default();
+        assert!(config.is_restart(&Key::Named(NamedKey::F12)));
         for key in [
             Key::Named(NamedKey::F10),
             Key::Named(NamedKey::F11),
@@ -1307,7 +1309,15 @@ mod tests {
             Key::Named(NamedKey::Enter),
             Key::Character("z".into()),
         ] {
-            assert!(!is_restart_key(&key), "{key:?} must not restart");
+            assert!(
+                !config.is_restart(&key),
+                "{key:?} must not restart by default"
+            );
         }
+        // Rebinding the restart action moves it off F12 entirely.
+        let (custom, errors) = HotkeyConfig::parse("restart = F5\n");
+        assert!(errors.is_empty(), "{errors:?}");
+        assert!(custom.is_restart(&Key::Named(NamedKey::F5)));
+        assert!(!custom.is_restart(&Key::Named(NamedKey::F12)));
     }
 }

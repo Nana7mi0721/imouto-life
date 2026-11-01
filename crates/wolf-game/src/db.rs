@@ -44,6 +44,8 @@ use std::path::{Path, PathBuf};
 use wolf_format::database::{Database, FieldKind, RowValue};
 use wolf_format::sysdatabase::SysDatabase;
 
+use crate::patch::PatchSet;
+
 /// `CDataBase` type the 座標倍率 (coordinate scale) lives in.
 pub const COORDINATE_SCALE_TYPE: i32 = 18;
 /// Row holding the X scale.
@@ -196,6 +198,15 @@ impl Databases {
     /// Each overlay may mirror the data root directly or its `BasicData` folder. A name
     /// that no overlay carries falls back to `basic`, so a mod can ship just one table.
     pub fn load_with_overlays(basic: &Path, overlays: &[PathBuf], screen: (u32, u32)) -> Self {
+        // Mod byte patches touch the raw file bytes, so they run before parsing; a
+        // malformed patch set is reported and then ignored rather than failing a boot.
+        let patches = match PatchSet::load_from_overlays(overlays) {
+            Ok(set) => set,
+            Err(error) => {
+                eprintln!("mod patch: cannot load patches: {error}");
+                PatchSet::default()
+            }
+        };
         let read = |name: &str| {
             for overlay in overlays.iter().rev() {
                 for candidate in [overlay.join("BasicData").join(name), overlay.join(name)] {
@@ -206,10 +217,32 @@ impl Databases {
             }
             fs::read(basic.join(name)).ok()
         };
+        let apply_byte_patches = |bytes: &mut Option<Vec<u8>>, candidates: &[&str]| {
+            if let Some(data) = bytes.as_mut() {
+                if let Err(error) = patches.apply_bytes(data, candidates) {
+                    eprintln!("mod patch: {}: {error}", candidates[0]);
+                }
+            }
+        };
+        let mut data_bytes = read("DataBase.dat");
+        let mut cdata_bytes = read("CDataBase.dat");
+        let mut sys_bytes = read("SysDatabase.dat");
+        apply_byte_patches(
+            &mut data_bytes,
+            &["DataBase.dat", "BasicData/DataBase.dat"],
+        );
+        apply_byte_patches(
+            &mut cdata_bytes,
+            &["CDataBase.dat", "BasicData/CDataBase.dat"],
+        );
+        apply_byte_patches(
+            &mut sys_bytes,
+            &["SysDatabase.dat", "BasicData/SysDatabase.dat"],
+        );
         let mut databases = Databases {
-            data: read("DataBase.dat").and_then(|bytes| Database::parse(&bytes).ok()),
-            cdata: read("CDataBase.dat").and_then(|bytes| Database::parse(&bytes).ok()),
-            sys: read("SysDatabase.dat").and_then(|bytes| SysDatabase::parse(&bytes).ok()),
+            data: data_bytes.and_then(|bytes| Database::parse(&bytes).ok()),
+            cdata: cdata_bytes.and_then(|bytes| Database::parse(&bytes).ok()),
+            sys: sys_bytes.and_then(|bytes| SysDatabase::parse(&bytes).ok()),
             ..Databases::default()
         };
         // The .project companions hold the editor labels, and `250` puts those labels in
@@ -225,6 +258,23 @@ impl Databases {
             table.apply_project_names(&bytes);
         }
         databases.apply_engine_defaults(screen);
+        // Record patches run last so a mod can override even an engine-owned cell.
+        if let Some(table) = databases.data.as_mut() {
+            if let Err(error) = patches.apply_records(
+                table,
+                &["DataBase.dat", "BasicData/DataBase.dat"],
+            ) {
+                eprintln!("mod patch: DataBase.dat: {error}");
+            }
+        }
+        if let Some(table) = databases.cdata.as_mut() {
+            if let Err(error) = patches.apply_records(
+                table,
+                &["CDataBase.dat", "BasicData/CDataBase.dat"],
+            ) {
+                eprintln!("mod patch: CDataBase.dat: {error}");
+            }
+        }
         databases
     }
 

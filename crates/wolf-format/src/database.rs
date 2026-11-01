@@ -29,6 +29,14 @@ pub struct Database {
     /// [`Database::apply_project_names`] has been called, because the `.dat`
     /// itself carries no label at all.
     pub names: ProjectNames,
+    /// The `version_header` byte read from the container (0x00 for the 2.00
+    /// line, 0x55 for 2.10). Kept so [`Database::to_bytes`] can rebuild a file
+    /// byte for byte even though the parser only needs it to pick a generation.
+    version_header: u8,
+    /// The bytes after the footer. Every shipped file ends right after the
+    /// footer, but the reader tolerates trailing NUL padding and the serializer
+    /// must reproduce it verbatim.
+    trailing: Vec<u8>,
 }
 
 impl Database {
@@ -95,16 +103,20 @@ impl Database {
                 &[want_footer],
             ));
         }
+        let trailing_start = r.pos();
         while !r.at_end() {
             if r.u8()? != 0 {
                 return Err(Error::trailing(r.pos() - 1, r.remaining() + 1));
             }
         }
+        let trailing = data[trailing_start..].to_vec();
         Ok(Self {
             version,
             types,
             footer,
             names: ProjectNames::default(),
+            version_header,
+            trailing,
         })
     }
 
@@ -191,6 +203,201 @@ impl Database {
         }
         record.row_name(row)
     }
+
+    /// Builds a database directly from parts, for tests and tooling.
+    ///
+    /// The `version_header` is derived from `version` (0xC2 -> 2.10 header 0x55,
+    /// otherwise 2.00 header 0x00), the trailing padding is empty, and no original
+    /// string chunks are retained, so [`Database::to_bytes`] encodes every string
+    /// fresh. This is the constructor to use when a `Database` has to be built
+    /// without a `.dat` on disk.
+    #[must_use]
+    pub fn synthetic(version: u8, types: Vec<DatabaseType>, footer: u8) -> Self {
+        let version_header = if version == 0xC2 { 0x55 } else { 0x00 };
+        Self {
+            version,
+            types,
+            footer,
+            names: ProjectNames::default(),
+            version_header,
+            trailing: Vec::new(),
+        }
+    }
+
+    /// Rebuilds the whole container, byte for byte.
+    ///
+    /// For a database produced by [`Database::parse`] and never edited, the result
+    /// equals the input: the `version_header`, the trailing padding, and every
+    /// original encoded string chunk are replayed verbatim. A string changed through
+    /// [`Database::set_text`] (or any other edit) is re-encoded with a fresh length
+    /// word, so a longer replacement needs no separate size fixup pass.
+    #[must_use]
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(&Self::MAGIC);
+        out.push(self.version_header);
+        out.extend_from_slice(&Self::MAGIC_TYPE);
+        out.push(self.version);
+        out.extend_from_slice(&(self.types.len() as u32).to_le_bytes());
+        for table in &self.types {
+            table.write(&mut out);
+        }
+        out.push(self.footer);
+        out.extend_from_slice(&self.trailing);
+        out
+    }
+
+    /// Sets one numeric cell, addressed by logical column index or editor name.
+    ///
+    /// # Errors
+    ///
+    /// [`PatchError`] when the type, row, column, or column kind does not match.
+    pub fn set_number(
+        &mut self,
+        ty: usize,
+        row: usize,
+        column: ColumnRef<'_>,
+        value: i32,
+    ) -> std::result::Result<(), PatchError> {
+        let index = self.resolve_column(ty, column)?;
+        let kind = self.column_kind(ty, index)?;
+        let table = self.types.get_mut(ty).ok_or(PatchError::NoSuchType(ty))?;
+        let count = table.rows.len();
+        if row >= count {
+            return Err(PatchError::NoSuchRow { ty, row, count });
+        }
+        match kind {
+            FieldKind::Num(n) => match table.rows[row].numbers.get_mut(n) {
+                Some(cell) => {
+                    *cell = value;
+                    Ok(())
+                }
+                None => Err(PatchError::ColumnKind {
+                    ty,
+                    column: index,
+                    expected: "numeric",
+                }),
+            },
+            FieldKind::Str(_) => Err(PatchError::ColumnKind {
+                ty,
+                column: index,
+                expected: "numeric",
+            }),
+        }
+    }
+
+    /// Sets one text cell, addressed by logical column index or editor name.
+    ///
+    /// The stored string may change length; [`Database::to_bytes`] encodes the new
+    /// value with a fresh length word.
+    ///
+    /// # Errors
+    ///
+    /// [`PatchError`] when the type, row, column, or column kind does not match.
+    pub fn set_text(
+        &mut self,
+        ty: usize,
+        row: usize,
+        column: ColumnRef<'_>,
+        value: &str,
+    ) -> std::result::Result<(), PatchError> {
+        let index = self.resolve_column(ty, column)?;
+        let kind = self.column_kind(ty, index)?;
+        let table = self.types.get_mut(ty).ok_or(PatchError::NoSuchType(ty))?;
+        let count = table.rows.len();
+        if row >= count {
+            return Err(PatchError::NoSuchRow { ty, row, count });
+        }
+        match kind {
+            FieldKind::Str(n) => match table.rows[row].strings.get_mut(n) {
+                Some(cell) => {
+                    *cell = value.to_owned();
+                    Ok(())
+                }
+                None => Err(PatchError::ColumnKind {
+                    ty,
+                    column: index,
+                    expected: "text",
+                }),
+            },
+            FieldKind::Num(_) => Err(PatchError::ColumnKind {
+                ty,
+                column: index,
+                expected: "text",
+            }),
+        }
+    }
+
+    /// Sets one cell to a [`CellValue`], dispatching on the value type.
+    ///
+    /// # Errors
+    ///
+    /// [`PatchError`] when the type, row, column, or column kind does not match.
+    pub fn set_cell(
+        &mut self,
+        ty: usize,
+        row: usize,
+        column: ColumnRef<'_>,
+        value: CellValue,
+    ) -> std::result::Result<(), PatchError> {
+        match value {
+            CellValue::Number(number) => self.set_number(ty, row, column, number),
+            CellValue::Text(text) => self.set_text(ty, row, column, &text),
+        }
+    }
+
+    /// Resolves a [`ColumnRef`] against a type's field table.
+    fn resolve_column(
+        &self,
+        ty: usize,
+        column: ColumnRef<'_>,
+    ) -> std::result::Result<usize, PatchError> {
+        let field_len = self
+            .types
+            .get(ty)
+            .ok_or(PatchError::NoSuchType(ty))?
+            .fields
+            .len();
+        match column {
+            ColumnRef::Index(index) => {
+                if index >= field_len {
+                    Err(PatchError::NoSuchColumn {
+                        ty,
+                        column: index,
+                        count: field_len,
+                    })
+                } else {
+                    Ok(index)
+                }
+            }
+            ColumnRef::Name(name) => {
+                for candidate in 0..field_len {
+                    if self.field_name(ty, candidate) == Some(name) {
+                        return Ok(candidate);
+                    }
+                }
+                Err(PatchError::ColumnNameNotFound {
+                    ty,
+                    name: name.to_owned(),
+                })
+            }
+        }
+    }
+
+    /// The [`FieldKind`] of one logical column of a type.
+    fn column_kind(&self, ty: usize, index: usize) -> std::result::Result<FieldKind, PatchError> {
+        let table = self.types.get(ty).ok_or(PatchError::NoSuchType(ty))?;
+        let count = table.fields.len();
+        table
+            .fields
+            .get(index)
+            .copied()
+            .ok_or(PatchError::NoSuchColumn {
+                ty,
+                column: index,
+                count,
+            })
+    }
 }
 
 /// One data type: a field table plus its rows.
@@ -205,6 +412,26 @@ pub struct DatabaseType {
     pub fields: Vec<FieldKind>,
     /// Rows in file order.
     pub rows: Vec<Row>,
+    /// The original encoded `t_str` chunk of each string cell, aligned to
+    /// `rows[i].strings[j]`. Empty for a synthetic type. Keeping the source bytes
+    /// lets [`Database::to_bytes`] replay an unedited database byte for byte even
+    /// though the strings decode through a CP932/GBK heuristic that cannot be
+    /// inverted losslessly.
+    raw_strings: Vec<Vec<RawStr>>,
+    /// The original `t_str` chunk of the `STRING_INDICATOR` extra name, when this
+    /// type carries one (no shipped file does).
+    raw_extra_name: Option<Vec<u8>>,
+}
+
+/// One original encoded string chunk plus the text it decodes to.
+///
+/// The chunk is the whole on-disk `t_str`: the `u32` length word, the payload,
+/// and its NUL terminator. `text` is what [`decode_wolf_str`] produced at parse
+/// time; the serializer replays `chunk` only while the row still holds `text`.
+#[derive(Debug, Clone)]
+struct RawStr {
+    chunk: Vec<u8>,
+    text: String,
 }
 
 impl DatabaseType {
@@ -239,11 +466,16 @@ impl DatabaseType {
         r.expect(&Database::TYPE_SEPARATOR, "database type separator")?;
         let data_id_method = r.u32()?;
         let field_count = r.u32()? as usize;
-        if data_id_method == Database::STRING_INDICATOR {
-            // Documented extra name string; no shipped file uses it, but skipping
-            // it keeps the walk correct if one ever does.
+        let raw_extra_name = if data_id_method == Database::STRING_INDICATOR {
+            // Documented extra name string; no shipped file uses it, but walking
+            // it keeps the cursor correct if one ever does, and capturing the raw
+            // chunk lets a round trip reproduce it exactly.
+            let start = r.pos();
             let _unknown2 = r.t_str()?;
-        }
+            Some(r.buffer()[start..r.pos()].to_vec())
+        } else {
+            None
+        };
         if field_count > r.remaining() / 4 {
             return Err(Error::field(
                 "database field count",
@@ -277,14 +509,70 @@ impl DatabaseType {
             ));
         }
         let mut rows = Vec::with_capacity(row_count);
+        let mut raw_strings = Vec::with_capacity(row_count);
         for _ in 0..row_count {
-            rows.push(Row::read(r, &fields)?);
+            let (row, raw) = Row::read(r, &fields)?;
+            rows.push(row);
+            raw_strings.push(raw);
         }
         Ok(Self {
             data_id_method,
             fields,
             rows,
+            raw_strings,
+            raw_extra_name,
         })
+    }
+
+    /// Builds a type from parts, for tests and tooling.
+    ///
+    /// No raw string chunks are retained, so [`Database::to_bytes`] encodes every
+    /// string fresh.
+    #[must_use]
+    pub fn synthetic(data_id_method: u32, fields: Vec<FieldKind>, rows: Vec<Row>) -> Self {
+        Self {
+            data_id_method,
+            fields,
+            rows,
+            raw_strings: Vec::new(),
+            raw_extra_name: None,
+        }
+    }
+
+    /// Writes this type back in the on-disk layout [`DatabaseType::read`] parses.
+    fn write(&self, out: &mut Vec<u8>) {
+        out.extend_from_slice(&Database::TYPE_SEPARATOR);
+        out.extend_from_slice(&self.data_id_method.to_le_bytes());
+        out.extend_from_slice(&(self.fields.len() as u32).to_le_bytes());
+        if self.data_id_method == Database::STRING_INDICATOR {
+            match &self.raw_extra_name {
+                Some(chunk) => out.extend_from_slice(chunk),
+                None => encode_t_str(out, ""),
+            }
+        }
+        for field in &self.fields {
+            out.extend_from_slice(&field.raw().to_le_bytes());
+        }
+        out.extend_from_slice(&(self.rows.len() as u32).to_le_bytes());
+        let numeric = self.numeric_columns();
+        let string_count = self.string_columns();
+        for (row_index, row) in self.rows.iter().enumerate() {
+            for slot in 0..numeric {
+                let value = row.numbers.get(slot).copied().unwrap_or(0);
+                out.extend_from_slice(&value.to_le_bytes());
+            }
+            for slot in 0..string_count {
+                let text = row.strings.get(slot).map(String::as_str).unwrap_or("");
+                let raw = self
+                    .raw_strings
+                    .get(row_index)
+                    .and_then(|cells| cells.get(slot));
+                match raw {
+                    Some(cell) if cell.text.as_str() == text => out.extend_from_slice(&cell.chunk),
+                    _ => encode_t_str(out, text),
+                }
+            }
+        }
     }
 }
 
@@ -346,14 +634,22 @@ pub struct Row {
 }
 
 impl Row {
-    fn read(r: &mut Reader<'_>, fields: &[FieldKind]) -> Result<Self> {
+    fn read(r: &mut Reader<'_>, fields: &[FieldKind]) -> Result<(Self, Vec<RawStr>)> {
         let strings_count = string_columns(fields);
         let numbers = r.i32_array(fields.len() - strings_count)?;
         let mut strings = Vec::with_capacity(strings_count);
+        let mut raw = Vec::with_capacity(strings_count);
         for _ in 0..strings_count {
-            strings.push(r.t_str()?);
+            let start = r.pos();
+            let text = r.t_str()?;
+            let end = r.pos();
+            raw.push(RawStr {
+                chunk: r.buffer()[start..end].to_vec(),
+                text: text.clone(),
+            });
+            strings.push(text);
         }
-        Ok(Self { numbers, strings })
+        Ok((Self { numbers, strings }, raw))
     }
 
     /// Value of logical column `column`, if the field table points at a slot
@@ -653,6 +949,104 @@ fn project_type_at(project: &[u8], at: usize) -> Option<(ProjectTypeNames, usize
     ))
 }
 
+/// How a structured record patch addresses a column.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ColumnRef<'a> {
+    /// Logical column index, in field-table order.
+    Index(usize),
+    /// Editor field name from the `.project` companion; needs
+    /// [`Database::apply_project_names`] to have run.
+    Name(&'a str),
+}
+
+/// The value a structured record patch writes into a cell.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CellValue {
+    /// A numeric cell value.
+    Number(i32),
+    /// A text cell value; the serializer re-encodes it with a fresh length word,
+    /// so a longer replacement is fine.
+    Text(String),
+}
+
+/// A structured record patch that could not be applied.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PatchError {
+    /// The database has no type at this index.
+    NoSuchType(usize),
+    /// The type has fewer rows than the patch addresses.
+    NoSuchRow {
+        /// Type index.
+        ty: usize,
+        /// Addressed row.
+        row: usize,
+        /// Rows the type actually has.
+        count: usize,
+    },
+    /// The type has fewer columns than the patch addresses.
+    NoSuchColumn {
+        /// Type index.
+        ty: usize,
+        /// Addressed column.
+        column: usize,
+        /// Columns the type actually has.
+        count: usize,
+    },
+    /// No field of this type carries the requested editor name.
+    ColumnNameNotFound {
+        /// Type index.
+        ty: usize,
+        /// Requested editor name.
+        name: String,
+    },
+    /// The addressed column is the wrong kind for the value being written.
+    ColumnKind {
+        /// Type index.
+        ty: usize,
+        /// Addressed column.
+        column: usize,
+        /// `"numeric"` or `"text"`.
+        expected: &'static str,
+    },
+}
+
+impl std::fmt::Display for PatchError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoSuchType(ty) => write!(f, "no database type {ty}"),
+            Self::NoSuchRow { ty, row, count } => {
+                write!(f, "type {ty} has {count} rows, cannot address row {row}")
+            }
+            Self::NoSuchColumn { ty, column, count } => {
+                write!(f, "type {ty} has {count} columns, cannot address column {column}")
+            }
+            Self::ColumnNameNotFound { ty, name } => {
+                write!(f, "type {ty} has no column named '{name}'")
+            }
+            Self::ColumnKind {
+                ty,
+                column,
+                expected,
+            } => write!(
+                f,
+                "type {ty} column {column} is not {expected}"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for PatchError {}
+
+/// Appends one `t_str`: a `u32` length (payload plus NUL) then the UTF-8 bytes
+/// and the NUL terminator.
+fn encode_t_str(out: &mut Vec<u8>, text: &str) {
+    let bytes = text.as_bytes();
+    let length = bytes.len() + 1;
+    out.extend_from_slice(&(length as u32).to_le_bytes());
+    out.extend_from_slice(bytes);
+    out.push(0);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -695,6 +1089,121 @@ mod tests {
             row.value(&[FieldKind::Num(9)], 0),
             None,
             "a field table pointing past the row must not panic"
+        );
+    }
+
+    fn sample_database() -> Database {
+        let table = DatabaseType::synthetic(
+            0,
+            vec![FieldKind::Num(0), FieldKind::Str(0)],
+            vec![
+                Row {
+                    numbers: vec![7],
+                    strings: vec!["hello".into()],
+                },
+                Row {
+                    numbers: vec![-3],
+                    strings: vec![String::new()],
+                },
+            ],
+        );
+        Database::synthetic(0xC1, vec![table], 0xC1)
+    }
+
+    #[test]
+    fn a_synthetic_database_round_trips_through_bytes() {
+        let database = sample_database();
+        let bytes = database.to_bytes();
+        let parsed = Database::parse(&bytes).expect("parse synthetic bytes");
+        assert_eq!(parsed.types.len(), 1);
+        assert_eq!(parsed.types[0].rows.len(), 2);
+        assert_eq!(parsed.types[0].rows[0].numbers, vec![7]);
+        assert_eq!(parsed.types[0].rows[0].strings, vec!["hello".to_owned()]);
+        // A parsed copy re-serializes to exactly the same bytes.
+        assert_eq!(parsed.to_bytes(), bytes);
+    }
+
+    #[test]
+    fn set_number_and_text_patch_cells_and_survive_a_round_trip() {
+        let mut database = sample_database();
+        database
+            .set_number(0, 0, ColumnRef::Index(0), 42)
+            .expect("numeric patch");
+        database
+            .set_text(0, 0, ColumnRef::Index(1), "a much longer replacement")
+            .expect("text patch");
+
+        let bytes = database.to_bytes();
+        let parsed = Database::parse(&bytes).expect("re-parse after patch");
+        assert_eq!(parsed.types[0].rows[0].numbers, vec![42]);
+        assert_eq!(
+            parsed.types[0].rows[0].strings,
+            vec!["a much longer replacement".to_owned()]
+        );
+        // The untouched second row keeps its original values.
+        assert_eq!(parsed.types[0].rows[1].numbers, vec![-3]);
+        assert_eq!(parsed.types[0].rows[1].strings, vec![String::new()]);
+    }
+
+    #[test]
+    fn a_column_can_be_addressed_by_editor_name() {
+        let mut database = sample_database();
+        database.names = ProjectNames {
+            types: vec![ProjectTypeNames {
+                name: "Sample".to_owned(),
+                fields: vec!["amount".to_owned(), "label".to_owned()],
+                rows: vec!["first".to_owned(), "second".to_owned()],
+            }],
+        };
+        database
+            .set_number(0, 1, ColumnRef::Name("amount"), 99)
+            .expect("by-name numeric patch");
+        database
+            .set_text(0, 1, ColumnRef::Name("label"), "named")
+            .expect("by-name text patch");
+        assert_eq!(database.types[0].rows[1].numbers, vec![99]);
+        assert_eq!(database.types[0].rows[1].strings, vec!["named".to_owned()]);
+    }
+
+    #[test]
+    fn structured_patches_report_bad_targets() {
+        let mut database = sample_database();
+        assert_eq!(
+            database.set_number(9, 0, ColumnRef::Index(0), 1),
+            Err(PatchError::NoSuchType(9))
+        );
+        assert_eq!(
+            database.set_number(0, 5, ColumnRef::Index(0), 1),
+            Err(PatchError::NoSuchRow {
+                ty: 0,
+                row: 5,
+                count: 2
+            })
+        );
+        assert_eq!(
+            database.set_number(0, 0, ColumnRef::Index(7), 1),
+            Err(PatchError::NoSuchColumn {
+                ty: 0,
+                column: 7,
+                count: 2
+            })
+        );
+        // Numeric slot written through the text setter.
+        assert_eq!(
+            database.set_text(0, 0, ColumnRef::Index(0), "x"),
+            Err(PatchError::ColumnKind {
+                ty: 0,
+                column: 0,
+                expected: "text"
+            })
+        );
+        // No .project applied, so a name cannot be resolved.
+        assert_eq!(
+            database.set_text(0, 0, ColumnRef::Name("label"), "x"),
+            Err(PatchError::ColumnNameNotFound {
+                ty: 0,
+                name: "label".to_owned()
+            })
         );
     }
 }

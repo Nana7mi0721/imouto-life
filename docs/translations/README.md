@@ -10,8 +10,8 @@ UTF-8 TSV, one entry per line:
     original<TAB>translation
 
 - Lines whose first non-space character is `#` are comments; blank lines are ignored.
-- The left column must match the runtime string exactly (trailing spaces included).
-- The right column accepts `\n`, `\t` and `\\` escapes.
+- The source column must match the runtime string exactly (trailing spaces included), after escape expansion.
+- Both columns understand `\n`, `\t`, `\r` and `\\` escapes, so a source line containing a real TAB/CR/LF still fits on one physical TSV line. Other backslash sequences are display markup and are copied literally.
 - An empty right column is a placeholder: the line is ignored, so a generated template
   can be loaded as-is without hiding any text.
 - A duplicate left column keeps the last translation.
@@ -47,9 +47,10 @@ denominator.
     wolf-cli capture --load-save work/Data/Save/SaveData01.sav --event 245 \
         --translation docs/translations/en.tsv --frames 90 --out work/out/night_en.png
 
-`en.tsv` and `ja.tsv` only cover the six night-menu labels as a working sample; a complete
-translation is a community/authoring effort, not a code change. Missing entries fall back to
-the original script text.
+A complete English catalog is shipped at `en.full.tsv` (1218/1218 static strings, strict check
+passing); see docs/M7_I18N.md for the format, coverage and how to extend it to other
+languages. `en.tsv` and `ja.tsv` remain small night-menu samples. Missing entries fall back
+to the original script text.
 
 A mod directory may also contain its own `translations.tsv` at the root. Mod catalogs
 merge in `--mod` order (later wins), and an explicit `--translation` catalog merges last,

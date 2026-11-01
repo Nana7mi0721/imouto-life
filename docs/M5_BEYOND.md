@@ -9,7 +9,7 @@
 | M5-B | 运行时调试器（F3 overlay） | 已完成第一切片 |
 | M5-C | 游戏倾向 / 里程碑汇总面板（F2 overlay） | 已完成第一切片（实时读取存档变量，无独立成就存档） |
 | M5-D | 多语言文本层（中/日/英） | 已完成第一切片（外部 TSV 翻译目录 + play/capture 应用） |
-| M5-E | Mod 数据覆盖层 | 已完成第一切片（`--mod` 数据目录覆盖，存档仍写 base） |
+| M5-E | Mod 数据/音频覆盖层 | 已完成第一切片（`--mod` 数据与 BGM/SE 覆盖，存档仍写 base） |
 
 ## M5-A：高分辨率与无级缩放
 
@@ -248,16 +248,16 @@ headless capture 仍输出不带 overlay 的 1024x576 证据帧。
 - 只覆盖 opcode 101 消息与 opcode 102 选项，不覆盖图片内文字、F2/F3 overlay 标签。
 - 目录语言不限，中/日/英都只是同一格式的文件；完整词条需要人工整理。
 
-## M5-E：Mod 数据覆盖层
+## M5-E：Mod 数据/音频覆盖层
 
-原版把地图、公共事件、数据库和图片都放在安装目录的数据树里，改一个文件就得备份整包。
+原版把地图、公共事件、数据库、图片和 BGM/SE 都放在安装目录的数据树里，改一个文件就得备份整包。
 本切片增加可重复的 --mod 目录：每个目录镜像数据树的相对路径，只放要改的文件；
-运行时先查 mod，未命中再回落 base。这样地图、事件、数据库和美术都能像资源包一样替换，
+运行时先查 mod，未命中再回落 base。这样地图、事件、数据库、美术和音频都能像资源包一样替换，
 又不需要改 exe 或复制 175MB 数据。
 
 ### 玩家用法
 
-    # 一个只改了 SampleMapA 与一张状态面板图的 mod
+    # 一个改了 SampleMapA、状态面板图和一首 BGM 的 mod
     wolf-cli play --load-save work/Data/Save/SaveData01.sav --mod mods/example
 
     # 多个 mod：后面的目录优先
@@ -272,6 +272,8 @@ mod 目录示例（相对路径与数据根一致）：
     mods/example/BasicData/SysDatabase.dat
     mods/example/MapData/SampleMapA.mps
     mods/example/Picture/status01.png
+    mods/example/BGM/theme.ogg
+    mods/example/SE/click.ogg
 
 也可以把 BasicData 省掉，直接写 mods/example/Game.dat 或 mods/example/MapData/...；
 两种布局都会先查 BasicData/name，再查 name。
@@ -289,6 +291,10 @@ mod 目录示例（相对路径与数据根一致）：
 - crates/wolf-cli/src/main.rs / play.rs：新增可重复 --mod <DIR>，贯通 play、capture、
   capture --map/--map-run；play 的 F12 重启会保留同一组 mod；地图 capture 的预读
   TileSetData/mps 也走 overlay，避免只有 Game 内部生效、命令行预检仍读 base。
+- crates/wolf-audio/src/engine.rs：Engine 新增 overlays 字段与 with_overlays；resolve
+  按 overlays 逆序、当前目录、base、base/Data 查同一 BGM/SE 相对路径。
+  Game::enable_audio 把同一组 mod 传给音频引擎，因此 play/capture 的 BGM/SE 也走 overlay；
+  混音、音量、淡入/延迟与 SoundCmd 语义完全不变。
 - 写存档、Save/System.sav、Save/*.sav 始终写 base 根，不写回 mod；overlay 只影响读取。
 - 没有新增外部依赖；mod 不需要脚本或安装器，只是目录布局约定。
 
@@ -300,6 +306,10 @@ mod 目录示例（相对路径与数据根一致）：
   overlay 换成 2x1 PNG 后 Game::with_overlays 读到 (2,1) 且像素正确，base Game 不变。
 - wolf-cli tests::later_mod_overlays_win_and_missing_files_fall_back：后置 overlay 优先、
   缺文件回落 base、BasicData 嵌套布局与 MapData 相对路径都覆盖。
+- crates/wolf-audio/tests/m5_audio_overlay.rs：后置 overlay 的 BGM 优先、早置 overlay 的 SE
+  可命中、base 仅有的文件回落、缺失返回 None、反斜杠路径与绝对路径都覆盖。
+- wolf-game/tests/m5_mod_overlay.rs 第二条：Game::enable_audio 后的音频引擎拿到同一组
+  overlays，并能把 BGM/theme.ogg 解析到 mod 目录。
 - capture 实测：--mod 目录放一份相同 status01 时输出与无 mod 逐字节相同；
   放一张 330x576 纯色替换图时输出与基准不同（95.4% 非黑、0 warning），证明覆盖真正生效。
 
@@ -307,12 +317,13 @@ mod 目录示例（相对路径与数据根一致）：
 
 - 只覆盖数据文件，不覆盖 exe、脚本运行器或渲染参数；mod 不能注入新 opcode。
 - 第一切片按整文件替换，不做逐行/逐记录合并；mod 要改 CommonEvent.dat 就得提供完整文件。
-- 音频资产暂不纳入 overlay（wolf-audio 仍从 base 资源根加载），后续可单独接。
+- BGM/SE 也按整文件覆盖；不重编码、不改混音/音量/淡入语义，mod 里的音频格式仍须被
+  wolf-audio 解码器支持（ogg/mp3/wav）。
 - 存档格式与 base 完全一致；读档时地图对象匹配会同时扫描 overlay 与 base 的 MapData。
 
 ## 后续切片的设计约束
 
 - M5-D 已采用 side-car TSV 目录（不直接改 CP932/GBK 解码）；后续可补完整语言包与
   更细的上下键（同句多义）。
-- M5-E 已采用 --mod 目录覆盖 data 文件，不碰 exe；后续可补音频资源 overlay 与
+- M5-E 已采用 --mod 目录覆盖 data 与 BGM/SE 文件，不碰 exe；后续可补 mod 清单/依赖与
   更细粒度的补丁（当前是整文件替换）。

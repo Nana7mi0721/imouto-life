@@ -577,7 +577,10 @@ impl Game {
     /// degrades to a silent null backend -- and idempotent. Tests leave audio off because
     /// [`Self::new`] defaults to `None`.
     pub fn enable_audio(&mut self) {
-        self.audio = Some(wolf_audio::Engine::with_asset_root(self.root.clone()));
+        self.audio = Some(wolf_audio::Engine::with_overlays(
+            self.root.clone(),
+            self.overlays.clone(),
+        ));
     }
 
     // --- global settings (Save/System.sav part 2) --------------------------

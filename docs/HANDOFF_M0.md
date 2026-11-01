@@ -657,3 +657,19 @@ WOLF_DATA_ROOT="$PWD/work/Data" ./target/debug/wolf-cli.exe verify | tail -20
   * **边界**：只覆盖 data 文件，不碰 exe/渲染参数/opcode；整文件替换不做逐行合并；
     音频资产暂不纳入 overlay；存档格式与 base 一致。
   * **当前进度**：M0–M4 完成；M5-A..E 全部完成第一切片。用户 m07499 授权持续推进。
+
+* 2026-10-31（M5-E 补音频 overlay：BGM/SE 也随 --mod 覆盖）：
+  * **动机**：M5-E 第一切片只覆盖数据文件，音频仍从 base 根加载，mod 换 BGM/SE 不生效；
+    本次把同一组 --mod 接进 wolf-audio，补齐数据/音频一致的资源包语义。
+  * **实现**：crates/wolf-audio/src/engine.rs 的 Engine 新增 overlays 字段，
+    with_asset_root 委托 with_overlays，新增 with_overlays、null_with_overlays、overlays；
+    resolve 按 overlays 逆序、当前目录、base、base/Data 查 BGM/SE 相对路径，绝对路径按原样。
+    Game::enable_audio 改为 Engine::with_overlays(self.root, self.overlays)；混音/音量/
+    淡入/延迟/SoundCmd 语义不变，Play 的 F12 重启仍保留 mod。
+  * **测试**：新增 crates/wolf-audio/tests/m5_audio_overlay.rs（后置 overlay 优先、早置 SE
+    命中、base 回落、缺失 None、反斜杠与绝对路径）；m5_mod_overlay.rs 增加
+    game_audio_engine_receives_the_same_mod_overlays（enable_audio 后引擎 overlays 与
+    BGM/theme.ogg 解析正确）；wolf-audio 1 passed，wolf-game 该文件 2 passed。
+  * **边界**：BGM/SE 整文件覆盖，不重编码；音频格式仍须 ogg/mp3/wav 可解码；
+    mod 不能注入新 SoundCmd/opcode，存档仍只写 base。
+  * **当前进度**：M0–M4 完成；M5-A..E 完成第一切片，M5-E 含音频覆盖。用户 m07499 授权持续推进。

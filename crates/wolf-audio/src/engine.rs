@@ -29,6 +29,8 @@ pub struct Engine {
     channels: u16,
     backend: Backend,
     asset_root: PathBuf,
+    /// Optional mod roots, highest priority last (a later overlay wins a name clash).
+    overlays: Vec<PathBuf>,
     _stream: Option<Stream>,
     warned: HashSet<String>,
 }
@@ -43,14 +45,23 @@ impl Engine {
 
     /// Create an engine rooted at `root` (the directory that contains `BGM/` and `SE/`).
     pub fn with_asset_root(root: impl Into<PathBuf>) -> Self {
+        Self::with_overlays(root, Vec::new())
+    }
+
+    /// Create an engine rooted at `root` with zero or more mod overlay roots.
+    ///
+    /// Overlays mirror the data tree (`overlay/BGM/theme.ogg`, `overlay/SE/click.ogg`);
+    /// a later overlay has priority over an earlier one, and all overlays have priority
+    /// over the base root. The first existing file wins.
+    pub fn with_overlays(root: impl Into<PathBuf>, overlays: Vec<PathBuf>) -> Self {
         let root = root.into();
-        match Self::try_cpal(root.clone()) {
+        match Self::try_cpal(root.clone(), overlays.clone()) {
             Ok(engine) => engine,
             Err(err) => {
                 eprintln!(
                     "[wolf-audio] audio output unavailable ({err}); using silent null backend"
                 );
-                Self::null_with_root(root)
+                Self::null_with_root_and(48_000, 2, root, overlays)
             }
         }
     }
@@ -61,26 +72,33 @@ impl Engine {
     }
 
     pub fn null_with(sample_rate: u32, channels: u16) -> Self {
-        Self::null_with_root_and(sample_rate, channels, PathBuf::from("."))
+        Self::null_with_root_and(sample_rate, channels, PathBuf::from("."), Vec::new())
     }
 
-    fn null_with_root(root: PathBuf) -> Self {
-        Self::null_with_root_and(48_000, 2, root)
+    /// A silent engine rooted at `root` with mod overlays; deterministic for tests.
+    pub fn null_with_overlays(root: impl Into<PathBuf>, overlays: Vec<PathBuf>) -> Self {
+        Self::null_with_root_and(48_000, 2, root.into(), overlays)
     }
 
-    fn null_with_root_and(sample_rate: u32, channels: u16, root: PathBuf) -> Self {
+    fn null_with_root_and(
+        sample_rate: u32,
+        channels: u16,
+        root: PathBuf,
+        overlays: Vec<PathBuf>,
+    ) -> Self {
         Engine {
             mixer: Arc::new(Mutex::new(Mixer::new(sample_rate, channels))),
             sample_rate,
             channels,
             backend: Backend::Null,
             asset_root: root,
+            overlays,
             _stream: None,
             warned: HashSet::new(),
         }
     }
 
-    fn try_cpal(root: PathBuf) -> Result<Self, String> {
+    fn try_cpal(root: PathBuf, overlays: Vec<PathBuf>) -> Result<Self, String> {
         let host = cpal::default_host();
         let device = host
             .default_output_device()
@@ -103,6 +121,7 @@ impl Engine {
             channels,
             backend: Backend::Cpal,
             asset_root: root,
+            overlays,
             _stream: Some(stream),
             warned: HashSet::new(),
         })
@@ -117,6 +136,11 @@ impl Engine {
 
     pub fn asset_root(&self) -> &Path {
         &self.asset_root
+    }
+
+    /// The mod overlay roots, lowest priority first.
+    pub fn overlays(&self) -> &[PathBuf] {
+        &self.overlays
     }
 
     /// Output sample rate in Hz.
@@ -310,15 +334,24 @@ impl Engine {
         }
     }
 
-    /// Resolve a WOLF-relative audio path against the asset root.
+    /// Resolve a WOLF-relative audio path against the mod overlays and the asset root.
+    ///
+    /// Overlays are searched newest first, then the current directory, then the base
+    /// root and `root/Data`. An absolute path is used as-is.
     pub fn resolve(&self, file: &str) -> Option<PathBuf> {
         let normalised = file.replace('\\', "/");
         let p = Path::new(&normalised);
-        let candidates = [
-            p.to_path_buf(),
-            self.asset_root.join(p),
-            self.asset_root.join("Data").join(p),
-        ];
+        if p.is_absolute() {
+            return p.is_file().then(|| p.to_path_buf());
+        }
+        let mut candidates: Vec<PathBuf> = Vec::new();
+        for overlay in self.overlays.iter().rev() {
+            candidates.push(overlay.join(p));
+            candidates.push(overlay.join("Data").join(p));
+        }
+        candidates.push(p.to_path_buf());
+        candidates.push(self.asset_root.join(p));
+        candidates.push(self.asset_root.join("Data").join(p));
         candidates.into_iter().find(|candidate| candidate.is_file())
     }
 

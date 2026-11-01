@@ -118,6 +118,8 @@ fn main() -> ExitCode {
     let mut debug_overlay = false;
     let mut debug_vars: Vec<u32> = Vec::new();
     let mut stats_overlay = false;
+    // M5-D side-car content catalog: replaces exact message/choice strings at runtime.
+    let mut translation: Option<PathBuf> = None;
     let mut map: Option<String> = None;
     let mut map_run: Option<String> = None;
     // `dump` seeds inputs into a real Game and reads state back out. It is the probe
@@ -286,6 +288,9 @@ fn main() -> ExitCode {
             "--fullscreen" => fullscreen = true,
             "--debug" => debug_overlay = true,
             "--stats" => stats_overlay = true,
+            "--translation" => {
+                translation = args.next().map(PathBuf::from);
+            }
             "--debug-var" => {
                 let value = args.next().unwrap_or_default();
                 match play::parse_debug_vars(&value) {
@@ -370,6 +375,7 @@ fn main() -> ExitCode {
                     &answers,
                     load_save.as_deref(),
                     event,
+                    translation.as_deref(),
                 )
             }
             None => {
@@ -413,6 +419,7 @@ fn main() -> ExitCode {
                     engine_events,
                     entry,
                     event,
+                    translation.as_deref(),
                 )
             }
         },
@@ -466,6 +473,7 @@ fn main() -> ExitCode {
                     vars: debug_vars,
                     stats: stats_overlay,
                 },
+                translation.as_deref(),
             )
         }
         Some("run") => match (map.as_deref(), event) {
@@ -557,6 +565,8 @@ fn print_help() {
     println!(
         "    --stats           Start 'play' with the F2 statistics/milestone overlay visible."
     );
+    println!("    --translation <FILE>  Replace exact message/choice strings using a UTF-8 TSV");
+    println!("                      catalog (original<TAB>translation; # comments); works in play/capture.");
     println!("    --hold-message    Park on the first 101 message instead of dismissing it.");
     println!("    --audio           Play BGM/SE through the real mixer (silent null backend if no device).");
     println!("    --pointer <x,y>   Put the mouse pointer at a game pixel for the whole capture.");
@@ -2816,6 +2826,7 @@ fn run_capture(
     engine_events: Option<Vec<u32>>,
     entry: Entry<'_>,
     save_event: Option<u32>,
+    translation: Option<&Path>,
 ) -> ExitCode {
     let out = out.unwrap_or_else(|| PathBuf::from("work/out/title.png"));
     let mut game = match Game::new(root) {
@@ -2829,6 +2840,15 @@ fn run_capture(
         game.enable_audio();
     }
     install_font_metrics(&mut game, root);
+    if let Some(path) = translation {
+        match game.load_translation_file(path) {
+            Ok(entries) => println!("  translation: {entries} entr(ies) from {}", path.display()),
+            Err(err) => {
+                eprintln!("translation: {err}");
+                return ExitCode::FAILURE;
+            }
+        }
+    }
     // A capture has no keyboard, so messages dismiss immediately. Choice prompts are
     // HELD by default: the title's first prompt is its menu, and answering it teleports
     // into the game (docs/M1_CLOSURE.md §5), so a held run is what photographs the title.
@@ -3113,6 +3133,7 @@ fn run_capture_map(
     answers: &Answers,
     load_save: Option<&Path>,
     script_event: Option<u32>,
+    translation: Option<&Path>,
 ) -> ExitCode {
     let out = out.unwrap_or_else(|| PathBuf::from("work/out/map.png"));
     let basic = if root.join("BasicData").is_dir() {
@@ -3197,6 +3218,15 @@ fn run_capture_map(
         game.enable_audio();
     }
     install_font_metrics(&mut game, root);
+    if let Some(path) = translation {
+        match game.load_translation_file(path) {
+            Ok(entries) => println!("  translation: {entries} entr(ies) from {}", path.display()),
+            Err(err) => {
+                eprintln!("translation: {err}");
+                return ExitCode::FAILURE;
+            }
+        }
+    }
     game.auto_advance = true;
     game.auto_events.set_enabled(answers.auto_events);
     if let Some(index) = answers.index {

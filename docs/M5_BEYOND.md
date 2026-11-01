@@ -1,6 +1,6 @@
 # M5 — 超越原版
 
-状态：**进行中（M5-A、M5-B、M5-C 已完成第一切片）**。M0–M4 已交付；M5 的目标是在数据级重写与
+状态：**进行中（M5-A、M5-B、M5-C、M5-D 已完成第一切片）**。M0–M4 已交付；M5 的目标是在数据级重写与
 逐像素对等之外，补上原版没有、玩家实际能感知的能力。
 
 | 切片 | 内容 | 状态 |
@@ -8,7 +8,7 @@
 | M5-A | 高分辨率与无级缩放（窗口 fit / 全屏） | 已完成第一切片 |
 | M5-B | 运行时调试器（F3 overlay） | 已完成第一切片 |
 | M5-C | 游戏倾向 / 里程碑汇总面板（F2 overlay） | 已完成第一切片（实时读取存档变量，无独立成就存档） |
-| M5-D | 多语言文本层（中/日/英） | 计划，需先做翻译数据格式 |
+| M5-D | 多语言文本层（中/日/英） | 已完成第一切片（外部 TSV 翻译目录 + play/capture 应用） |
 | M5-E | Mod 数据覆盖层 | 计划，风险与范围待定 |
 
 ## M5-A：高分辨率与无级缩放
@@ -203,7 +203,53 @@ headless capture 仍输出不带 overlay 的 1024x576 证据帧。
 - 变量越界按 Variables::get 返回 0；不使用可空或猜测变量。
 - 后续若要做跨周目永久成就，再单独设计新存档字段与迁移，不与本次混在一起。
 
+## M5-D：多语言文本层（内容翻译目录）
+
+原版把中文对白和选项写死在数据里，换语言只能改包。本切片不改任何数据文件，而是增加
+一个 side-car 目录，在 opcode 101 消息和 opcode 102 选项离开 VM 后按精确字符串替换。
+这样同一份数据可以配不同语言目录，且不改存档或地图坐标。
+
+### 玩家用法
+
+    # Play with an English sample catalog
+    wolf-cli play --load-save work/Data/Save/SaveData01.sav --translation docs/translations/en.tsv
+
+    # Headless capture with the same catalog (the night menu shows the translated choices)
+    wolf-cli capture --load-save work/Data/Save/SaveData01.sav --event 245 \
+        --translation docs/translations/en.tsv --frames 90 --out work/out/night_en.png
+
+### 实现
+
+- 新增 crates/wolf-game/src/translate.rs：
+  - Translator { entries: HashMap<String, String> }；parse(text) / load(path)；
+    translate(text) 精确匹配，未命中返回 None；len/is_empty。
+  - 目录是 UTF-8 TSV（original<TAB>translation），支持 # 注释、空行、\n \t \\ 转义；
+    重复键后者覆盖前者；错误带物理行号。
+- crates/wolf-game/src/game.rs：Game 新增 translator 字段（默认空）和
+  set_translator / load_translation_file / translation_len；GameHost::show_message 与
+  show_choices 在生成 Message/Choices 前应用目录；未命中保持原脚本。
+- crates/wolf-cli/src/main.rs 与 play.rs：--translation <FILE> 贯通 play、capture、
+  capture --map/--map-run；play 的 F12 重启会重新加载同一目录。
+- docs/translations/en.tsv、ja.tsv 是只覆盖夜菜单六项的示范目录；完整翻译属于内容
+  作者/社区工作，不需要改代码。没有新增外部依赖。
+
+### 测试
+
+- translate::tests 5 条（注释/转义、重复键、无 TAB 行号、空源、未命中回退）；
+- game::tests::a_translation_catalog_rewrites_messages_and_choices（消息与选项都替换，
+  未命中文本保持原样）；
+- capture 实测：--translation docs/translations/en.tsv 输出
+  choice ["Start a chat", "Make tea", "Take a bath", "Shop online", "Turn in for today", "0"]，
+  90.4% 非黑、0 warning。
+
+### 边界
+
+- 只做精确字符串替换，不做正则/模糊匹配；漏译自动回退原文，不会空白。
+- 只覆盖 opcode 101 消息与 opcode 102 选项，不覆盖图片内文字、F2/F3 overlay 标签。
+- 目录语言不限，中/日/英都只是同一格式的文件；完整词条需要人工整理。
+
 ## 后续切片的设计约束
 
-- M5-D 多语言要单独设计翻译键与回退规则，不能直接改 CP932/GBK 混排解码。
+- M5-D 已采用 side-car TSV 目录（不直接改 CP932/GBK 解码）；后续可补完整语言包与
+  更细的上下键（同句多义）。
 - M5-E Mod 数据覆盖层风险与范围待定，优先只覆盖 data 文件，不碰 exe。

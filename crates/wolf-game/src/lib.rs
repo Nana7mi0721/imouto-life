@@ -39,6 +39,7 @@ pub mod textpic;
 pub mod tilemap;
 pub mod tint;
 pub mod transition;
+pub mod translate;
 pub mod window;
 
 pub use achievements::{milestones, Milestone, PlayStats};
@@ -52,4 +53,5 @@ pub use picture::{Picture, PictureKind, Screen, ScreenQuad, UNCHANGED};
 pub use tilemap::{autotile_src, base_src, cull_range, TileMap, QUADRANT_PX, TILE_NUMBER, TILE_PX};
 pub use tint::ScreenTint;
 pub use transition::ScreenTransition;
+pub use translate::{TranslateError, Translator};
 pub use window::{nine_slice, WindowPiece, PANEL_PICTURE};

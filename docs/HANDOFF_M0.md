@@ -620,3 +620,21 @@ WOLF_DATA_ROOT="$PWD/work/Data" ./target/debug/wolf-cli.exe verify | tail -20
     `play --load-save work/Data/Save/SaveData01.sav --scale fit-nearest --stats --until 5` exit0。
   * **文档**：`docs/M5_BEYOND.md` 增 M5-C 变量/用法/实现/测试/边界，表内 M5-C 标已完成第一切片。
   * **当前进度**：M0–M4 完成；M5-A/M5-B/M5-C 完成，M5-D/E 待做。用户 m07499 授权持续推进。
+
+* 2026-10-31（M5-D：内容翻译目录，第一切片）：
+  * **动机**：原版把中文对白/选项写死在数据里，换语言只能改包。本切片不改数据，只增加
+    side-car UTF-8 TSV 目录，在 opcode 101 消息与 opcode 102 选项离开 VM 后按精确字符串替换。
+  * **实现**：新增 crates/wolf-game/src/translate.rs（Translator/TranslateError，parse/load/
+    translate/len/is_empty，支持 # 注释、空行、\n \t \\ 转义、重复键后者覆盖、错误带行号）；
+    Game 增加 translator 字段与 set_translator/load_translation_file/translation_len；
+    GameHost::show_message/show_choices 应用目录；main.rs/play.rs 增加 --translation <FILE>，
+    贯通 play/capture/capture --map/--map-run，F12 重启重新加载；无新外部依赖。
+  * **示例**：docs/translations/en.tsv、ja.tsv 只覆盖夜菜单六项（原字符串含尾随空格），
+    docs/translations/README.md 说明格式与用法。
+  * **测试**：translate::tests 5 条；game::tests::a_translation_catalog_rewrites_messages_and_choices；
+    capture --translation docs/translations/en.tsv --event 245 输出
+    choice ["Start a chat","Make tea","Take a bath","Shop online","Turn in for today","0"]，
+    90.4% 非黑 0 warning；cargo build -q -p wolf-cli exit0。
+  * **边界**：只精确替换消息/选项，不覆盖图片内文字或 F2/F3 overlay 标签；漏译回退原文；
+    完整词条属内容作者/社区工作。
+  * **当前进度**：M0–M4 完成；M5-A/M5-B/M5-C/M5-D 完成，M5-E 待做。用户 m07499 授权持续推进。

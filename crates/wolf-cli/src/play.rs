@@ -102,6 +102,7 @@ pub fn run(
     entry: crate::Entry<'_>,
     display: DisplayOptions,
     debug: DebugOptions,
+    translation: Option<&std::path::Path>,
 ) -> std::process::ExitCode {
     let mut game = match Game::new(root) {
         Ok(game) => game,
@@ -116,6 +117,15 @@ pub fn run(
     // System.sav volumes reach the mixer before the first frame is rendered.
     game.apply_settings();
     crate::install_font_metrics(&mut game, root);
+    if let Some(path) = translation {
+        match game.load_translation_file(path) {
+            Ok(entries) => println!("translation: {entries} entr(ies) from {}", path.display()),
+            Err(err) => {
+                eprintln!("translation: {err}");
+                return std::process::ExitCode::FAILURE;
+            }
+        }
+    }
     // The same entry-point rules `capture` uses: default boot (the TitleMap autorun
     // event and its three splashes), --menu-only for common event 42, --map-run for a
     // map script, --event for one common event, --load-save for a save file.
@@ -193,6 +203,7 @@ pub fn run(
         debug_overlay: debug.overlay || !debug.vars.is_empty(),
         debug_vars: debug.vars,
         stats_overlay: debug.stats,
+        translation: translation.map(std::path::Path::to_path_buf),
     };
     if let Err(err) = event_loop.run_app(&mut app) {
         eprintln!("event loop failed: {err}");
@@ -254,6 +265,8 @@ struct App {
     debug_vars: Vec<u32>,
     /// Whether the M5-C play-statistics / milestone overlay is visible.
     stats_overlay: bool,
+    /// M5-D catalog path, re-applied when F12 rebuilds the session.
+    translation: Option<std::path::PathBuf>,
 }
 
 /// The primitive values the overlay renders, separated from `App` so the text can be
@@ -389,6 +402,12 @@ impl App {
         }
         game.apply_settings();
         crate::install_font_metrics(&mut game, &root);
+        if let Some(path) = &self.translation {
+            if let Err(err) = game.load_translation_file(path) {
+                eprintln!("restart failed (translation): {err}");
+                return;
+            }
+        }
         if let Err(err) = game.boot() {
             eprintln!("restart failed (boot): {err}");
             return;

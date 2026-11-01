@@ -39,6 +39,7 @@ use crate::picture::{PictureKind, Screen, ANCHOR_CENTRE, SCREEN_H, SCREEN_W};
 use crate::tilemap::TileMap;
 use crate::tint::ScreenTint;
 use crate::transition::ScreenTransition;
+use crate::translate::Translator;
 
 /// The event the game opens with in this build (the "original title screen A").
 pub const TITLE_EVENT: u32 = 42;
@@ -305,6 +306,9 @@ pub struct Game {
     /// Per-picture text layout cache for [`Self::text_quads`]. Interior mutability keeps
     /// that method `&self`, which every caller and test already relies on.
     text_cache: RefCell<TextQuadCache>,
+    /// Optional M5-D content catalog: exact runtime strings to replacement text. Empty by
+    /// default, which leaves the shipped script untouched.
+    translator: Translator,
     /// The current map's tile layers, drawn underneath every picture. WOLF draws the
     /// tile grid first and the picture layer over it; keeping the two separate here
     /// preserves that order and lets a map switch replace only the tile half.
@@ -446,6 +450,7 @@ impl Game {
             font_metrics: None,
             text_font_gen: 0,
             text_cache: RefCell::new(TextQuadCache::default()),
+            translator: Translator::default(),
             tilemap: None,
             tilesets,
             assets: Assets::new(&root),
@@ -516,6 +521,32 @@ impl Game {
     #[must_use]
     pub fn root(&self) -> &Path {
         &self.root
+    }
+
+    /// Installs an M5-D content catalog parsed in memory.
+    pub fn set_translator(&mut self, translator: Translator) {
+        self.translator = translator;
+    }
+
+    /// Loads an M5-D UTF-8 TSV catalog and returns its entry count.
+    ///
+    /// # Errors
+    ///
+    /// Propagates a read or syntax error from [`crate::translate::Translator::load`].
+    pub fn load_translation_file(
+        &mut self,
+        path: impl AsRef<Path>,
+    ) -> Result<usize, crate::translate::TranslateError> {
+        let translator = Translator::load(path)?;
+        let entries = translator.len();
+        self.translator = translator;
+        Ok(entries)
+    }
+
+    /// Number of installed translation entries (0 when the script is shown verbatim).
+    #[must_use]
+    pub fn translation_len(&self) -> usize {
+        self.translator.len()
     }
 
     /// Turns on real audio output (M4). Safe on a machine with no device -- the engine
@@ -1597,6 +1628,7 @@ impl Game {
             audio: self.audio.as_mut(),
             messages: &mut self.messages,
             choices: &mut self.choices,
+            translator: &self.translator,
             replies: &mut self.replies,
             diagnostics: &mut self.diagnostics,
             stats: &mut self.stats,
@@ -1948,6 +1980,8 @@ struct GameHost<'a> {
     audio: Option<&'a mut wolf_audio::Engine>,
     messages: &'a mut Vec<Message>,
     choices: &'a mut Option<Choices>,
+    /// M5-D catalog; the host applies it where text leaves the VM.
+    translator: &'a Translator,
     replies: &'a mut std::collections::VecDeque<ChoiceReply>,
     diagnostics: &'a mut BTreeMap<String, u64>,
     stats: &'a mut GameStats,
@@ -2053,9 +2087,13 @@ impl Host for GameHost<'_> {
     fn show_message(&mut self, text: &str, face: Option<i32>) {
         // The engine keeps at most one message window: a new 101 replaces the old
         // text rather than stacking behind it.
+        let text = self
+            .translator
+            .translate(text)
+            .map_or_else(|| text.to_owned(), str::to_owned);
         self.messages.clear();
         self.messages.push(Message {
-            text: text.to_owned(),
+            text,
             face,
             frames: 0,
         });
@@ -2073,10 +2111,15 @@ impl Host for GameHost<'_> {
     }
 
     fn show_choices(&mut self, options: &[String]) {
-        *self.choices = Some(Choices {
-            options: options.to_vec(),
-            frames: 0,
-        });
+        let options: Vec<String> = options
+            .iter()
+            .map(|option| {
+                self.translator
+                    .translate(option)
+                    .map_or_else(|| option.clone(), str::to_owned)
+            })
+            .collect();
+        *self.choices = Some(Choices { options, frames: 0 });
         self.stats.choices += 1;
     }
 
@@ -3050,6 +3093,7 @@ mod tests {
             audio: game.audio.as_mut(),
             messages: &mut game.messages,
             choices: &mut game.choices,
+            translator: &game.translator,
             replies: &mut game.replies,
             diagnostics: &mut game.diagnostics,
             stats: &mut game.stats,
@@ -3065,6 +3109,32 @@ mod tests {
             save_requests: &mut game.save_requests,
             map_requests: &mut game.map_requests,
         }
+    }
+
+    #[test]
+    fn a_translation_catalog_rewrites_messages_and_choices() {
+        let Some(root) = have_data() else { return };
+        let mut game = Game::new(&root).expect("game");
+        game.set_translator(
+            crate::translate::Translator::parse("original line\tyes\nyes\tYes\nno\tNo\n")
+                .expect("catalog"),
+        );
+        {
+            let mut host = host(&mut game);
+            host.show_message("original line", None);
+        }
+        assert_eq!(game.messages[0].text, "yes");
+        {
+            let mut host = host(&mut game);
+            host.show_choices(&["yes".to_owned(), "no".to_owned(), "other".to_owned()]);
+        }
+        let options = &game.choices.as_ref().expect("choices").options;
+        assert_eq!(options, &["Yes", "No", "other"]);
+        {
+            let mut host = host(&mut game);
+            host.show_message("untranslated", None);
+        }
+        assert_eq!(game.messages[0].text, "untranslated");
     }
 
     #[test]

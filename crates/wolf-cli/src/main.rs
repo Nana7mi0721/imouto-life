@@ -26,7 +26,7 @@ use wolf_format::gamedat::GameDat;
 use wolf_game::atlas::{Atlas, SpriteQuad, TextQuad};
 use wolf_game::db::Container;
 use wolf_game::{choice, Game};
-use wolf_render::{Renderer, SpriteInstance, TextItem, LOGICAL_H, LOGICAL_W};
+use wolf_render::{Renderer, ScaleMode, SpriteInstance, TextItem, LOGICAL_H, LOGICAL_W};
 use wolf_vm::{
     ChoiceReply, DbOp, DbValue, Host, InstanceId, LogLevel, PictureCmd, PrecompileStats, Program,
     ProgramSet, SoundCmd, StepReport, Vm, WolfRng,
@@ -111,6 +111,10 @@ fn main() -> ExitCode {
     // map and photograph the vendor logo (docs/BATTLE.md section 6.2).
     let mut boot_explicit = false;
     let mut menu_only = false;
+    // M5 presentation controls, shared by `play` only. The default keeps the retail
+    // integer pixel grid; `fit-*` fills a 16:9 window instead of leaving bars.
+    let mut scale_mode = ScaleMode::Integer;
+    let mut fullscreen = false;
     let mut map: Option<String> = None;
     let mut map_run: Option<String> = None;
     // `dump` seeds inputs into a real Game and reads state back out. It is the probe
@@ -264,6 +268,19 @@ fn main() -> ExitCode {
             "--menu-only" => {
                 menu_only = true;
             }
+            "--scale" => {
+                let value = args.next().unwrap_or_default();
+                match ScaleMode::parse(&value) {
+                    Some(mode) => scale_mode = mode,
+                    None => {
+                        eprintln!(
+                            "unknown scale mode '{value}' (integer, fit-nearest, fit-linear)"
+                        );
+                        return ExitCode::from(2);
+                    }
+                }
+            }
+            "--fullscreen" => fullscreen = true,
             "--filter" | "-F" => {
                 filter = args.next();
             }
@@ -421,7 +438,15 @@ fn main() -> ExitCode {
                 CaptureEntry::Boot => Entry::Boot,
                 CaptureEntry::Menu => Entry::Menu,
             };
-            play::run(&root, frame_limit, entry)
+            play::run(
+                &root,
+                frame_limit,
+                entry,
+                play::DisplayOptions {
+                    mode: scale_mode,
+                    fullscreen,
+                },
+            )
         }
         Some("run") => match (map.as_deref(), event) {
             (Some(name), Some(id)) => run_map_event(&root, name, id, frames, trace, answer, hot),
@@ -460,6 +485,7 @@ fn print_help() {
     println!("                                   [--boot | --menu-only]");
     println!("    wolf-cli [--root <DIR>] play [--until <N>] [--map-run <NAME> --event <ID>]");
     println!("                                   [--event <ID> | --load-save <FILE>]");
+    println!("                                   [--scale integer|fit-nearest|fit-linear] [--fullscreen]");
     println!("    wolf-cli [--root <DIR>] list [--filter <TEXT>]");
     println!();
     println!("COMMANDS:");
@@ -500,6 +526,10 @@ fn print_help() {
     );
     println!("    --menu-only       Start common event 42 directly instead of the boot map.");
     println!("                      Wins over --event (it names an entry point of its own).");
+    println!("    --scale <MODE>    'play' presentation: integer (default, crisp + bars),");
+    println!("                      fit-nearest or fit-linear (fractional, fills the window).");
+    println!("                      F9 cycles the mode at runtime.");
+    println!("    --fullscreen      Start 'play' borderless-fullscreen; F11 toggles it.");
     println!("    --hold-message    Park on the first 101 message instead of dismissing it.");
     println!("    --audio           Play BGM/SE through the real mixer (silent null backend if no device).");
     println!("    --pointer <x,y>   Put the mouse pointer at a game pixel for the whole capture.");

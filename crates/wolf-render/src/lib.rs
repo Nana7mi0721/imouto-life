@@ -1,7 +1,8 @@
 //! GPU renderer for the 1024x576 logical framebuffer.
 //!
-//! The crate is deliberately narrow: it knows about quads, one atlas page and an
-//! integer upscale, and nothing about tiles, WOLF layer bands or the script VM.
+//! The crate is deliberately narrow: it knows about quads, one atlas page and
+//! window scaling (integer or a fractional fit), and nothing about tiles, WOLF layer
+//! bands or the script VM.
 //! That keeps the wgpu churn isolated -- this is the part of the workspace most
 //! likely to need a rewrite when wgpu breaks its API again, so nothing else
 //! depends on the GPU stack directly.
@@ -40,7 +41,7 @@ mod text;
 pub use diff::{compare, diff_image, rgba_at, DiffReport, WorstPixel, DIFF_GAIN, WORST_LIMIT};
 pub use error::RenderError;
 pub use renderer::{Renderer, FRAME_FORMAT};
-pub use scaler::{integer_scale, Scaler, LOGICAL_H, LOGICAL_W};
+pub use scaler::{fit_scale, integer_scale, FitScaler, ScaleMode, Scaler, LOGICAL_H, LOGICAL_W};
 pub use sprite::SpriteInstance;
 pub use text::{
     layout_box, missing_glyphs, substitute_missing, LayoutBox, Outline, TextAlign, TextError,

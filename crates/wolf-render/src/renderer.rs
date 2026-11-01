@@ -9,9 +9,9 @@
 //!    positions, message windows and map scrolling are all authored against
 //!    it), so the game layer never learns the window size.
 //! 2. **Blit pass** -- that texture is drawn onto the swapchain as a single
-//!    quad, scaled by an integer factor and centred. See `crate::scaler` for
-//!    why integer-only, and `shaders/blit.wgsl` for why the quad does the
-//!    scaling rather than the viewport.
+//!    quad, scaled by an integer factor by default or by a fractional fit when
+//!    the player asks for it, and centred. See `crate::scaler` for the modes and
+//!    `shaders/blit.wgsl` for why the quad does the scaling rather than the viewport.
 //!
 //! The split exists so that "what does the frame look like" is testable
 //! without a window: `Renderer::new_offscreen` + `capture_rgba` produce the
@@ -27,7 +27,7 @@ use winit::dpi::PhysicalSize;
 use winit::window::Window;
 
 use crate::error::RenderError;
-use crate::scaler::{Scaler, LOGICAL_H, LOGICAL_W};
+use crate::scaler::{fit_scale, FitScaler, ScaleMode, Scaler, LOGICAL_H, LOGICAL_W};
 use crate::sprite::{SpriteInstance, INSTANCE_ATTRS};
 use crate::text::{TextItem, TextRenderer, TextStats};
 
@@ -105,6 +105,8 @@ pub struct Renderer {
     /// Current window size in physical pixels. Only affects the blit.
     size: PhysicalSize<u32>,
     scaler: Scaler,
+    /// Integer by default; the interactive player can switch to a fractional fit.
+    scale_mode: ScaleMode,
 
     frame: wgpu::Texture,
     frame_view: wgpu::TextureView,
@@ -122,7 +124,10 @@ pub struct Renderer {
 
     blit_pipeline: wgpu::RenderPipeline,
     blit_quad_buffer: wgpu::Buffer,
-    blit_bind: wgpu::BindGroup,
+    /// Nearest-neighbour binding, shared by `ScaleMode::Integer` and `FitNearest`.
+    blit_bind_nearest: wgpu::BindGroup,
+    /// Linear-filter binding used only by `ScaleMode::FitLinear`.
+    blit_bind_linear: wgpu::BindGroup,
 
     instance_buffer: wgpu::Buffer,
     /// Capacity of `instance_buffer` in instances (not bytes).
@@ -444,13 +449,23 @@ impl Renderer {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
-        let blit_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("wolf-render blit sampler"),
+        let blit_sampler_nearest = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("wolf-render blit sampler nearest"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
             mag_filter: wgpu::FilterMode::Nearest,
             min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+            ..Default::default()
+        });
+        let blit_sampler_linear = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("wolf-render blit sampler linear"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
             mipmap_filter: wgpu::MipmapFilterMode::Nearest,
             ..Default::default()
         });
@@ -487,8 +502,8 @@ impl Renderer {
             ],
         });
 
-        let blit_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("wolf-render blit bind"),
+        let blit_bind_nearest = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("wolf-render blit bind nearest"),
             layout: &blit_layout,
             entries: &[
                 wgpu::BindGroupEntry {
@@ -501,7 +516,25 @@ impl Renderer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&blit_sampler),
+                    resource: wgpu::BindingResource::Sampler(&blit_sampler_nearest),
+                },
+            ],
+        });
+        let blit_bind_linear = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("wolf-render blit bind linear"),
+            layout: &blit_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: blit_quad_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&frame_blit_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&blit_sampler_linear),
                 },
             ],
         });
@@ -562,6 +595,7 @@ impl Renderer {
             config,
             size,
             scaler,
+            scale_mode: ScaleMode::Integer,
             frame,
             frame_view,
             sprite_pipeline,
@@ -572,7 +606,8 @@ impl Renderer {
             atlas_size: [1, 1],
             blit_pipeline,
             blit_quad_buffer,
-            blit_bind,
+            blit_bind_nearest,
+            blit_bind_linear,
             instance_buffer,
             instance_capacity: INITIAL_INSTANCE_CAPACITY,
             instance_count: 0,
@@ -600,6 +635,46 @@ impl Renderer {
     #[must_use]
     pub fn scaler(&self) -> Scaler {
         self.scaler
+    }
+
+    /// Selects integer or fractional fitting for the blit.
+    pub fn set_scale_mode(&mut self, mode: ScaleMode) {
+        self.scale_mode = mode;
+    }
+
+    /// The active blit mode.
+    #[must_use]
+    pub fn scale_mode(&self) -> ScaleMode {
+        self.scale_mode
+    }
+
+    /// The fractional fit for the current window (meaningful when the mode is a fit).
+    #[must_use]
+    pub fn fit_scaler(&self) -> FitScaler {
+        fit_scale(self.size.width.max(1), self.size.height.max(1))
+    }
+
+    /// Effective magnification, integer or fractional depending on the mode.
+    #[must_use]
+    pub fn scale_factor(&self) -> f32 {
+        if self.scale_mode.is_fit() {
+            self.fit_scaler().scale
+        } else {
+            self.scaler.scale as f32
+        }
+    }
+
+    /// Maps a physical window point onto the 1024x576 game grid.
+    ///
+    /// The player uses this for cursor positions, so it must invert whatever the blit
+    /// currently does; a fit mode with linear filtering uses the same geometry as nearest.
+    #[must_use]
+    pub fn window_to_game(&self, x: f64, y: f64) -> [i32; 2] {
+        if self.scale_mode.is_fit() {
+            self.fit_scaler().game_point(x, y)
+        } else {
+            self.scaler.game_point(x, y)
+        }
     }
 
     /// Size of the atlas last handed to `set_atlas`.
@@ -707,7 +782,8 @@ impl Renderer {
 
     /// React to a window resize.
     ///
-    /// Only the blit changes: the logical framebuffer is always 1024x576. Sizes
+    /// Only the blit changes: the logical framebuffer is always 1024x576. The mode is
+    /// kept, so a resize re-renders the same fit/integer choice at the new size. Sizes
     /// of zero (minimised windows on Windows) leave the swapchain alone --
     /// configuring a zero-sized surface is a validation error, and acquiring an
     /// image from a minimised window would just time out.
@@ -839,7 +915,12 @@ impl Renderer {
         }
 
         if let Some(frame) = frame.as_ref() {
-            let (centre, half) = self.scaler.ndc_quad(self.size.width, self.size.height);
+            let (centre, half) = if self.scale_mode.is_fit() {
+                self.fit_scaler()
+                    .ndc_quad(self.size.width, self.size.height)
+            } else {
+                self.scaler.ndc_quad(self.size.width, self.size.height)
+            };
             self.queue.write_buffer(
                 &self.blit_quad_buffer,
                 0,
@@ -917,7 +998,7 @@ impl Renderer {
             }
         }
 
-        // Pass 2: integer upscale onto the swapchain.
+        // Pass 2: integer or fractional upscale onto the swapchain.
         if let Some(frame) = frame {
             let view = frame
                 .texture
@@ -938,7 +1019,12 @@ impl Renderer {
                     ..Default::default()
                 });
                 pass.set_pipeline(&self.blit_pipeline);
-                pass.set_bind_group(0, &self.blit_bind, &[]);
+                let bind = if self.scale_mode == ScaleMode::FitLinear {
+                    &self.blit_bind_linear
+                } else {
+                    &self.blit_bind_nearest
+                };
+                pass.set_bind_group(0, bind, &[]);
                 pass.draw(0..4, 0..1);
             }
             self.queue.submit(Some(encoder.finish()));

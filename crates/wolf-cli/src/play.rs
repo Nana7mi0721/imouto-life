@@ -10,9 +10,9 @@
 //! title menu's cursor speed is expressed in frames. Running the VM faster than the clock
 //! would make menus unusable; running it slower would make animations crawl.
 //!
-//! The window is 1024x576 logical pixels scaled by the largest whole integer factor that
-//! fits (with black bars), so a 1920x1080 desktop shows a crisp 1:1 or 1.875x image
-//! instead of a blurry fractional upscale - see `wolf_render::Scaler`.
+//! The window is a 1024x576 logical canvas scaled into the window. The default is the
+//! largest whole integer factor with black bars (the retail pixel grid); `--scale` and F9
+//! switch to a fractional fit (nearest or linear), and F11 toggles borderless fullscreen.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -23,14 +23,32 @@ use winit::dpi::PhysicalSize;
 use winit::event::{ElementState, MouseButton, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{Key, NamedKey};
-use winit::window::{Window, WindowId};
+use winit::window::{Fullscreen, Window, WindowId};
 
 use wolf_game::atlas::{Atlas, TextQuad};
 use wolf_game::{choice, key, Game};
-use wolf_render::{Renderer, Scaler, SpriteInstance, TextItem, LOGICAL_H, LOGICAL_W};
+use wolf_render::{Renderer, ScaleMode, SpriteInstance, TextItem, LOGICAL_H, LOGICAL_W};
 
 /// One frame at 60 Hz.
 const FRAME_TIME: Duration = Duration::from_micros(16_667);
+
+/// Window presentation chosen on the command line.
+#[derive(Clone, Copy, Debug)]
+pub struct DisplayOptions {
+    /// Integer by default; `fit-nearest`/`fit-linear` fill the window fractionally.
+    pub mode: ScaleMode,
+    /// Start borderless-fullscreen instead of the 1920x1080 window.
+    pub fullscreen: bool,
+}
+
+impl Default for DisplayOptions {
+    fn default() -> Self {
+        Self {
+            mode: ScaleMode::Integer,
+            fullscreen: false,
+        }
+    }
+}
 
 /// Runs the title screen in a window until the user closes it (or `frames` pass).
 ///
@@ -41,6 +59,7 @@ pub fn run(
     root: &std::path::Path,
     frames: Option<u64>,
     entry: crate::Entry<'_>,
+    display: DisplayOptions,
 ) -> std::process::ExitCode {
     let mut game = match Game::new(root) {
         Ok(game) => game,
@@ -127,6 +146,7 @@ pub fn run(
         next_frame: Instant::now(),
         fps_frames: 0,
         fps_since: Instant::now(),
+        display,
     };
     if let Err(err) = event_loop.run_app(&mut app) {
         eprintln!("event loop failed: {err}");
@@ -178,6 +198,8 @@ struct App {
     next_frame: Instant,
     fps_frames: u32,
     fps_since: Instant,
+    /// Window mode selected at startup and updated by F9/F11.
+    display: DisplayOptions,
 }
 
 impl App {
@@ -374,13 +396,23 @@ impl App {
         let Some(window) = self.window.as_ref() else {
             return;
         };
-        let scaler = renderer.scaler();
+        let mode = renderer.scale_mode();
+        let scale = if mode == ScaleMode::Integer {
+            format!("{}x", renderer.scaler().scale)
+        } else {
+            format!("{:.3}x {}", renderer.scale_factor(), mode.label())
+        };
         let text_count = self.game.text_quads().len();
         window.set_title(&format!(
-            "imoto-life | {}x{} -> x{} | frame {} | {} quad(s){} | {} fps",
+            "imoto-life | {}x{} -> {} | {} | frame {} | {} quad(s){} | {} fps",
             LOGICAL_W,
             LOGICAL_H,
-            scaler.scale,
+            scale,
+            if self.display.fullscreen {
+                "fullscreen"
+            } else {
+                "windowed"
+            },
             self.game.stats.frames,
             self.sprites.len(),
             if text_count > 0 { ", text pending" } else { "" },
@@ -391,9 +423,12 @@ impl App {
 
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        let attributes = Window::default_attributes()
+        let mut attributes = Window::default_attributes()
             .with_title("imoto-life | title screen")
             .with_inner_size(PhysicalSize::new(1920u32, 1080u32));
+        if self.display.fullscreen {
+            attributes = attributes.with_fullscreen(Some(Fullscreen::Borderless(None)));
+        }
         let window = match event_loop.create_window(attributes) {
             Ok(window) => Arc::new(window),
             Err(err) => {
@@ -413,10 +448,17 @@ impl ApplicationHandler for App {
                 return;
             }
         };
+        renderer.set_scale_mode(self.display.mode);
         let info = renderer.adapter_info();
         println!(
-            "play: {} ({:?}, backend {:?}) | {}x{} logical",
-            info.name, info.device_type, info.backend, LOGICAL_W, LOGICAL_H
+            "play: {} ({:?}, backend {:?}) | {}x{} logical | scale {} | fullscreen {}",
+            info.name,
+            info.device_type,
+            info.backend,
+            LOGICAL_W,
+            LOGICAL_H,
+            self.display.mode.label(),
+            self.display.fullscreen
         );
         self.upload_if_needed(&mut renderer);
         // The original game keeps its TTFs next to Game.exe, and the font covers the
@@ -449,6 +491,38 @@ impl ApplicationHandler for App {
                         event_loop.exit();
                         return;
                     }
+                    // F9 cycles integer -> fit-nearest -> fit-linear. F11 toggles a
+                    // borderless fullscreen window; both are M5 presentation controls.
+                    if matches!(event.logical_key, Key::Named(NamedKey::F9)) {
+                        if !event.repeat {
+                            self.display.mode = self.display.mode.next();
+                            if let Some(renderer) = self.renderer.as_mut() {
+                                renderer.set_scale_mode(self.display.mode);
+                            }
+                            if let Some(renderer) = self.renderer.as_ref() {
+                                self.refresh_title(renderer);
+                            }
+                            println!("display: scale mode {}", self.display.mode.label());
+                        }
+                        return;
+                    }
+                    if matches!(event.logical_key, Key::Named(NamedKey::F11)) {
+                        if !event.repeat {
+                            self.display.fullscreen = !self.display.fullscreen;
+                            if let Some(window) = self.window.as_ref() {
+                                window.set_fullscreen(if self.display.fullscreen {
+                                    Some(Fullscreen::Borderless(None))
+                                } else {
+                                    None
+                                });
+                            }
+                            if let Some(renderer) = self.renderer.as_ref() {
+                                self.refresh_title(renderer);
+                            }
+                            println!("display: fullscreen {}", self.display.fullscreen);
+                        }
+                        return;
+                    }
                     // manual01: F12 restarts the game. Ignore auto-repeat so a held key
                     // cannot reload the data root dozens of times a second.
                     if is_restart_key(&event.logical_key) {
@@ -468,8 +542,8 @@ impl ApplicationHandler for App {
                 // winit reports physical pixels; the scaler maps them back onto the
                 // 1024x576 grid the game draws in, so the pointer lands where the
                 // player sees it even with letterboxing or an integer upscale.
-                if let Some(window) = &self.window {
-                    self.mouse = game_point(window, position.x, position.y);
+                if let Some(renderer) = self.renderer.as_ref() {
+                    self.mouse = renderer.window_to_game(position.x, position.y);
                 }
             }
             WindowEvent::CursorLeft { .. } => {
@@ -557,21 +631,6 @@ impl ApplicationHandler for App {
 /// Several physical keys share a bit on purpose: the original game honours Enter/Z/Space
 /// for confirm and Escape/X for cancel, and a port that only accepted one of them would
 /// feel broken to anyone used to the original.
-/// Maps a physical window position onto the 1024x576 game grid.
-///
-/// The renderer blits with the largest whole integer scale and centres the result, so the
-/// inverse is `(pos - offset) / scale`. A position on the black bar maps to a negative
-/// game coordinate, which is also how the engine reports "outside the screen".
-fn game_point(window: &Window, x: f64, y: f64) -> [i32; 2] {
-    let size = window.inner_size();
-    let scaler = Scaler::new(size.width.max(1), size.height.max(1));
-    let scale = f64::from(scaler.scale.max(1));
-    [
-        ((x - f64::from(scaler.offset[0])) / scale).floor() as i32,
-        ((y - f64::from(scaler.offset[1])) / scale).floor() as i32,
-    ]
-}
-
 /// True for the physical key that restarts the session.
 ///
 /// manual01 lists F12 as 「再起动」 and `Game.ini` ships `F12_Reset=1`, so the port

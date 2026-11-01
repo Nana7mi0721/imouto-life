@@ -1,6 +1,10 @@
-//! Integer nearest-neighbour upscale from the 1024x576 logical frame to the window.
+//! Upscaling from the 1024x576 logical frame to the window.
 //!
-//! Why integer-only (docs/ARCHITECTURE.md §3.4): every pixel of a WOLF screen is authored
+//! The default is an integer nearest-neighbour scale. A second pair of modes fits the
+//! frame to the window with a fractional factor (nearest or linear), which is what makes
+//! a 1920x1080 window use the whole panel instead of a 1x image surrounded by bars.
+//!
+//! Why integer is the default (docs/ARCHITECTURE.md §3.4): every pixel of a WOLF screen is authored
 //! at a fixed size, and the `150` Picture command stores absolute coordinates written
 //! against a 1024-wide screen. Scaling by 1.5 or 2.25 leaves some source pixels 1 screen
 //! pixel wide and their neighbours 2, so any scrolling background shimmers with a visible
@@ -17,6 +21,57 @@
 pub const LOGICAL_W: u32 = 1024;
 /// Height of the logical game canvas, in pixels.
 pub const LOGICAL_H: u32 = 576;
+
+/// How the logical 1024x576 frame is fitted into the window.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ScaleMode {
+    /// Largest whole-number factor, centred, with black bars (the retail-pixel default).
+    #[default]
+    Integer,
+    /// Fill the window with a fractional factor using nearest-neighbour sampling.
+    FitNearest,
+    /// Fill the window with a fractional factor using linear sampling (smoother).
+    FitLinear,
+}
+
+impl ScaleMode {
+    /// Parses the value accepted by `wolf-cli play --scale`.
+    #[must_use]
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "integer" | "int" | "pixel" => Some(Self::Integer),
+            "fit" | "fit-nearest" | "nearest" => Some(Self::FitNearest),
+            "fit-linear" | "linear" | "smooth" => Some(Self::FitLinear),
+            _ => None,
+        }
+    }
+
+    /// Short label used by the window title and diagnostics.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Integer => "integer",
+            Self::FitNearest => "fit-nearest",
+            Self::FitLinear => "fit-linear",
+        }
+    }
+
+    /// Next mode in the F9 cycle.
+    #[must_use]
+    pub const fn next(self) -> Self {
+        match self {
+            Self::Integer => Self::FitNearest,
+            Self::FitNearest => Self::FitLinear,
+            Self::FitLinear => Self::Integer,
+        }
+    }
+
+    /// True for either fractional mode.
+    #[must_use]
+    pub const fn is_fit(self) -> bool {
+        !matches!(self, Self::Integer)
+    }
+}
 
 /// The integer scale factor and the centred placement it implies.
 ///
@@ -52,6 +107,75 @@ pub fn integer_scale(win_w: u32, win_h: u32) -> Scaler {
         scale,
         offset,
         used,
+    }
+}
+
+/// A fractional fit of the logical frame into the window.
+///
+/// Unlike Scaler the factor may be less than one when the window is smaller than the
+/// logical canvas, so the whole frame stays visible. Values are physical pixels and are
+/// deliberately floats: rounding used to whole pixels here would move the edge and make
+/// a linear blit sample half a texel off.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FitScaler {
+    /// Fractional magnification, strictly positive.
+    pub scale: f32,
+    /// Top-left corner of the scaled image, in physical pixels (may be fractional).
+    pub offset: [f32; 2],
+    /// Size of the scaled image in physical pixels.
+    pub used: [f32; 2],
+}
+
+/// Fits 1024x576 into win with a fractional factor, centred.
+///
+/// scale = min(win_w / 1024, win_h / 576). Unlike integer_scale this does not clamp
+/// to 1, so a small window shows the whole frame instead of clipping it.
+#[must_use]
+pub fn fit_scale(win_w: u32, win_h: u32) -> FitScaler {
+    let w = win_w.max(1) as f32;
+    let h = win_h.max(1) as f32;
+    let scale = (w / LOGICAL_W as f32).min(h / LOGICAL_H as f32);
+    let used = [LOGICAL_W as f32 * scale, LOGICAL_H as f32 * scale];
+    FitScaler {
+        scale,
+        offset: [(w - used[0]) * 0.5, (h - used[1]) * 0.5],
+        used,
+    }
+}
+
+impl FitScaler {
+    /// The scaled image as a clip-space quad, exactly like Scaler::ndc_quad.
+    #[must_use]
+    pub fn ndc_quad(&self, win_w: u32, win_h: u32) -> (glam::Vec2, glam::Vec2) {
+        let w = win_w.max(1) as f32;
+        let h = win_h.max(1) as f32;
+        let cx = self.offset[0] + self.used[0] * 0.5;
+        let cy = self.offset[1] + self.used[1] * 0.5;
+        let centre = glam::vec2(cx / w * 2.0 - 1.0, 1.0 - cy / h * 2.0);
+        let half = glam::vec2(self.used[0] * 0.5 / w * 2.0, self.used[1] * 0.5 / h * 2.0);
+        (centre, half)
+    }
+
+    /// Maps a physical window point onto the logical 1024x576 grid.
+    #[must_use]
+    pub fn game_point(&self, x: f64, y: f64) -> [i32; 2] {
+        let scale = f64::from(self.scale.max(f32::EPSILON));
+        [
+            ((x - f64::from(self.offset[0])) / scale).floor() as i32,
+            ((y - f64::from(self.offset[1])) / scale).floor() as i32,
+        ]
+    }
+}
+
+impl Scaler {
+    /// Maps a physical window point onto the logical 1024x576 grid.
+    #[must_use]
+    pub fn game_point(&self, x: f64, y: f64) -> [i32; 2] {
+        let scale = f64::from(self.scale.max(1));
+        [
+            ((x - f64::from(self.offset[0])) / scale).floor() as i32,
+            ((y - f64::from(self.offset[1])) / scale).floor() as i32,
+        ]
     }
 }
 
@@ -150,5 +274,66 @@ mod tests {
         // Horizontally centred (448 px left bar == right bar), so x centre is 0.
         assert!(centre.x.abs() < 1e-6, "{centre:?}");
         assert!(centre.y.abs() < 1e-6, "{centre:?}");
+    }
+
+    #[test]
+    fn fit_scale_uses_the_whole_16_by_9_window() {
+        for (w, h) in [(1920, 1080), (2560, 1440), (3840, 2160)] {
+            let fit = fit_scale(w, h);
+            assert!((fit.used[0] - w as f32).abs() < 1e-3, "{w}x{h}: {fit:?}");
+            assert!((fit.used[1] - h as f32).abs() < 1e-3, "{w}x{h}: {fit:?}");
+            assert!(fit.offset[0].abs() < 1e-3 && fit.offset[1].abs() < 1e-3);
+        }
+        assert!((fit_scale(1920, 1080).scale - 1.875).abs() < 1e-6);
+        assert!((fit_scale(2560, 1440).scale - 2.5).abs() < 1e-6);
+        assert!((fit_scale(3840, 2160).scale - 3.75).abs() < 1e-6);
+    }
+
+    #[test]
+    fn fit_scale_shrinks_a_small_window_instead_of_clipping_it() {
+        let fit = fit_scale(1000, 700);
+        assert!((fit.scale - 1000.0 / 1024.0).abs() < 1e-6, "{fit:?}");
+        assert!((fit.used[0] - 1000.0).abs() < 1e-3);
+        assert!((fit.used[1] - 562.5).abs() < 1e-3);
+        assert!((fit.offset[0]).abs() < 1e-3);
+        assert!((fit.offset[1] - 68.75).abs() < 1e-3);
+    }
+
+    #[test]
+    fn fit_ndc_quad_covers_the_screen_and_keeps_the_aspect_ratio() {
+        let fit = fit_scale(1920, 1080);
+        let (centre, half) = fit.ndc_quad(1920, 1080);
+        assert!(centre.length() < 1e-6, "{centre:?}");
+        assert!((half.x - 1.0).abs() < 1e-6 && (half.y - 1.0).abs() < 1e-6);
+        let fit = fit_scale(1000, 700);
+        let (centre, half) = fit.ndc_quad(1000, 700);
+        assert!(centre.x.abs() < 1e-6);
+        assert!((half.x - 1.0).abs() < 1e-6);
+        assert!((half.y - 562.5 / 700.0).abs() < 1e-6, "{half:?}");
+    }
+
+    #[test]
+    fn the_window_to_game_mapping_is_the_inverse_of_the_blit() {
+        let int = integer_scale(1920, 1080);
+        assert_eq!(int.game_point(448.0, 252.0), [0, 0]);
+        assert_eq!(int.game_point(448.0 + 1024.0, 252.0 + 576.0), [1024, 576]);
+        let fit = fit_scale(1920, 1080);
+        assert_eq!(fit.game_point(0.0, 0.0), [0, 0]);
+        assert_eq!(fit.game_point(960.0, 540.0), [512, 288]);
+        let small = fit_scale(1000, 700);
+        assert_eq!(small.game_point(0.0, 68.75), [0, 0]);
+        assert_eq!(small.game_point(500.0, 68.75 + 281.25), [512, 288]);
+    }
+
+    #[test]
+    fn scale_mode_parses_and_cycles() {
+        assert_eq!(ScaleMode::parse("integer"), Some(ScaleMode::Integer));
+        assert_eq!(ScaleMode::parse("fit-nearest"), Some(ScaleMode::FitNearest));
+        assert_eq!(ScaleMode::parse("linear"), Some(ScaleMode::FitLinear));
+        assert_eq!(ScaleMode::parse("wat"), None);
+        assert_eq!(ScaleMode::Integer.next(), ScaleMode::FitNearest);
+        assert_eq!(ScaleMode::FitNearest.next(), ScaleMode::FitLinear);
+        assert_eq!(ScaleMode::FitLinear.next(), ScaleMode::Integer);
+        assert!(!ScaleMode::Integer.is_fit() && ScaleMode::FitLinear.is_fit());
     }
 }

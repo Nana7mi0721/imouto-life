@@ -554,3 +554,28 @@ WOLF_DATA_ROOT="$PWD/work/Data" ./target/debug/wolf-cli.exe verify | tail -20
     bedroom 94.0%、status 90.0%、night 90.4%、shop 28.7%、album 54.0%；contact 与
     报告见 work/out/shots/m4_final_contact.png、m4_final_report.md。
   * **状态**：按用户 m07177 要求，本轮四个子任务收口并提交后暂停推进重构，不再开新任务。
+
+* 2026-10-31（M5-A：高分辨率 / 无级缩放 / 全屏，首个切片）：
+  * **动机**：用户 m07499 要求继续下一部分（M5 = 超越原版）。原版逻辑画布 1024x576，
+    现有整数缩放让 1920x1080 只能 1x 加黑边；M5-A 只改 blit，不改任何游戏坐标/存档。
+  * **实现**：
+    * `crates/wolf-render/src/scaler.rs` 新增 `ScaleMode`（Integer 默认 / FitNearest /
+      FitLinear，parse/label/next/is_fit）、`FitScaler` 与 `fit_scale`（分数因子
+      min(w/1024,h/576)，允许 <1）、`Scaler::game_point` / `FitScaler::game_point`
+      逆映射。
+    * `crates/wolf-render/src/renderer.rs` blit 改为 nearest+linear 两个 sampler/bind
+      group；`present` 按模式选 Scaler/FitScaler quad；新增 `set_scale_mode` /
+      `scale_mode` / `fit_scaler` / `scale_factor` / `window_to_game`。
+    * `crates/wolf-cli/src/play.rs` 新增 `DisplayOptions { mode, fullscreen }`；F9 循环
+      integer -> fit-nearest -> fit-linear，F11 无边框全屏，F10 仍退出、F12 仍重开；
+      标题显示因子与 windowed/fullscreen；鼠标走 `Renderer::window_to_game`。
+    * `crates/wolf-cli/src/main.rs` 新增 `--scale integer|fit-nearest|fit-linear`、
+      `--fullscreen` 与帮助文本；未新增外部依赖。
+  * **测试**：scaler 新增 5 条纯函数测试（16:9 全屏因子 1.875/2.5/3.75、小窗口 1000x700
+    -> 0.9766x 不裁切、NDC 比例、window->game 逆映射、ScaleMode parse/cycle）。
+    `cargo test -q -p wolf-render --lib` 35 passed；`cargo build -q -p wolf-cli` exit0。
+  * **边界**：capture 仍输出 1024x576 逻辑帧（证据链不与窗口缩放混），窗口/全屏观感需真实
+    窗口；不改 Sys 104/105 相机、不改存档格式。
+  * **文档**：新增 `docs/M5_BEYOND.md`，docs/README 登记 M5 行，根 README 状态更新；
+    M5-B 调试器 / M5-C 成就 / M5-D 多语言 / M5-E Mod 列计划与约束。
+  * **当前进度**：M0–M4 完成；M5-A 完成，M5-B..E 待做。用户 m07499 授权持续推进。

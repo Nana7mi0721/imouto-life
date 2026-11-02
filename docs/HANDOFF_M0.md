@@ -936,3 +936,21 @@ WOLF_DATA_ROOT="$PWD/work/Data" ./target/debug/wolf-cli.exe verify | tail -20
   * **已核对 §3 项**：九宫格 3px（`SystemFile/WindowBase.png` 实测 18x18、逐像素 3px 对称边框 → CORNER=3、无额外 padding）；过渡掩膜 `[Transition]Fade.png` 实测 640x480 mode L（8-bit 灰度）；present 后端=GDI DIB；字体来源=文件枚举；分辨率数据驱动（debug 串 `[Read]Screen size X`，assets --db-defaults 导出 1024x576）。
   * **仍未解**（需 Ghidra 反编译或逐帧实测）：盒退化、禁则、行距缩放、打字机精度、选择面板越界阈值、超宽选项、coordinate_scale 取整、default_origin trunc(rateY/10)、过渡曲线 easing 与 tint×fade 顺序、原版帧率/窗口初始尺寸。
   * **文档**：新建 `docs/RE_GAME_EXE.md`（工具/方法/二进制身份/导入表/已核对项/剩余项/复现步骤）；`docs/ENGINE_BEHAVIOR.md` §3 增 `3.1 C 任务进展与结论` 并让 §4 逆向段引用 `tools/re/wolfpe.py`+`RE_GAME_EXE.md`。`.recon/`（证据 JSON）已在 .gitignore。
+
+* 2026-11-02（C 任务续：安装 Ghidra+JDK 并反编译原版 Game.exe）——用户「原来的会话超上下文了，现在你继续完成 c 任务，用 2，安装 ghidra+jdk 反编译；软件装 D 盘 program，不是软件就临时装项目内」：
+  * **工具链**（D:\Program，符合“软件装 D 盘”约定，不入库）：Ghidra **12.2 PUBLIC**（`D:\Program\ghidra_12.2_PUBLIC`）+ Temurin **JDK 25.0.5+8**（Ghidra 12.2 要求 25+，21 会报 “JDK 25+ could not be found”；JDK 21.0.13 一并留下备用）。`tools/env.sh` 增 `GHIDRA_INSTALL_DIR`/`GHIDRA_JAVA_HOME`/`JAVA21_HOME`。
+  * **坑（已绕开，写进 RE_GAME_EXE.md §8）**：(1) Git-Bash 直接跑 `support/analyzeHeadless` 探测 JDK 失败，必须 `analyzeHeadless.bat` + `cmd //c`；(2) cmd 的 `EnableDelayedExpansion` 会吃参数里的 `!`，`.bat` 的 `%` 展开会吃 `%d`，所以脚本参数一律走 UTF-8 args 文件；(3) 项目路径含 `!`（安装目录名）会丢字符，先把 Game.exe 复制到 `work/out/ghidra/input/Game.exe`（SHA 不变）再 import；(4) 同一时刻只允许一个进程持 Ghidra 项目锁。
+  * **反编译**：Import+自动分析 **238 s**、识别 **10,589 函数**（x86:LE:32:default）；随后导出 **4,375 个 ≥64B 函数**的 C 伪码到 `work/out/re_all/all/`（含 index.tsv）。工具脚本入库：`tools/re/ghidra/{DumpByAnchor.java,DumpAll.java,run_ghidra.sh,README.md}`（1422 行，子代理完成，含 `--argsfile`/`--ref-window`；javac + 201 个 Ghidra jar 编译通过）。
+  * **结论（12 项清单已闭环 9 项左右，详见 `docs/ENGINE_BEHAVIOR.md` §3.2 与 `docs/re/` 四份报告）**：
+    * §3-8 坐标倍率 = **整除/idiv 向零截断**（CE48 pc30/31：Sys116/32、Sys117/24；标准分辨率另硬编码 10/20/25）；仓内 u32 整除等价，message.rs 的 f32 除法在非整倍数屏偏。
+    * §3-9 **trunc(rateY/10) 确认是原版公式**（CE63 pc44-46：Sys2=17*rateY; Sys2+=rateY/10）。
+    * §3-4 行距 = `本行最大字号×S + trunc(行距配置×min(基准字号,32)/32)×S`；本作 Game.dat 行距=6、基准=16 → **额外行距 3 px**（仓内 `font+6` 只在基准≥32 时对）。
+    * §3-5 打字机 = double 水位 + `(DAT_0084b244×speed)/30` 每帧 → 60fps 下 **speed/2 字/秒**；**没有 preroll 减法**（仓内 cps/60 约为一半速度）。
+    * §3-3 **原版无禁则**（4,375 函数零命中禁则字符常量，只有 `'\n'` + 行首空格丢弃）。
+    * §3-1 无额外 padding（3px 皮肤、体区 α=223 必须混色）；§3-2 原版极小盒**不折半**（交给 blit 裁剪）；§3-6 原版**无越界回退/不夹取**（标题用 (-1000,-1000) 藏面板）；§3-7 布局侧无最大宽。
+    * §3-12 原版**软件限帧 16.6 ms/帧（≈60fps，非 vsync）**，帧步进 `DAT_0084b244=60/fps`；窗口客户区 = 数据屏 1024×576 ×1.0，AdjustWindowRectEx + 居中，Game.ini 无尺寸项；无 DPI 感知 API。
+    * §3-10 掩膜 = 单轴平面渐变（轴向 21.75°, dy/dx≈0.4）+ 两端饱和，过渡带 262px、S 形缓入缓出（cos-ease RMS 2.76 vs 线性 3.74），不是图案；本作脚本唯一 transition 是 kind=-1 硬切。
+  * **建议但未改的代码动作**（等确认）：message.rs 的 LINE_GAP 改为 `trunc(line_spacing×min(base_font,32)/32)`（=3）与打字机速度/去 preroll；choice.rs 的 PADDING=14/MIN_WIDTH=120/越界居中无原版依据；window.rs 极小盒角折半与原版不同。
+  * **测试现状**：`cargo test -q --workspace` 唯一失败是 `wolf-save` 的 `every_save_parses_with_the_measured_shape`——它默认读 `E:\SteamLibrary\...\Living With SIster Monochrome Fantasy\Save\SaveData01.sav`，该文件 2026-11-01 20:57 被改成 386,830 B（期望 366,146），属**外部存档数据变化**，与本轮（只改 docs/tools）无关；其余 crate 全 ok。
+  * **空间**：work/out/ghidra 166 MB（项目+dump 27 MB），未清理（保留以便复核）；D:\Program\_dl 下载缓存稍后清理。
+

@@ -152,7 +152,7 @@
 
 ### 3.1 C 任务（Game.exe 定点逆向）进展与结论
 
-工具链：`rea-agents` v6.7.0 可运行但本机无原生分析引擎（Hopper 仅 macOS、Ghidra 未装、IDA 未配、Kuna 未设），rea 的 decompile/analyze 不可用；改用 `pefile`+`capstone` 自建只读工具 `tools/re/wolfpe.py`。完整证据与反汇编片段见 **`docs/RE_GAME_EXE.md`**。
+工具链（2026-11-02 更新）：已装 **Ghidra 12.2 + Temurin JDK 25**（D:\Program，见 RE_GAME_EXE.md §8），完成 Game.exe 全量自动分析（238 s / 10,589 函数）与 4,375 个函数的 C 伪码导出；早期用 `pefile`+`capstone` 自建只读工具 `tools/re/wolfpe.py` 的结论仍然有效。完整证据见 **`docs/RE_GAME_EXE.md`**（工具链/函数地图）与 **`docs/re/`** 下四份专项报告。
 
 已从二进制/随附资源**直接核对**（详见 RE_GAME_EXE.md §2–§4）：
 
@@ -163,7 +163,33 @@
 - 过渡掩膜：`[Transition]Fade.png` 实测 640x480、8-bit 灰度（对应 §3-10 资源部分）。
 - 分辨率：数据驱动（运行时有 `[Read]Screen size X` 调试串；`assets --db-defaults` 已导出 1024x576）。
 
-仍**未解、需 Ghidra 反编译或逐帧实测**的项：§3-2 盒退化、§3-3 禁则、§3-4 行距缩放、§3-5 打字机精度、§3-6 选择面板越界阈值、§3-7 超宽选项、§3-8 取整方式、§3-9 `trunc(rateY/10)`、§3-10 曲线 easing/掩膜语义、§3-11 tint×fade 顺序、§3-12 帧率/窗口初始尺寸。
+2026-11-02 已完成 12 项中的大部分（见下 §3.2）；剩余项标“待实测/待定位”并写明具体的验证路径。
+
+### 3.2 Ghidra 反编译结果（2026-11-02）
+
+证据等级：**A**=二进制/数据直读，**B**=由 A 推出，**C**=仅否定证据或需实机。详见 `docs/re/RUNTIME_CONSTANTS.md`、`TEXT_METRICS.md`、`LAYOUT_METRICS.md`、`TRANSITION.md`。
+
+| # | 项 | 原版结论 | 仓内现状/差异 | 等级 | 证据 |
+|---|---|---|---|---|---|
+| 1 | 九宫格内边距 | 皮肤 18×18、**3 px 对称九宫格**，绘制只有“角固定 + 中行列拉伸”，**无额外 padding**；文本位置来自 Sys1/Sys2；体区 alpha=223（必须混色）。选择支面板的固定内缩 = `0x1a` = **26 px**（`FUN_004c3d20:59-72`） | `window.rs` CORNER=3 正确；`choice.rs` PADDING=14/侧（合计 28）与原版 26 差 2 px | A | `docs/re/RUNTIME_CONSTANTS.md` §4、`LAYOUT_METRICS.md` §3 |
+| 2 | 盒小于帧退化 | 原版**不折半、不钳制**：中段宽 = right − corner，可 ≤0，交给 blit 裁剪 | `window.rs:80` 角折半 `min(cw,w/2)` 是仓内自造 | C | `LAYOUT_METRICS.md` §4 |
+| 3 | 标点避头尾（禁则） | 全量 dump（4,375 函数）**没有任何禁则字符常量**（0x3002/0x3001/0xFF0C/0x300C/0x300D/0xFF09/0x3010 零命中）；文本渲染只有显式 `'\n'` 分支 + 行首空格丢弃 → **原版无禁则** | 仓内 wrap() 无禁则，一致 | B（负证据强） | `TEXT_METRICS.md` §3 |
+| 4 | 行距缩放 | `line_pitch = 本行最大字号×S + trunc(行距配置×min(基准字号,32)/32)×S`；本作 Game.dat 行距配置=6、基准字号=16 → **额外行距 = 3 px**（即 16 号字行高 19，不是 22/26） | `message.rs:122` `font+6` **只在基准字号≥32 时等价**；基准 16 时应为 `font+3` | A（公式）/B（运行值） | `TEXT_METRICS.md` §1 |
+| 5 | 打字机 cps/preroll | 显示门限是 double 水位 `+0x88`；每帧 `水位 += DAT_0084b244 × speed / 30`；60 fps 下 **speed/2 字/秒**；**没有 preroll 减法**（用 `+0xe8` 帧片倒计时） | `message.rs:268` `(frames-preroll)*cps/60` → **约为原版一半速度**，且多了一个原版不存在的 preroll 项 | B/部分 | `TEXT_METRICS.md` §4 |
+| 6 | 选择面板越界回退 | op102 全链已定位：`FUN_00450460` case 0x66 → `FUN_00452970` → 尺寸 `FUN_004c3d20` / 锚点 `FUN_004c3fa0` / 绘制 `FUN_004c40f0` / 选行 `FUN_004c35c0`。原版**无回退、无夹取**：锚点来自选择支对象字段 `+0x8d8/+0x8dc`（默认 `(fontbase*10 − w/2, 0xaa/scale − h/2)`），**不读 Sys3/Sys4**；越界就按锚点画、被屏裁剪 | `choice.rs:180` “完全屏外才居中”与 Sys3/Sys4 锚点都与原版不符（但标题为何看不到面板仍有 1 处未闭合假设，见 LAYOUT §7.1） | A | `LAYOUT_METRICS.md` §5 |
+| 7 | 超宽选项 | 布局侧**无最大宽、无截断、无换行**：面板宽 = 最宽选项 + 26，超宽伸出屏外被裁剪 | 仓内无上限（一致），但加数不同（原版 +26，仓内 +62）且 `MIN_WIDTH=120` 无原版依据 | A | `LAYOUT_METRICS.md` §6 |
+| 8 | coordinate_scale 取整 | **整除（i32 `idiv`，向零截断）**：`Sys116/32`、`Sys117/24`（CE48 pc30/31，op121 bits=0x3000=div）；320×240/640×480/800×600 另硬编码 10/20/25 | `db.rs:159` u32 整除**等价**（多了 `.max(1)`）；`message.rs:97` f32 除法在非 32/24 整倍数屏会偏 | A | `LAYOUT_METRICS.md` §1 |
+| 9 | default_origin 的 trunc(rateY/10) | **确认是原版公式**：`Sys2 = 17×rateY`，再 `Sys2 += rateY/10`（CE63 pc44-46，bits 0x3100 = 加 + 整除） | `message.rs:111` 结构一致但 rate 为浮点、取整口径不同 | A | `LAYOUT_METRICS.md` §2 |
+| 10 | 过渡曲线与掩膜 | 语义 = **单程交叉溶解**：161 先把当前画面截图，162 用 mask/alpha 把旧帧溶解到新帧；`t = elapsed/duration` 是**线性整数除法，无 easing、非三角波**（`FUN_004c2a80` 13 行 + `FUN_004c28d0` 31 行），`elapsed` 每帧减 `DAT_0084b244`（60/fps）。掩膜 `[Transition]Fade.png` = 640×480 L、**单轴线性斜渐变**（等值线 x≈-0.397y+c，残差<1.2 px，方向≈21.5°，过渡带≈272 px，灰阶 0..251、峰值 250/251，无边框/图案/噪点）；拉伸到 1024×576 后斜率≈0.299。本作脚本唯一 transition 是 **kind=-1（无掩膜、均匀 alpha 溶解）** | 仓内三角波整屏 dim 与原版“单程交叉溶解”不同；本作 kind=-1 时应为 `alpha=1-t` | A | `RUNTIME_CONSTANTS.md` §3、`TRANSITION.md` §1–§3 |
+| 11 | tint × transition 顺序 | **先 tint 后 fade，两段独立合成、不是逐像素相乘**：151 是 DxLib `SetDrawBright` 的绘制状态（`FUN_004bf5b0→FUN_005161e0`），fade 是画完场景后叠的旧帧 overlay（`FUN_004c28d0` 开头先 `SetDrawBright(255,255,255)` 复位 → tint 不污染 fade）。另：151 语义是 `bright=clamp(255+(p-100)*255/100,0,255)`（p>100 被钳到中性），**不是百分比乘子**；flash(bit24) 不是三角波，而是整屏色块 overlay、alpha=(剩余帧/总帧)*255 单向衰减 | 仓内 tint.rs 的“乘子 + flash 三角波”两处都与原版不同；`apply_screen_tint` 把 fade 逐 quad 相乘（还乘到 HUD）应改为独立 overlay 阶段 | B | `TRANSITION.md` §4–§5 |
+| 12 | present 帧率与窗口尺寸 | 引擎**软件限帧 16.6 ms/帧（≈60 fps 上限）**：`timeGetTime`+1 ms 定时器 + QPC 忙等，非 vsync；帧步进 `DAT_0084b244 = 60/fps`（本机 fps=60）。窗口客户区 = **数据屏幕尺寸 1024×576 × 1.0**，`AdjustWindowRectEx` 后按显示器居中；Game.ini 只有 10 个键、**无尺寸/缩放项**；无任何 DPI 感知 API（150% 系统 DPI 虚拟化） | 仓内 `FRAME_TIME=16_667µs` 与原版 16.6 ms 一致；窗口留边是播放器策略，原版是 1:1 + 居中 | A/部分 | `RUNTIME_CONSTANTS.md` §2、`RE_GAME_EXE.md` §9 |
+
+**据此建议的代码动作（未在本轮改动，待确认）**：
+- `message.rs`：LINE_GAP 应由“固定 6”改为 `trunc(line_spacing_cfg × min(base_font,32)/32)`（本作 = 3）；打字机速度应按 `speed/2 字/秒` 且去掉 preroll，或先做一次实机对照再改。
+- `choice.rs`：内缩应为两侧共 26 px（每侧 13）；`MIN_WIDTH=120` 无原版依据；越界回退策略与原版不同（原版不居中）——但先别急着删居中：标题菜单“为何看不到引擎面板”还有一处假设未闭合（LAYOUT §7.1），删了可能把隐藏菜单变可见。
+- `window.rs`：极小盒的“角折半”与原版不同（原版交给 blit 裁剪）。
+- `transition.rs`：`brightness=|2t-1|` 应改为单程 `alpha=1-t`；flags 读取应 `& 0xffff`（并建模 0x10000 wait 位）。
+- `tint.rs`：151 不是百分比乘子而是 `SetDrawBright` 钳制公式；flash 不是三角波而是单向衰减的整屏色块 overlay；fade 不应逐 quad 相乘（应独立 overlay，且不污染 HUD）。
 
 ---
 

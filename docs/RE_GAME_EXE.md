@@ -165,3 +165,96 @@ PY
 
 - 引擎：WOLF RPG Editor **ver2.22**（Editor 构建 **20180525**）
 - Game.exe SHA-256：`e0716a35323007c79e6033bc19c610a38e1d4ccc0dce47c6f79cf706853e5b76`
+
+---
+
+## 8 Ghidra 反编译工具链（2026-11-02 安装）
+
+按"软件装 D 盘 Program"的约定，反编译工具链装在 **D:\Program**，不放进仓库（仓库只放脚本与结论）。
+
+| 组件 | 版本 | 安装路径 | 说明 |
+|---|---|---|---|
+| Ghidra | **12.2 PUBLIC**（20261016 构建） | `D:\Program\ghidra_12.2_PUBLIC` | 569 MB zip 解压；官方要求 **JDK 25+** |
+| Temurin JDK | **25.0.5+8** | `D:\Program\Java\jdk-25.0.5+8` | Ghidra 运行时 |
+| Temurin JDK | **21.0.13+9** | `D:\Program\Java\jdk-21.0.13+9` | 备用（java 21 语法编译/其它工具） |
+
+`tools/env.sh` 新增 `GHIDRA_INSTALL_DIR`、`GHIDRA_JAVA_HOME`、`JAVA21_HOME` 三个变量（只在 `source tools/env.sh` 后生效）。
+
+### 8.1 两个必踩的坑（已绕开）
+
+1. **Ghidra 12.2 需要 JDK 25，不是 21**。用 JDK 21 启动会报 `JDK 25+ (64-bit) could not be found`。JDK 21 保留但不用作 Ghidra 运行时。
+2. **Git-Bash 下不能直接跑 `support/analyzeHeadless`**：msys 版探测 JDK 失败（`JAVA_HOME ... unsupported java version`）。必须走 `support/analyzeHeadless.bat` + `cmd.exe`，并且 `cmd` 的参数循环开了 `EnableDelayedExpansion`，会吃掉参数里的 `!`，`.bat` 的 `%` 展开会吃掉 `%d`。**脚本参数一律写 UTF-8 args 文件传进去**（`tools/re/ghidra/DumpByAnchor.java --argsfile=`）。
+3. 项目目录路径不能含 `!`（`E:\EROGAME\Imouto! Life ...`）：先把 `Game.exe` 复制成无特殊字符路径（本仓用 `work/out/ghidra/input/Game.exe`，SHA-256 不变）再 import；否则解析出的路径会少一个 `!`。
+
+### 8.2 导入与自动分析
+
+```bash
+# project: work/out/ghidra/proj/ImoutoLife（已 gitignore）
+JAVA_HOME='D:\Program\Java\jdk-25.0.5+8' \
+  D:/Program/ghidra_12.2_PUBLIC/support/analyzeHeadless.bat \
+  "E:\Study\github program\Imouto Life\work\out\ghidra\proj" ImoutoLife \
+  -import "…/work/out/ghidra/input/Game.exe" -max-cpu 16
+```
+
+结果（16 CPU / 32 逻辑核，16 GB 内存）：**自动分析 238 s**，识别 **10,589 个函数**（x86:LE:32:default，ImageBase 00400000）。随后用 post-script 全量反编译导出 **4,375 个 ≥64 字节函数**的 C 伪码到 `work/out/re_all/all/`（含 `index.tsv`），供 grep 定位常量。
+
+### 8.3 脚本
+
+| 文件 | 作用 |
+|---|---|
+| `tools/re/ghidra/DumpByAnchor.java` | 字符串锚点/VA → 引用点 → 所属函数 → 反编译落盘（`--argsfile` 传参、`--ref-window` 处理块中间引用） |
+| `tools/re/ghidra/DumpAll.java` | 全量函数反编译（`--min-size`/`--filter`/断点续跑） |
+| `tools/re/ghidra/run_ghidra.sh` | 生成 .bat + `cmd //c` 调 `analyzeHeadless.bat`，项目/程序名/`-noanalysis` 已固化 |
+| `tools/re/ghidra/README.md` | 用法与参数表 |
+
+### 8.4 复现
+
+```bash
+cd '/e/Study/github program/Imouto Life' && source tools/env.sh
+bash tools/re/ghidra/run_ghidra.sh --help
+bash tools/re/ghidra/run_ghidra.sh --out-dir=work/out/re_dump \
+  --anchor='[Read]Screen size X' --anchor='*.ttf'
+```
+
+> 同一时刻只能有一个进程持有 Ghidra 项目锁；并发 `analyzeHeadless` 会报 `Unable to lock project`。
+
+
+---
+
+## 9 Ghidra 反编译结论（2026-11-02，C 任务续）
+
+工具链见 §8。项目 `work/out/ghidra/proj`，全量 dump `work/out/re_all/all/…`（4,375 个 ≥64B 函数）。下列地址均为镜像内绝对 VA（ImageBase 0x400000）。
+
+### 9.1 关键函数地图（已定位、可复现）
+
+| 函数 | 大小 | 作用（由反编译内容判定） |
+|---|---|---|
+| `FUN_00469820` | 7,668 B | 启动初始化：枚举 `*.ttf` 加载字体、确定屏幕倍率、帧步进、配置文件写出 |
+| `FUN_00494480` | 27,671 B | **文本渲染主函数**：逐字节处理 WOLF 文本控制码（0x01…0x1f）、按字符推进 x/y、"Can't Draw Message." |
+| `FUN_0049b440` | 225 B | **字号钳制/取整**：按版本与倍率把字号夹到 2…200（倍率 2）或 4…400（倍率 1），并做小字号避让（4→3、5→6、8→7、0xa→9、0xb→9/10、0xd→0xc、0x12→0x11、0x16→0x15、0x1a→0x19） |
+| `FUN_0049adc0` | 1,022 B | 字体/绘图状态设置（DxLib 字体句柄、颜色、clip） |
+| `FUN_0049b230` | 519 B | 渲染器复位/时间基准初始化 |
+| `FUN_00401c50` | 88,144 B | DB 读取 + 大型字符串表初始化（`[Read]Screen size X` 等调试串都在这里） |
+| `FUN_0042fe30` | 9,967 B | **标题菜单绘制/布局**（行距 `0x1e`=30、面板 0x294×0xdc、x=10、窄屏分支） |
+| `FUN_0043e5f0` | 3,251 B | 面板参数默认值表（`0xaa`、`DAT_0084b264*10`、`0xffffffff` 表示"用默认"） |
+| `FUN_0044b0a0` | 约 700 B | 滚动步进：`((a*b*c*0x40)/DAT_0084b244)/10` |
+| `FUN_00488310` | 49,438 B | 解释器/事件主循环（调用文本渲染器） |
+| `FUN_0042b1d0` / `FUN_0042baa0` | 2,250 / 580 B | Game.ini 读取 / 写出（10 个键的模板） |
+| `FUN_00513580` | 5,347 B | DxLib 窗口创建（`RegisterClassExW`→`AdjustWindowRectEx`→`CreateWindowExW`→居中） |
+| `FUN_00595780` | 1,901 B | DxLib 字体创建（`CreateFontW` + `GetTextMetricsA`，width=100 权重，`ＭＳ ゴシック` 回退） |
+| `FUN_005960c0` / `FUN_00596000` | 1,119 / 191 B | DxLib 字形度量（`GetTextExtentPoint32W`/`GetGlyphOutlineW`/`GetTextMetricsA`） |
+
+### 9.2 从反编译直接读出的公式/常量
+
+1. **帧步进**：`DAT_0084b244 = 0x3c / *DAT_00a16684`（`FUN_00469820`）。`DAT_0084b244` 是全引擎统一的"每帧时间单位"：动画时钟 `FUN_00443770` 用它加减、`FUN_0042c8b0` 用"经过毫秒 / 它"换算帧数、`FUN_0044b0a0` 的滚动步进也除它。→ 原版时间轴以 **60 帧/秒** 为基准量化（对应 §3-12 与 §3-5）。
+2. **屏幕倍率**：`DAT_0084b248 = 1`，仅当数据里的屏幕尺寸恰为 **320×240**（0x140/0xF0）时置 2；`DAT_0084b230 = 屏宽 × 倍率`、`DAT_0084b234 = 屏高 × 倍率`（`FUN_00469820`）。本作数据 1024×576 → 倍率 1。
+3. **字号基准**：`DAT_0084b264` 取 0x28 / 0x20 / 0x10（由数据里字体标志字节决定）；该值与"×10"、"×2×坐标"等组合出现在面板/滚动公式里（`FUN_0043e5f0`、`FUN_004431…` 系列）。
+4. **文本行推进**（公式已由 TEXT_METRICS 定案）：换行时 `y += row_px * (DAT_0084b248<<1)/2`（= 本行最大钳制字号 × 倍率），普通窗口再追加 `y += trunc(line_spacing_cfg × min(base_font_cfg,32)/32) × 倍率`。本作 Game.dat 行距配置=6、基准字号=16 → 额外 3 px；渲染器里**不存在固定的 `+6`**，`message.rs` 的 `font+6` 只在基准字号 ≥32 时等价。详见 `docs/re/TEXT_METRICS.md` §1。
+5. **标题菜单几何**：`local_20 = 10`（x）、`local_14 = 0xdc`（220，高）、`local_30 = 0x294`（660，宽）；窄屏（`DAT_0084b264==0x10 && 倍率==1`）改为 x=9、高=0xa0、宽=0x140；行距/网格分母为 `0x1e`(30)，菜单区 y 基准 500（屏宽 <801 时）/630（否则），文字位置随 `(屏宽 × 30)/屏高` 计算。
+6. **窗口创建**：客户区 = 屏幕尺寸 × 倍率，`AdjustWindowRectEx` 加非客户区，按显示器居中（`(display - window)/2`），用动态绑定的 `CreateWindowExW`；全屏走 `ChangeDisplaySettingsA`。
+7. **字体来源**：`FindFirstFileA("*.ttf")` 枚举数据目录 + `AddFontResourceExA`；DxLib 的字体对象记录 `tmHeight`、`tmAscent` 等（`DAT_00ddb2fc…`），字形推进用 `GetGlyphOutlineW` 的 `gmCellIncX`。
+
+### 9.3 与 §3 清单的对应
+
+运行期/资源侧的取证（帧率、窗口、掩膜、皮肤）见 **`docs/re/RUNTIME_CONSTANTS.md`**；文本度量见 **`docs/re/TEXT_METRICS.md`**、布局缩放见 **`docs/re/LAYOUT_METRICS.md`**、过渡/叠色见 **`docs/re/TRANSITION.md`**（均由本任务并行产出）。本文只保留二进制工具链与函数地图，避免与那几份报告重复。
+

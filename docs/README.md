@@ -103,6 +103,7 @@
 | `work/Data` | 解包后的本作数据，175 MB，**gitignore**，测试必需 |
 | `work/out/re_all/` | 4,375 个 ≥64B 函数的 Ghidra C 伪码 + index.tsv（27 MB，未入库，复核用） |
 | `work/out/ghidra/` | Ghidra 项目（166 MB，未入库，重跑 import 约 4 分钟） |
+| `work/out/_archive/` | 历史提交信息（`commit_messages/`）与一次性探针脚本（`scripts/`）归档，未入库 |
 | `work/out/shot_metrics/` | 截图度量脚本与标注图（未入库，SCREENSHOT_METRICS 的复现材料） |
 
 ## 10. 被引用但本仓库缺失的文档

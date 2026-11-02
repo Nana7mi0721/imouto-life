@@ -949,8 +949,8 @@ WOLF_DATA_ROOT="$PWD/work/Data" ./target/debug/wolf-cli.exe verify | tail -20
     * §3-3 **原版无禁则**（4,375 函数零命中禁则字符常量，只有 `'\n'` + 行首空格丢弃）。
     * §3-1 无额外 padding（3px 皮肤、体区 α=223 必须混色）；§3-2 原版极小盒**不折半**（交给 blit 裁剪）；§3-6 原版**无越界回退/不夹取**（标题用 (-1000,-1000) 藏面板）；§3-7 布局侧无最大宽。
     * §3-12 原版**软件限帧 16.6 ms/帧（≈60fps，非 vsync）**，帧步进 `DAT_0084b244=60/fps`；窗口客户区 = 数据屏 1024×576 ×1.0，AdjustWindowRectEx + 居中，Game.ini 无尺寸项；无 DPI 感知 API。
-    * §3-10 掩膜 = 单轴平面渐变（轴向 21.75°, dy/dx≈0.4）+ 两端饱和，过渡带 262px、S 形缓入缓出（cos-ease RMS 2.76 vs 线性 3.74），不是图案；本作脚本唯一 transition 是 kind=-1 硬切。
+    * §3-10 过渡 = **单程交叉溶解**（161 截旧帧 → 162 用掩膜/alpha 溶解到新帧），`t=elapsed/duration` **线性整数除法、无 easing、非三角波**；掩膜 = 单轴线性斜渐变（等值线 x≈-0.397y+c，残差<1.2px，方向≈21.5°，过渡带≈272px，灰阶峰值 250/251），不是图案；本作脚本唯一 transition 是 kind=-1（均匀 alpha 溶解）。
   * **建议但未改的代码动作**（等确认）：message.rs 的 LINE_GAP 改为 `trunc(line_spacing×min(base_font,32)/32)`（=3）与打字机速度/去 preroll；choice.rs 的 PADDING=14/MIN_WIDTH=120/越界居中无原版依据；window.rs 极小盒角折半与原版不同。
   * **测试现状**：`cargo test -q --workspace` 唯一失败是 `wolf-save` 的 `every_save_parses_with_the_measured_shape`——它默认读 `E:\SteamLibrary\...\Living With SIster Monochrome Fantasy\Save\SaveData01.sav`，该文件 2026-11-01 20:57 被改成 386,830 B（期望 366,146），属**外部存档数据变化**，与本轮（只改 docs/tools）无关；其余 crate 全 ok。
-  * **空间**：work/out/ghidra 166 MB（项目+dump 27 MB），未清理（保留以便复核）；D:\Program\_dl 下载缓存稍后清理。
+  * **空间清理**（里程碑收尾）：删除 `target/debug/incremental`、`target/release`、`work/out/saveprobe` 与 work/out 下 probe/pdb；删除 D:\Program\_dl 下载缓存（约 750 MB）。清理后 `du -sh .` = **4.4 GB**（target 3.8 G 可重编；work 534 M = Data 176 M + Ghidra 项目 166 M + 全量 dump 27 M，保留以便复核，重跑 import 约 4 分钟）。
 

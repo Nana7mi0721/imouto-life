@@ -1629,9 +1629,21 @@ impl Host for TraceHost {
         ));
     }
 
-    fn transition(&mut self, kind: i32, flags: i32) {
+    fn transition_install(&mut self, kind: i32, flags: i32) {
         self.transitions += 1;
-        self.note(format!("  16x transition kind {kind} flags {flags:#x}"));
+        self.note(format!(
+            "  160 transition install kind {kind} flags {flags:#x}"
+        ));
+    }
+
+    fn transition_prepare(&mut self) {
+        self.transitions += 1;
+        self.note("  161 transition prepare (freeze the screen)".to_owned());
+    }
+
+    fn transition_execute(&mut self) {
+        self.transitions += 1;
+        self.note("  162 transition execute (dissolve)".to_owned());
     }
 
     fn party(&mut self, args: &[i32]) {
@@ -3438,6 +3450,25 @@ fn tint_instance(quad: &wolf_game::atlas::SpriteQuad) -> SpriteInstance {
         .with_alpha(quad.alpha)
         .with_tint_rgb(quad.tint[0], quad.tint[1], quad.tint[2])
 }
+
+/// Maps the game's whole-screen overlays onto the renderer's overlay quads.
+///
+/// A 151 flash is a flat colour quad; a 162 transition is the frame frozen by 161 drawn
+/// at a falling alpha (docs/re/TRANSITION.md section 4). The renderer composites them
+/// after the text pass, over the HUD, exactly like the retail engine does.
+fn render_overlays(game: &Game) -> Vec<wolf_render::ScreenOverlay> {
+    game.screen_overlays()
+        .into_iter()
+        .map(|overlay| match overlay.layer {
+            wolf_game::OverlayLayer::Colour(rgb) => {
+                wolf_render::ScreenOverlay::colour(rgb, overlay.alpha)
+            }
+            wolf_game::OverlayLayer::FrozenFrame => {
+                wolf_render::ScreenOverlay::frozen(overlay.alpha)
+            }
+        })
+        .collect()
+}
 /// Where a capture starts.
 ///
 /// The retail entry point is the boot map, but two other entries are useful: the
@@ -3664,7 +3695,7 @@ fn build_capture_frame(game: &mut Game, include_tiles: bool) -> CaptureFrame {
 /// false (after printing the reason) when the GPU adapter, atlas upload, readback or
 /// file write failed.
 fn render_capture_frame(
-    game: &Game,
+    game: &mut Game,
     root: &Path,
     out: &Path,
     atlas: Atlas,
@@ -3774,6 +3805,13 @@ fn render_capture_frame(
     }
     renderer.draw_text(&items);
 
+    // The offscreen path renders one frame in a brand new renderer, so a 161 freeze
+    // request has no earlier presented frame behind it: taking the request keeps it from
+    // leaking into the next capture, and the dissolve is skipped.
+    if game.take_freeze_request() {
+        println!("  transition: 161 freeze requested; capture has no previous frame");
+    }
+    renderer.set_overlays(&render_overlays(game));
     renderer.present();
     // Text statistics are only known after the pass has been encoded, so they are reported
     // here rather than next to the item list.
@@ -4112,7 +4150,7 @@ fn run_capture(
         );
     }
 
-    if !render_capture_frame(&game, root, &out, atlas, &sprites, &texts) {
+    if !render_capture_frame(&mut game, root, &out, atlas, &sprites, &texts) {
         return ExitCode::FAILURE;
     }
 
@@ -4421,7 +4459,7 @@ fn run_capture_map(
         );
     }
 
-    if !render_capture_frame(&game, root, &out, atlas, &sprites, &texts) {
+    if !render_capture_frame(&mut game, root, &out, atlas, &sprites, &texts) {
         return ExitCode::FAILURE;
     }
 

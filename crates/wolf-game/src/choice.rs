@@ -7,22 +7,42 @@
 //! background (one `150` command) and then parks on a `102` with three options, so
 //! without a runtime panel the port shows a title screen with no menu at all.
 //!
-//! Geometry is inferred, not measured: the skin comes from
-//! `SystemFile/WindowBase.png`, the grey panel the game's SysDatabase
-//! "ウィンドウ画像 / ×選択肢ウィンドウ画像" row names (see [`crate::window`]), and the panel
-//! is centred on the 1024x576 screen. The original game's exact placement is still
-//! unknown (open item H-MENU-1 in docs/UNVERIFIED.md), so every number here is a named
-//! constant a future measurement can replace in one place.
+//! Geometry is measured, not guessed. The engine's own panel code is
+//! `FUN_004c3d20` (size), `FUN_004c3fa0` (anchor), `FUN_004c40f0` (frame and cursor)
+//! and `FUN_004c35c0` (row picking); the numbers below come from those functions and
+//! from two retail 1024x576 screenshots (docs/re/SCREENSHOT_METRICS.md). The frame is
+//! `SystemFile/WindowBase.png`, the grey skin the game's SysDatabase
+//! "ウィンドウ画像 / ×選択肢ウィンドウ画像" row names (see [`crate::window`]), and the
+//! selected row sits in `SystemFile/CursorBase.png`, the engine's 12x12 cursor box.
 
 use crate::assets::Assets;
 use crate::atlas::{Atlas, SpriteQuad, TextQuad};
 use crate::picture::{SCREEN_H, SCREEN_W};
 use crate::window::{self, WindowPiece};
 
-/// Distance in pixels between two option baselines.
-pub const LINE_HEIGHT: f32 = 30.0;
-/// Padding between the option text and the window frame.
-pub const PADDING: f32 = 14.0;
+/// Game.dat u8[12]: the choice window's line spacing, 14 in this game.
+pub const CHOICE_LINE_SPACING: f32 = 14.0;
+/// The game's base font size, Game.dat u8[0].
+///
+/// The original scales a line-spacing setting by min(base, 32) / 32 before adding it
+/// to the row's own font size (docs/re/TEXT_METRICS.md section 1), so 14 px of choice
+/// spacing becomes trunc(14 * 16 / 32) = 7 px of extra row pitch at the shipped base
+/// size - which is exactly the 27 px row pitch the retail panels measure.
+pub const BASE_FONT_PX: f32 = 16.0;
+/// Inset of the option text from the panel's left edge, in logical pixels.
+///
+/// FUN_004c3fa0:25-28 puts the text origin at 2 + (base << 2) / 10 inside the window
+/// (8 px at base 16), and both retail screenshots measure 8 px from the window's border
+/// to the first glyph's ink. The same inset is used on the right, so the panel is the
+/// widest option plus twice this value.
+pub const TEXT_INSET: f32 = 8.0;
+/// Distance from the panel's top edge to the first option row.
+///
+/// The retail panels put the first row's ink 9 px below the border and the glyph's own
+/// top bearing is 3 px, so the row starts 6 px down. The panel is then exactly
+/// ROW_TOP + rows * pitch tall: 114 px for the four-option prompt and 141 px for the
+/// five-option one, both within half a pixel of the screenshots.
+pub const ROW_TOP: f32 = 6.0;
 /// Fallback pixel size for option text, used by tools and tests that have no VM.
 ///
 /// The live size is Sys8, which common event 48 writes as 20 and which WOLF shares
@@ -35,15 +55,22 @@ pub const PADDING: f32 = 14.0;
 /// opening option 微风吹拂而过的麦田 needed 198 px inside a 144 px content box and
 /// wrapped, and its second line was overdrawn by the row below.
 pub const TEXT_PX: f32 = 20.0;
-/// Width reserved for the cursor marker and its trailing gap, in pixels.
+/// Asset name of the choice cursor: the small nine-slice box the engine draws behind
+/// the selected row (FUN_004c40f0 draws it from the picture table's cursor entries).
+pub const CURSOR_SKIN: &str = "SystemFile/CursorBase.png";
+/// Frame thickness of the cursor skin, in texels (12x12 skin, one third).
+pub const CURSOR_CORNER: u32 = 4;
+
+/// Vertical advance of one option row, in pixels.
 ///
-/// Every row reserves the same column whether or not it is selected, which is what
-/// keeps the option text aligned: one wide glyph plus one space is about 1.5 em.
-pub const MARKER_PX: f32 = TEXT_PX * 1.5;
-/// Extra width added to the measured line, absorbing glyph side bearings and rounding.
-pub const WIDTH_SLACK: f32 = 4.0;
-/// Smallest panel width, so a one-letter option is not a 16 px sliver.
-pub const MIN_WIDTH: f32 = 120.0;
+/// The shipped engine computes line pitch as the row's own font size plus
+/// trunc(spacing * min(base, 32) / 32); for the choice window that is Sys8 + 7 px, which
+/// is the 27 px the retail panels measure at Sys8 = 20.
+#[must_use]
+pub fn line_pitch(font_px: f32) -> f32 {
+    let extra = (CHOICE_LINE_SPACING * BASE_FONT_PX.min(32.0) / 32.0).trunc();
+    font_px + extra
+}
 
 /// Where the panel and its option lines sit on the logical screen.
 #[derive(Clone, Debug, PartialEq)]
@@ -117,30 +144,34 @@ fn size(options: &[String], font_px: f32) -> (f32, f32) {
         .iter()
         .map(|option| text_width_at(option_label(option), font_px))
         .fold(0.0_f32, f32::max);
-    let marker = font_px * 1.5;
-    let width = (widest + marker + PADDING * 2.0 + WIDTH_SLACK).max(MIN_WIDTH);
+    let width = widest + TEXT_INSET * 2.0;
     let rows = options.len().max(1) as f32;
-    (width.round(), (rows * LINE_HEIGHT + PADDING * 2.0).round())
+    (width.round(), (ROW_TOP + rows * line_pitch(font_px)).round())
 }
 
 /// Builds rows and cursor rectangle for a panel whose top-left corner is `(x, y)`.
 fn build(options: &[String], cursor: usize, x: f32, y: f32, font_px: f32) -> ChoiceLayout {
     let (width, height) = size(options, font_px);
     let rect = [x, y, width, height];
+    let pitch = line_pitch(font_px);
     let mut lines = Vec::with_capacity(options.len());
     for (index, _) in options.iter().enumerate() {
         lines.push([
-            rect[0] + PADDING,
-            rect[1] + PADDING + index as f32 * LINE_HEIGHT,
-            rect[2] - PADDING * 2.0,
-            LINE_HEIGHT,
+            rect[0] + TEXT_INSET,
+            rect[1] + ROW_TOP + index as f32 * pitch,
+            rect[2] - TEXT_INSET * 2.0,
+            pitch,
         ]);
     }
-    let cursor_rect = lines
-        .get(cursor)
-        .copied()
-        .or_else(|| lines.first().copied())
-        .unwrap_or([rect[0], rect[1], rect[2], LINE_HEIGHT]);
+    // The cursor is not the text row: it is the engine's own box, drawn 6 px inside the
+    // window frame and as tall as the font (not as tall as the row pitch). The retail
+    // screenshots measure exactly that: bar 6 px in from the border, 20 px tall, with
+    // the text 8 px in and 27 px apart.
+    let row = lines.get(cursor).copied().or_else(|| lines.first().copied());
+    let cursor_rect = match row {
+        Some(row) => [rect[0] + ROW_TOP, row[1], rect[2] - ROW_TOP * 2.0, font_px],
+        None => [rect[0], rect[1], rect[2], pitch],
+    };
     ChoiceLayout {
         rect,
         lines,
@@ -275,11 +306,11 @@ fn option_label(option: &str) -> &str {
     }
 }
 
-/// Builds the panel draw list: window pieces first, then one text row per option.
+/// Builds the panel draw list: window pieces, then the cursor box, then the rows.
 ///
-/// The selected row is marked with a leading angle quote because the port has no
-/// cursor sprite wired up yet; the sprite in `SystemGraphic/cursol.png` would be the
-/// faithful choice.
+/// The engine marks the selected row by drawing its cursor skin over it
+/// (FUN_004c40f0), not by prefixing a glyph: the retail panels show a framed box behind
+/// the current option and the option text aligned with every other row.
 fn draw(
     atlas: &mut Atlas,
     assets: &mut Assets,
@@ -299,12 +330,31 @@ fn draw(
             });
         }
     }
+    // The cursor box: the same nine-slice routine as the window, over the cursor's own
+    // 12x12 skin, one row tall and 6 px in from each side.
+    if cursor < options.len() {
+        if let Some(skin) = atlas.add_asset(assets, CURSOR_SKIN) {
+            for piece in window::nine_slice_cornered(
+                layout.cursor,
+                skin.w,
+                skin.h,
+                CURSOR_CORNER,
+            ) {
+                sprites.push(SpriteQuad {
+                    number: window::PANEL_PICTURE,
+                    rect: piece.rect,
+                    uv: skin.sub_uv(atlas.size()[0], atlas.size()[1], piece.src),
+                    alpha: 1.0,
+                    tint: [1.0, 1.0, 1.0],
+                });
+            }
+        }
+    }
     let mut texts = Vec::with_capacity(options.len());
     for (index, option) in options.iter().enumerate() {
-        let marker = if index == cursor { "▶ " } else { "   " };
         texts.push(TextQuad {
             number: window::PANEL_PICTURE,
-            text: format!("{marker}{}", option_label(option)),
+            text: option_label(option).to_owned(),
             rect: layout.lines[index],
             alpha: 1.0,
             // The panel is drawn at one size (the caller passes Sys8 in), so each row
@@ -382,15 +432,36 @@ mod tests {
         assert!((layout.rect[1] + layout.rect[3] / 2.0 - 288.0).abs() <= 1.0);
         assert_eq!(layout.lines.len(), 3);
         assert!(layout.lines[1][1] > layout.lines[0][1]);
-        assert_eq!(layout.cursor, layout.lines[0]);
+        // The cursor box sits on the first row, 6 px inside the frame, as tall as the
+        // font: the retail screenshots measure 6 px in and 20 px tall at Sys8 = 20.
+        assert_eq!(layout.cursor[1], layout.lines[0][1]);
+        assert_eq!(layout.cursor[0], layout.rect[0] + ROW_TOP);
+        assert_eq!(layout.cursor[3], TEXT_PX);
     }
 
     #[test]
     fn the_cursor_follows_the_selected_row() {
         let panel = layout(&options(3), 2);
-        assert_eq!(panel.cursor, panel.lines[2]);
+        assert_eq!(panel.cursor[1], panel.lines[2][1]);
         // Out-of-range cursors clamp to a real row instead of panicking.
-        assert_eq!(layout(&options(3), 99).cursor, panel.lines[0]);
+        assert_eq!(layout(&options(3), 99).cursor[1], panel.lines[0][1]);
+    }
+
+    #[test]
+    fn the_panel_geometry_is_the_measured_102_panel() {
+        // A four-option prompt of seven full-width characters: the retail 102 panel is
+        // 156 px wide, 114 px tall, rows 27 px apart and text 8 px inside the frame.
+        let rows = vec!["已经这个时间了".to_owned(); 4];
+        let panel = layout_at_sized(&rows, 0, 400, 200, 20.0)
+            .expect("an on-screen anchor yields a panel");
+        assert_eq!(panel.rect[2], 7.0 * 20.0 + TEXT_INSET * 2.0, "panel width");
+        assert_eq!(panel.rect[3], ROW_TOP + 4.0 * 27.0, "four rows are 114 px");
+        assert_eq!(panel.lines[0][0], panel.rect[0] + TEXT_INSET, "text inset");
+        assert_eq!(panel.lines[0][2], panel.rect[2] - TEXT_INSET * 2.0, "row width");
+        for index in 1..4 {
+            let pitch = panel.lines[index][1] - panel.lines[index - 1][1];
+            assert!((pitch - 27.0).abs() < 0.01, "row {index} pitch is {pitch}");
+        }
     }
 
     #[test]
@@ -403,8 +474,8 @@ mod tests {
         let content = panel.lines[0][2];
         assert_eq!(text_width(&option), 9.0 * TEXT_PX);
         assert!(
-            content >= text_width(&option) + MARKER_PX,
-            "row {content} must fit the marker plus {} px of text",
+            content >= text_width(&option),
+            "row {content} must fit {} px of text",
             text_width(&option)
         );
         assert!(panel.rect[0] >= 0.0 && panel.rect[0] + panel.rect[2] <= SCREEN_W as f32);
@@ -414,7 +485,9 @@ mod tests {
     fn a_long_option_widens_the_panel() {
         let narrow = layout(&["a".to_owned()], 0);
         let wide = layout(&["a".repeat(40)], 0);
-        assert_eq!(narrow.rect[2], MIN_WIDTH);
+        // No minimum width: the engine sizes the window to the widest option plus the
+        // 8 px inset on each side, and a one-letter option gets a 26 px box.
+        assert_eq!(narrow.rect[2], text_width("a") + TEXT_INSET * 2.0);
         assert!(wide.rect[2] > narrow.rect[2]);
     }
 
@@ -427,15 +500,16 @@ mod tests {
     }
 
     #[test]
-    fn the_overlay_marks_the_cursor_row() {
+    fn the_overlay_draws_the_plain_labels_and_no_marker_glyph() {
         let mut atlas = Atlas::new();
         let mut assets = Assets::new("no-such-root");
-        // Without the skin asset on disk only the rows come back: the panel degrades
-        // to text instead of failing the frame.
+        // Without the skin assets on disk only the rows come back: the panel degrades
+        // to text instead of failing the frame, and the engine's cursor is a skin, so a
+        // missing cursor skin costs the box but never the option text.
         let (sprites, texts) = overlay(&mut atlas, &mut assets, &options(2), 1);
         assert!(sprites.is_empty(), "no skin available in a bare root");
         assert_eq!(texts.len(), 2);
-        assert!(!texts[0].text.starts_with('\u{25b6}'));
-        assert!(texts[1].text.starts_with('\u{25b6}'));
+        assert_eq!(texts[0].text, "option 0");
+        assert_eq!(texts[1].text, "option 1");
     }
 }

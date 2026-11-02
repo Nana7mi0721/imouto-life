@@ -624,10 +624,19 @@ pub trait Host {
         let _ = (target, map, x, y, options);
     }
 
-    /// `160 Transition`.
-    fn transition(&mut self, kind: i32, flags: i32) {
+    /// `160 InstallTransition`: store the setting and load its mask.
+    ///
+    /// Installing draws nothing and does not block the script; the screen only
+    /// moves when `162` executes the setting.
+    fn transition_install(&mut self, kind: i32, flags: i32) {
         let _ = (kind, flags);
     }
+
+    /// `161 PrepareTransition`: freeze the screen that is currently drawn.
+    fn transition_prepare(&mut self) {}
+
+    /// `162 ExecuteTransition`: start the dissolve and block for its frames.
+    fn transition_execute(&mut self) {}
 
     /// `151 ChangeColor`: whole-screen colour multiplier.
     ///
@@ -868,16 +877,17 @@ pub struct InputState {
 
 /// Transition setting installed by opcode 160 and consumed by 161/162.
 ///
-/// `kind` is the transition type (`-1` = simple cut, the shipped default).
-/// `flags` packs the duration in its low byte and the "wait for the transition"
-/// bit at 0x1_0000 (the CE48 default is 0x0001_000A = wait, 10 frames). WOLF
-/// keeps one setting for the whole game: 160 replaces it, 161 prepares the screen
-/// freeze and 162 executes and blocks for the configured number of frames.
+/// `kind` is the transition type (`-1` = no mask, the shipped default).
+/// `flags` packs the duration in its low 16 bits and the "wait for the
+/// transition" bit at 0x1_0000 (the CE48 default is 0x0001_000A = wait, 10
+/// frames; `FUN_0045cdd0` stores `arg2 & 0xffff`). WOLF keeps one setting for
+/// the whole game: 160 replaces it, 161 prepares the screen freeze and 162
+/// executes and blocks for the configured number of frames.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct TransitionState {
-    /// Transition type from opcode 160, `-1` for a simple cut.
+    /// Transition type from opcode 160, `-1` for a simple dissolve without a mask.
     pub kind: i32,
-    /// Duration (low byte) and wait flag (bit 16).
+    /// Duration (low 16 bits) and wait flag (bit 16).
     pub flags: i32,
     /// True between 161 PrepareTransition and 162 ExecuteTransition.
     pub prepared: bool,
@@ -887,7 +897,7 @@ impl TransitionState {
     /// Frames 162 blocks for. The engine treats a zero duration as one frame.
     #[must_use]
     pub const fn frames(&self) -> u32 {
-        let frames = (self.flags & 0xFF) as u32;
+        let frames = (self.flags & 0xFFFF) as u32;
         if frames == 0 {
             1
         } else {
@@ -2102,7 +2112,7 @@ fn execute(
                 // 10 frames (docs/OPCODE_SPEC.md section 5.20).
                 transition.kind = arg(cmd, 0);
                 transition.flags = arg(cmd, 1);
-                host.transition(transition.kind, transition.flags);
+                host.transition_install(transition.kind, transition.flags);
                 inst.pc += 1;
                 None
             }
@@ -2110,7 +2120,7 @@ fn execute(
                 // PrepareTransition freezes the drawn screen while event
                 // processing continues. The host owns the actual freeze.
                 transition.prepared = true;
-                host.transition(transition.kind, transition.flags);
+                host.transition_prepare();
                 inst.pc += 1;
                 None
             }
@@ -2121,7 +2131,7 @@ fn execute(
                 // transition ten times too short.
                 transition.prepared = false;
                 let frames = transition.frames();
-                host.transition(transition.kind, transition.flags);
+                host.transition_execute();
                 inst.wait = WaitState::Frames(frames);
                 inst.pc += 1;
                 Some(Signal::Blocked)

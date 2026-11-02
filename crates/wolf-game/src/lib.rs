@@ -32,6 +32,7 @@ pub mod key;
 pub mod map_runtime;
 pub mod message;
 pub mod mods;
+pub mod overlay;
 pub mod patch;
 pub mod picture;
 pub mod savegame;
@@ -53,6 +54,7 @@ pub use game::{
     layered_data_path, Choices, FrameOutcome, Game, GameError, GameStats, Message, TITLE_EVENT,
 };
 pub use map_runtime::{MapRuntime, PageSlot, Trigger};
+pub use overlay::{OverlayLayer, ScreenOverlay};
 pub use picture::{Picture, PictureKind, Screen, ScreenQuad, UNCHANGED};
 pub use tilemap::{autotile_src, base_src, cull_range, TileMap, QUADRANT_PX, TILE_NUMBER, TILE_PX};
 pub use tint::ScreenTint;

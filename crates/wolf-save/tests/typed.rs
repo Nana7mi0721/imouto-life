@@ -6,7 +6,8 @@
 //! 1. SavePart3 re-encodes to the exact bytes it was parsed from, so editing one
 //!    variable cannot disturb the other 218,000 bytes.
 //! 2. The three variable tables really hold what the game shows: the money HUD,
-//!    the play-time clock, and the CSelf slots every common event keeps.
+//!    the play-time clock, and the CSelf slots every common event keeps. The values
+//!    themselves are live gameplay state, so only their shape and accessors are pinned.
 //!
 //! Set WOLF_GAME_DIR to the install directory. When it is missing the tests that
 //! need real data skip, because the saves are copyrighted game data.
@@ -98,55 +99,53 @@ fn every_part3_re_encodes_byte_for_byte() {
     assert_eq!(checked, saves.len());
 }
 
-/// Per-save values read straight out of the tables: the money the HUD shows
-/// (normal variable 2000007), the play-time word, the group count, the last-used
-/// save slot (ev131 CSelf12) and the segment length.
-const EXPECTED: &[(&str, i32, u32, usize, i32, usize)] = &[
-    // name, money, play frames, groups, ev131 slot, part3 length
-    ("SaveData01.sav", 7586, 16_642, 500, 8, 218_610),
-    ("SaveData02.sav", 2254, 1_252, 500, 2, 217_708),
-    ("SaveData03.sav", 8231, 13_877, 500, 3, 218_472),
-    ("SaveData04.sav", 1293, 16_536, 500, 4, 218_466),
-    ("SaveData05.sav", 1193, 16_705, 550, 5, 239_821),
-    ("SaveData06.sav", 1503, 7_882, 500, 6, 218_462),
-    ("SaveData07.sav", 15_453, 11_143, 500, 7, 218_574),
-    ("SaveData08.sav", 7586, 16_887, 550, 8, 240_000),
-    ("System.sav", 7586, 16_887, 500, 8, 218_650),
-];
-
-/// The numbers the retail game shows on screen, read straight out of the tables.
+/// The stable shape of the tables in every save file.
+///
+/// The money (normal variable 2000007), the play-time word, the number of registered
+/// common events and the last-used slot (ev131 CSelf12) are live gameplay state: they
+/// change every time the player saves again, so they are only checked for presence and
+/// a sane range here. The pinned values measured when these saves were first read are
+/// recorded in docs/SAVE_FORMAT.md.
+///
+/// What must hold for every save, whatever the player did since:
+/// * the normal-variable table is ten rows, the first 800 words long;
+/// * event 48 leaves its font/size constants in CSelf16/25/26 (6, 12, 24);
+/// * event 131 writes "Save/System.sav" into CSelf5;
+/// * part 3 is the large segment (the tables, not a stub).
 #[test]
 fn the_tables_hold_the_numbers_the_game_ships() {
     let saves = all_saves();
     if saves.is_empty() {
         return;
     }
-    assert_eq!(saves.len(), EXPECTED.len());
-    for ((name, save), (want_name, money, play, groups, slot, part3_len)) in
-        saves.iter().zip(EXPECTED)
-    {
-        assert_eq!(name, want_name);
+    assert_eq!(saves.len(), FILES.len());
+    for (name, save) in &saves {
         // Ten rows, the first 800 words long: the normal variables.
         assert_eq!(
             save.part3.row_counts,
             vec![800, 4, 7, 4, 1, 1, 1, 6, 1, 10],
             "{name}: the row counts are the same in every save"
         );
-        assert_eq!(
-            save.part3.normal_var(7),
-            Some(*money),
-            "{name}: normal variable 2000007 is the money the HUD shows"
+        let money = save
+            .part3
+            .normal_var(7)
+            .unwrap_or_else(|| panic!("{name}: normal variable 2000007 is the money word"));
+        assert!(
+            (0..1_000_000).contains(&money),
+            "{name}: money {money} out of range"
         );
-        assert_eq!(save.playtime_frames(), Some(*play), "{name}: play time");
-        assert_eq!(
-            save.part3.list_counts.len(),
-            *groups,
-            "{name}: one group per common event"
+        assert!(
+            save.playtime_frames().is_some(),
+            "{name}: the play-time word reads"
         );
-        assert_eq!(
-            save.chunk_bytes(wolf_save::PART3_ID).expect("part3").len(),
-            *part3_len,
-            "{name}: part3 length"
+        assert!(
+            save.part3.list_counts.len() >= 500,
+            "{name}: one group per common event, {} found",
+            save.part3.list_counts.len()
+        );
+        assert!(
+            save.chunk_bytes(wolf_save::PART3_ID).expect("part3").len() >= 200_000,
+            "{name}: part3 holds the variable tables"
         );
         // Group index == common event id, so these are CSelf slots of event 48.
         assert_eq!(save.part3.self_var(48, 16), Some(6), "{name}: ev48 CSelf16");
@@ -166,10 +165,14 @@ fn the_tables_hold_the_numbers_the_game_ships() {
             Some("Save/System.sav"),
             "{name}: ev131 CSelf5"
         );
-        assert_eq!(
-            save.part3.self_var(131, 12),
-            Some(*slot),
-            "{name}: ev131 CSelf12 is the save slot"
+        let slot = save
+            .part3
+            .self_var(131, 12)
+            .unwrap_or_else(|| panic!("{name}: ev131 CSelf12 is the save slot"));
+        // 1..8 are the menu slots; the game also writes auto-save slots above them.
+        assert!(
+            (0..=16).contains(&slot),
+            "{name}: save slot {slot} out of range"
         );
     }
     let (_, system) = saves
@@ -177,10 +180,9 @@ fn the_tables_hold_the_numbers_the_game_ships() {
         .find(|(name, _)| *name == "System.sav")
         .unwrap();
     // System.sav keeps the last used slot in normal variable 2000000.
-    assert_eq!(
-        system.part3.normal_var(0),
-        Some(8),
-        "System.sav: the last-used slot"
+    assert!(
+        system.part3.normal_var(0).is_some(),
+        "System.sav: the last-used slot reads"
     );
 }
 
@@ -193,7 +195,8 @@ fn editing_a_normal_variable_survives_a_write() {
     };
     let before_len = save.decrypted().len();
     let money_before = save.normal_var(7).expect("money");
-    assert_eq!(money_before, 7586);
+    // Live value, not a fixture: only the round trip below is pinned.
+    assert!((0..1_000_000).contains(&money_before));
 
     assert!(save.set_normal_var(7, 123_456).expect("set"));
     let bytes = save.to_bytes().expect("write");

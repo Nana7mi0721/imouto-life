@@ -35,6 +35,7 @@ use crate::atlas::{Atlas, SpriteQuad};
 use crate::auto_events::AutoEvents;
 use crate::db::Databases;
 use crate::map_runtime::MapRuntime;
+use crate::overlay::{OverlayLayer, ScreenOverlay};
 use crate::picture::{PictureKind, Screen, ANCHOR_CENTRE, SCREEN_H, SCREEN_W};
 use crate::tilemap::TileMap;
 use crate::tint::ScreenTint;
@@ -306,11 +307,11 @@ pub struct Game {
     pub vm: Vm,
     /// Live pictures, in WOLF draw order.
     pub screen: Screen,
-    /// Whole-screen colour multiplier from `151 ChangeColor`. Neutral unless a map event
-    /// is flashing or darkening the map and the screen-layer pictures.
+    /// Whole-screen colour state from `151 ChangeColor`: a brightness ramp for the map
+    /// and screen-layer pictures, plus a fading full-screen colour quad for a flash.
     pub screen_tint: ScreenTint,
-    /// Whole-screen transition fade from `160`/`161`/`162`. Neutral (brightness 1.0)
-    /// unless a `kind >= 0` transition is running; a `kind -1` hard cut leaves it neutral.
+    /// Transition installed by `160` and run by `161`/`162`. Inactive unless `162` starts
+    /// a dissolve; `160` on its own (CE48) draws nothing.
     pub screen_transition: ScreenTransition,
     /// Real glyph advances for text-picture anchors, when the host has loaded the game's
     /// font. `None` keeps the testable half-em fallback in [`crate::textpic`].
@@ -1140,10 +1141,47 @@ impl Game {
         quads
     }
 
-    /// The `151` colour multiplier as RGB, `[1, 1, 1]` when nothing is tinting the screen.
+    /// The `151` brightness multiplier as RGB, `[1, 1, 1]` when nothing tints the screen.
     #[must_use]
     pub fn screen_tint_rgb(&self) -> [f32; 3] {
         self.screen_tint.rgb()
+    }
+
+    /// Whole-screen overlays to draw after the scene, bottom to top.
+    ///
+    /// * A `151` flash is a solid colour quad fading out over its frames
+    ///   (`FUN_004c25f0`); its alpha decays from 1 to 0.
+    /// * A running `160`/`161`/`162` transition draws the frame frozen by `161` over
+    ///   the new scene (`FUN_004c28d0`), fading from 1 to 0 over the duration.
+    ///
+    /// The retail engine draws both after the scene with SetDrawBright reset, so they
+    /// cover the HUD too and are never multiplied into a sprite tint. The host is
+    /// expected to composite them after text, right before presenting.
+    #[must_use]
+    pub fn screen_overlays(&self) -> Vec<ScreenOverlay> {
+        let mut overlays = Vec::new();
+        if let Some((colour, alpha)) = self.screen_tint.flash_overlay() {
+            overlays.push(ScreenOverlay {
+                layer: OverlayLayer::Colour(colour),
+                alpha,
+            });
+        }
+        if self.screen_transition.is_active() {
+            overlays.push(ScreenOverlay {
+                layer: OverlayLayer::FrozenFrame,
+                alpha: self.screen_transition.alpha(),
+            });
+        }
+        overlays
+    }
+
+    /// Takes the pending freeze request from a `161 PrepareTransition`.
+    ///
+    /// The host copies the composited frame into the renderer's frozen texture when this
+    /// returns true, before it draws the next frame.
+    #[must_use]
+    pub fn take_freeze_request(&mut self) -> bool {
+        self.screen_transition.take_freeze_request()
     }
 
     /// Folds any asset-name fallbacks taken while building this frame into diagnostics.
@@ -1156,30 +1194,23 @@ impl Game {
         }
     }
 
-    /// Multiplies each quad's tint by the screen tint and the transition fade.
+    /// Multiplies each quad's tint by the `151` brightness multiplier.
     ///
-    /// The 151 tint only touches the map and the negative-numbered screen-layer
-    /// pictures (`screen_layers_only`); the 160/162 transition fade is a whole-screen
-    /// overlay, so it dims *every* quad including the HUD, exactly as a screen wipe
-    /// would. Both are skipped while neutral so the common case stays a no-op.
+    /// Only the map and the negative-numbered screen-layer pictures are affected
+    /// (`screen_layers_only`): the retail engine resets SetDrawBright for the HUD. The
+    /// transition and the flash are whole-screen overlays drawn after the scene, so they
+    /// are *not* folded in here -- see [`Self::screen_overlays`]. Skipped while neutral so
+    /// the common case stays a no-op.
     fn apply_screen_tint(&self, quads: &mut [SpriteQuad], screen_layers_only: bool) {
         let tint = self.screen_tint.rgb();
-        let tint_on = tint != [1.0, 1.0, 1.0];
-        let fade = self.screen_transition.brightness();
-        let fade_on = fade < 1.0;
-        if !tint_on && !fade_on {
+        if tint == [1.0, 1.0, 1.0] {
             return;
         }
         for quad in quads {
-            if tint_on && (!screen_layers_only || quad.number < 0) {
+            if !screen_layers_only || quad.number < 0 {
                 quad.tint[0] *= tint[0];
                 quad.tint[1] *= tint[1];
                 quad.tint[2] *= tint[2];
-            }
-            if fade_on {
-                quad.tint[0] *= fade;
-                quad.tint[1] *= fade;
-                quad.tint[2] *= fade;
             }
         }
     }
@@ -1952,7 +1983,7 @@ impl Game {
         // A `151 ChangeColor` ramp advances one frame at a time, alongside the picture
         // slides it shares the screen with.
         self.screen_tint.tick();
-        // A `160`/`162` transition fade advances one frame at a time on the same clock.
+        // A `162` transition dissolve advances one frame at a time on the same clock.
         self.screen_transition.tick();
         // Sys12 (文章の表示 実行中？) is the engine's flag, not a script variable: a
         // scan of all 550 common events finds 7 reads and zero writes, and common
@@ -2731,23 +2762,39 @@ impl Host for GameHost<'_> {
         self.screen_tint.set(colour, frames);
     }
 
-    fn transition(&mut self, kind: i32, flags: i32) {
-        // The low byte of `flags` is the animation length in frames; the engine treats
-        // zero as one frame (docs/OPCODE_SPEC.md section 5.20), matching TransitionState.
-        let frames = (flags & 0xFF) as u32;
-        if kind < 0 {
-            // The only shipped call (CE48 pc145) is [-1, 65546]: a hard cut, no mask.
-            self.screen_transition.cancel();
-            self.note(format!(
-                "160/162 Transition: kind {kind} flags {flags} (hard cut, no mask)"
-            ));
+    fn transition_install(&mut self, kind: i32, flags: i32) {
+        // 160 stores the setting and loads the mask; it draws nothing and does not
+        // block. The duration is `flags & 0xffff` (FUN_0045cdd0), the wait bit is
+        // 0x1_0000, and `kind < 0` means "no mask" (the only shipped call, CE48 pc145
+        // [-1, 65546], is a 10-frame dissolve without one).
+        self.screen_transition.install(kind, flags);
+        let mask = if self.screen_transition.wants_mask() {
+            "mask not drawn, uniform dissolve"
         } else {
-            // 160/161/162 all call this; the last call from 162 restarts the ramp at its
-            // first frame, so the fade is timed from the execute and blocked for `frames`.
-            self.screen_transition.start(kind, frames);
+            "no mask"
+        };
+        self.note(format!(
+            "160 InstallTransition: kind {kind} flags {flags:#x} ({} frame(s), {mask})",
+            self.screen_transition.duration()
+        ));
+    }
+
+    fn transition_prepare(&mut self) {
+        // 161 copies the composited screen into the engine's old-frame graph; the host
+        // takes the request at the start of the next frame and freezes the frame texture.
+        self.screen_transition.prepare();
+        self.note("161 PrepareTransition: freezing the current frame".to_owned());
+    }
+
+    fn transition_execute(&mut self) {
+        // 162 starts the dissolve and the interpreter blocks for the duration. An execute
+        // while one is already running is ignored (FUN_0045ceb0 keeps the one in flight).
+        let running = self.screen_transition.is_active();
+        self.screen_transition.execute();
+        if !running {
             self.note(format!(
-                "160/162 Transition: kind {kind} flags {flags} (fade {} frame(s))",
-                frames.max(1)
+                "162 ExecuteTransition: dissolving over {} frame(s)",
+                self.screen_transition.duration()
             ));
         }
     }

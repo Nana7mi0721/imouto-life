@@ -810,6 +810,7 @@ impl ApplicationHandler for App {
         renderer.draw(&self.sprites);
         let items = self.build_text_items();
         renderer.draw_text(&items);
+        renderer.set_overlays(&crate::render_overlays(&self.game));
         self.window = Some(window);
         self.renderer = Some(renderer);
         self.next_frame = Instant::now() + FRAME_TIME;
@@ -977,9 +978,17 @@ impl ApplicationHandler for App {
             WindowEvent::RedrawRequested => {
                 if let Some(mut renderer) = self.renderer.take() {
                     self.upload_if_needed(&mut renderer);
+                    // 161 PrepareTransition: the frame texture still holds the previously
+                    // presented frame, so freeze it before this frame's pass clears it.
+                    if self.game.take_freeze_request() {
+                        renderer.freeze();
+                    }
                     renderer.draw(&self.sprites);
                     let items = self.build_text_items();
                     renderer.draw_text(&items);
+                    // Overlays are replaced every frame: a flash or dissolve that ended
+                    // must stop drawing, and a frozen frame stays only while it is listed.
+                    renderer.set_overlays(&crate::render_overlays(&self.game));
                     renderer.present();
                     self.renderer = Some(renderer);
                 }

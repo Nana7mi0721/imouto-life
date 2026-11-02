@@ -9,7 +9,7 @@
 //!   * the hit test (Game::choice_row_at) agrees with the geometry the renderer
 //!     draws (choice::layout_at_sized): the centre of every row maps back to that
 //!     row, the panel padding and points off the panel map to nothing, and the
-//!     row pitch is exactly choice::LINE_HEIGHT;
+//!     row pitch is exactly choice::line_pitch(20.0);
 //!   * a real left click (moved onto the row, then a press edge held for a while so
 //!     a single-frame poll can never miss it) lands on the intended branch for all
 //!     six rows, and the "0" debug row leaves the menu without breaking anything;
@@ -193,12 +193,12 @@ fn hover_hit_test_matches_anchor_row_pitch_and_padding() {
 
     let lines = row_rects(&game);
     assert_eq!(lines.len(), 6, "six option rows");
-    // Uniform row pitch: consecutive rows are exactly one LINE_HEIGHT apart.
+    // Uniform row pitch: consecutive rows are exactly one line pitch apart.
     for window in lines.windows(2) {
         assert_eq!(
             window[1][1] - window[0][1],
-            wolf_game::choice::LINE_HEIGHT,
-            "row pitch equals choice::LINE_HEIGHT"
+            wolf_game::choice::line_pitch(20.0),
+            "row pitch equals choice::line_pitch(20.0)"
         );
     }
 

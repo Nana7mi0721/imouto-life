@@ -33,6 +33,7 @@
 
 mod diff;
 mod error;
+mod overlay;
 mod renderer;
 mod scaler;
 mod sprite;
@@ -40,6 +41,10 @@ mod text;
 
 pub use diff::{compare, diff_image, rgba_at, DiffReport, WorstPixel, DIFF_GAIN, WORST_LIMIT};
 pub use error::RenderError;
+pub use overlay::{
+    overlay_instances, OverlayKind, ScreenOverlay, INITIAL_OVERLAY_CAPACITY, OVERLAY_RECT,
+    OVERLAY_UV,
+};
 pub use renderer::{Renderer, FRAME_FORMAT};
 pub use scaler::{fit_scale, integer_scale, FitScaler, ScaleMode, Scaler, LOGICAL_H, LOGICAL_W};
 pub use sprite::SpriteInstance;

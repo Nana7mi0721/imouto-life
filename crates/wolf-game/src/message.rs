@@ -39,8 +39,16 @@ pub const FPS: f32 = 60.0;
 /// Sys8 as common event 48 leaves it in this game.
 pub const DEFAULT_FONT_PX: f32 = 20.0;
 
-/// Game.dat text_line_spacing, added to Sys8 to get the line pitch.
+/// Game.dat text_line_spacing: the spacing is scaled by the base font size before it is
+/// added to Sys8, so a 16 px base font turns the configured 6 into 3 px (see
+/// `line_height`).
 pub const LINE_GAP: f32 = 6.0;
+
+/// Game.dat's base font size, the divisor the line spacing is scaled by.
+///
+/// The engine multiplies the configured spacing by `min(base, 32) / 32` (FUN_004c2d50),
+/// so the base size matters even though the game never reads it back at run time.
+pub const BASE_FONT_PX: f32 = 16.0;
 
 /// Sys9 as common event 48 leaves it: characters per second.
 pub const DEFAULT_CHARS_PER_SECOND: i32 = 500;
@@ -117,10 +125,14 @@ pub fn default_origin(screen_w: f32, screen_h: f32) -> (f32, f32) {
     )
 }
 
-/// Line advance in pixels for a font size: Sys8 + Game.dat text_line_spacing.
+/// Line advance in pixels for a font size: Sys8 + the scaled text_line_spacing.
+///
+/// The engine adds `trunc(spacing * min(base, 32) / 32)` (FUN_004c2d50), which is 3 px
+/// for this game's 6 px spacing at the 16 px base font, not the full 6 px. The retail
+/// message window measures 23 px between rows at Sys8 = 20, matching the scaled value.
 #[must_use]
 pub fn line_height(font_px: f32) -> f32 {
-    font_px + LINE_GAP
+    font_px + (LINE_GAP * BASE_FONT_PX.min(32.0) / 32.0).trunc()
 }
 
 /// The system variables the message window reads.
@@ -535,7 +547,8 @@ fn styled_lines(items: &[Item], wrap_width: f32) -> Vec<StyledLine> {
 /// makes them overlap. This keeps the per-character size, colour and outline instead.
 ///
 /// The laws, measured in docs/OPCODE_101.md:
-/// * a row is as tall as its tallest glyph plus LINE_GAP, so a bigger escape grows the row;
+/// * a row is as tall as its tallest glyph plus the scaled text_line_spacing, so a bigger
+///   escape grows the row;
 /// * alignment is measured against the wrap width and resets to the left at a hard break;
 /// * the typewriter counts plain characters only, so a soft wrap is free and a cut can land
 ///   in the middle of a styled run, which is then split.
@@ -683,9 +696,10 @@ mod tests {
     }
 
     #[test]
-    fn the_line_pitch_is_the_font_size_plus_the_game_dat_spacing() {
-        assert_eq!(line_height(20.0), 26.0);
-        assert_eq!(line_height(14.0), 20.0);
+    fn the_line_pitch_scales_the_game_dat_spacing_by_the_base_font() {
+        // spacing 6 * min(base 16, 32) / 32 = 3 px of gap on top of Sys8.
+        assert_eq!(line_height(20.0), 23.0);
+        assert_eq!(line_height(14.0), 17.0);
     }
 
     #[test]
@@ -709,8 +723,8 @@ mod tests {
         vars.width = Some(20.0);
         let layout = layout("甲乙", &vars, 0);
         assert_eq!(layout.rows.len(), 2);
-        assert_eq!(layout.rows[0].rect, [64.0, 410.0, 20.0, 26.0]);
-        assert_eq!(layout.rows[1].rect[1], 436.0);
+        assert_eq!(layout.rows[0].rect, [64.0, 410.0, 20.0, 23.0]);
+        assert_eq!(layout.rows[1].rect[1], 433.0);
     }
 
     #[test]
@@ -857,19 +871,19 @@ mod tests {
         assert_eq!(styled.runs[1].font_px, 30.0);
         // The second run starts where the first ended: 64 + the 10px-wide glyph.
         assert_eq!(styled.runs[1].rect[0], 74.0);
-        // The row is as tall as its tallest glyph plus the game.dat spacing.
-        assert_eq!(styled.rows[0].rect[3], 36.0);
-        assert_eq!(styled.runs[0].rect[3], 36.0);
+        // The row is as tall as its tallest glyph plus the scaled game.dat spacing.
+        assert_eq!(styled.rows[0].rect[3], 33.0);
+        assert_eq!(styled.runs[0].rect[3], 33.0);
     }
 
     #[test]
     fn the_font_size_escape_grows_the_row_pitch() {
         let styled = styled_with(r"\f[40]甲", &vars(), 0);
         assert_eq!(styled.runs[0].font_px, 40.0);
-        assert_eq!(styled.rows[0].rect[3], 46.0);
+        assert_eq!(styled.rows[0].rect[3], 43.0);
         // The layout keeps reporting the base Sys8 size and pitch, like the plain pass.
         assert_eq!(styled.font_px, DEFAULT_FONT_PX);
-        assert_eq!(styled.line_height, 26.0);
+        assert_eq!(styled.line_height, 23.0);
     }
 
     #[test]
@@ -881,9 +895,9 @@ mod tests {
         assert_eq!(styled.rows.len(), 2);
         assert_eq!(styled.rows[0].text, "一二三");
         assert_eq!(styled.rows[1].text, "四");
-        assert_eq!(styled.rows[1].rect[1], 436.0);
+        assert_eq!(styled.rows[1].rect[1], 433.0);
         // A wrapped row starts at the text origin, not at the row above's end.
-        assert_eq!(styled.runs[1].rect, [64.0, 436.0, 20.0, 26.0]);
+        assert_eq!(styled.runs[1].rect, [64.0, 433.0, 20.0, 23.0]);
     }
 
     #[test]
@@ -936,7 +950,7 @@ mod tests {
         let styled = styled_with("<R>ab\ncd", &vars(), 0);
         assert_eq!(styled.runs[0].rect[0], 64.0 + 180.0);
         assert_eq!(styled.runs[1].rect[0], 64.0);
-        assert_eq!(styled.runs[1].rect[1], 436.0);
+        assert_eq!(styled.runs[1].rect[1], 433.0);
     }
 
     #[test]

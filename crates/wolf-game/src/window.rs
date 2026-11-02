@@ -60,6 +60,21 @@ pub struct WindowPiece {
 /// a zero-width quad draw the same nothing).
 #[must_use]
 pub fn nine_slice(dst: [f32; 4], skin_w: u32, skin_h: u32) -> Vec<WindowPiece> {
+    nine_slice_cornered(dst, skin_w, skin_h, CORNER)
+}
+
+/// [nine_slice] with an explicit frame thickness.
+///
+/// The choice cursor uses its own 12x12 skin (SystemFile/CursorBase.png) whose frame is
+/// 4 texels, not the window skin's 3. The engine keeps one corner size per picture and
+/// stretches each with the same routine, so no second algorithm is needed.
+#[must_use]
+pub fn nine_slice_cornered(
+    dst: [f32; 4],
+    skin_w: u32,
+    skin_h: u32,
+    corner: u32,
+) -> Vec<WindowPiece> {
     let mut pieces = Vec::with_capacity(9);
     if skin_w == 0 || skin_h == 0 {
         return pieces;
@@ -72,8 +87,8 @@ pub fn nine_slice(dst: [f32; 4], skin_w: u32, skin_h: u32) -> Vec<WindowPiece> {
     }
     // Skin columns: 0..cw, cw..skin_w-cw, skin_w-cw..skin_w. A skin narrower than
     // twice the frame has no middle column, and the frame shrinks to fit.
-    let cw = CORNER.min(skin_w / 2);
-    let ch = CORNER.min(skin_h / 2);
+    let cw = corner.min(skin_w / 2);
+    let ch = corner.min(skin_h / 2);
     let cols = split(skin_w, cw);
     let rows = split(skin_h, ch);
     // Destination columns: corners keep their pixel size unless the box is too

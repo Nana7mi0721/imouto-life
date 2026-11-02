@@ -298,7 +298,9 @@ FUN_00526390(0,0,DAT_0084b230,DAT_0084b234,col);    // = DrawBox / 整屏填充�
 > TODO（未闭合）：`FUN_004bf5b0` 里 `param_2/param_3` 两个分支（`FUN_005160d0(2,0xff)` vs 直接 SetDrawBright）
 > 分别对应"窗口/地图层"与"HUD"，具体哪层用哪个分支没有逐调用点确认；但两者都是 draw state，不改变"先 tint 后 fade"。
 
-## 5. 对照仓内实现（只评估，不改代码）
+## 5. 对照仓内实现（落地前 → 落地后）
+
+### 5.1 落地前的仓内实现（历史，2026-11-02 之前）
 
 | 项 | 仓内现状 | 原版实测 | 差异/建议 |
 |---|---|---|---|
@@ -312,17 +314,21 @@ FUN_00526390(0,0,DAT_0084b230,DAT_0084b234,col);    // = DrawBox / 整屏填充�
 | 151 作用域 | 只乘 `quad.number < 0` 与地图层（`game.rs:1165 apply_screen_tint`） | tint 是 draw-bright 全局状态，作用于**之后画的所有 sprite**（含窗口/HUD，除非该层被显式复位） | **可能过窄**。`FUN_004bf5b0` 有两个分支（含 `SetDrawBlendMode(2,0xff)` 的 HUD 路径），说明至少还有"不受 tint"的分支存在；仓内"仅画面层"是否等价未证实 |
 | tint × fade | 同一个 `apply_screen_tint` 里把 tint、fade **逐 quad 相乘** | 两阶段：tint 在 sprite 上，fade 是之后的一层 overlay，且 overlay 前 SetDrawBright 被复位 | **应该改**：fade 不应乘以 tint（也不该乘到 HUD 的 `quad.tint` 上）；理想实现是"先画带 tint 的场景 → 再画一层 mask/alpha 的旧帧 overlay" |
 
-### 建议的代码动作（**未执行**，留给 lead 决策）
+### 5.2 落地后的实现（**已执行**，2026-11-02）
 
-1. `transition.rs`：把 `brightness()` 的三角波改成单程 `alpha = 1 - progress`（或 `progress`，取决于"溶解方向"，
-   原版无掩膜分支是 `alpha = elapsed/duration`，从 255 降到 0，即"旧画面逐渐消失"）。
-   并更新 `start()` 的注释："kind<0 = 无掩膜交叉溶解，不是 hard cut"。
-2. `game.rs:2734`：`flags & 0xFF` → `flags & 0xffff`；把 `0x10000` wait 位纳入 `transition()`。
-3. `game.rs:1165 apply_screen_tint`：把 fade 从"逐 quad 乘 `quad.tint`"改成"独立的整屏 overlay 阶段"，
-   且 overlay 不再乘 tint。
-4. `tint.rs`：`channel()` 改为 `clamp(1.0 + (p-100)/100, ...)` 语义（等价于 `clamp(p/100, 0, 1)` 之外还要考虑
-   DxLib 的 255 上限）、flash 从三角波改成单向衰减 overlay。**这会改变现有测试期望**（`tests/screen_tint.rs`、
-   `tint.rs` 单测里 flash 峰值断言），需同步改测试。
+四项建议动作已全部落地，另补了渲染侧 overlay：
+
+| # | 动作 | 落点 | 现在的语义 |
+|---|---|---|---|
+| 1 | 过渡改单程溶解 | `crates/wolf-game/src/transition.rs` | `ScreenTransition{kind,flags,duration,remaining,active,freeze_requested}`；`install()` 只存参数（160）、`prepare()` 请求冻结（161）、`execute()` 起跑并置 `remaining=duration`（162）；`alpha()=remaining/duration`，旧帧不透明度 1.0→0.0 线性下降；`kind<0` 与 `kind>=0` 走同一均匀溶解（掩膜未实现，本作不用）。三角波整体删除。 |
+| 2 | flags 低 16 位 + 三阶段 Host | `crates/wolf-vm/src/exec.rs`、`crates/wolf-game/src/game.rs` | `TransitionState::frames() = flags & 0xffff`；Host trait 由单个 `transition()` 拆成 `transition_install/prepare/execute`，与 160/161/162 一一对应；162 仍阻塞 `frames` 帧（RE：`FUN_0045ceb0` 起跑恒 return true），wait 位不建模（本作恒 1）。 |
+| 3 | fade 从 tint 里拆出 | `crates/wolf-game/src/game.rs`、`crates/wolf-game/src/overlay.rs`、`crates/wolf-render/src/overlay.rs`、`crates/wolf-cli/src/main.rs`、`crates/wolf-cli/src/play.rs` | `apply_screen_tint()` 只乘 151 亮度（不再逐 quad 乘 fade）；整屏效果改由 `Game::screen_overlays()` 输出 `ScreenOverlay{Colour,FrozenFrame}`，渲染器在 text pass 之后、present 之前按序合成；161 的冻结请求经 `Game::take_freeze_request()` 交给 `Renderer::freeze()`（必须在上一帧 present 之后调用）。 |
+| 4 | 151 改为 DxLib draw-bright + flash overlay | `crates/wolf-game/src/tint.rs` | 普通 151：`rgb = clamp(255+(p-100)*255/100,0,255)/255`，p≥100 钳到中性（不再是百分比乘子）；bit24 flash：独立整屏色块，颜色取同一钳顶公式（`0x0196C896` → 纯白），alpha=remaining/duration 单向衰减，不改 ramp。整数换算复刻 C 的向零截断（40%→102/255、30%→77/255、50%→128/255）。 |
+
+测试同步：`crates/wolf-game/src/transition.rs` 9 个单测、`crates/wolf-game/src/tint.rs` 8 个单测、
+`crates/wolf-game/tests/m3_visual_text.rs::screen_transition_and_tint_state_machines`、
+`crates/wolf-game/tests/screen_tint.rs::screen_tint_scales_the_tile_layer`；
+`crates/wolf-render` 新增 6 个 overlay 单测 + 2 个 GPU 离屏用例（整屏色块覆盖、冻结帧按 alpha 还原）。
 
 ## 6. 未闭合项（TODO）
 

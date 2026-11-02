@@ -27,6 +27,7 @@ use winit::dpi::PhysicalSize;
 use winit::window::Window;
 
 use crate::error::RenderError;
+use crate::overlay::{overlay_instances, OverlayKind, ScreenOverlay, INITIAL_OVERLAY_CAPACITY};
 use crate::scaler::{fit_scale, FitScaler, ScaleMode, Scaler, LOGICAL_H, LOGICAL_W};
 use crate::sprite::{SpriteInstance, INSTANCE_ATTRS};
 use crate::text::{TextItem, TextRenderer, TextStats};
@@ -134,6 +135,23 @@ pub struct Renderer {
     instance_capacity: u32,
     /// How many instances the last `draw` queued.
     instance_count: u32,
+
+    /// Whole-screen overlays queued by `set_overlays`, in draw order.
+    overlays: Vec<ScreenOverlay>,
+    /// Vertex buffer for the overlays. Separate from `instance_buffer` because
+    /// one overlay binds one texture, so they cannot share a single draw.
+    overlay_buffer: wgpu::Buffer,
+    /// Capacity of `overlay_buffer` in instances (not bytes).
+    overlay_capacity: u32,
+    /// How many overlays the last `set_overlays` queued.
+    overlay_count: u32,
+    /// 1x1 white texel bound for `OverlayKind::Colour`: the instance tint then
+    /// supplies the colour, exactly like a tinted sprite.
+    overlay_white_bind: wgpu::BindGroup,
+    /// Snapshot of `frame` taken by `freeze`, created lazily.
+    frozen: Option<wgpu::Texture>,
+    /// Atlas-style bind group over `frozen` (same layout and sampler as the atlas).
+    frozen_bind: Option<wgpu::BindGroup>,
 
     /// Glyph pass. `None` until a font is installed, so a renderer used for
     /// sprites only never parses a font or allocates a glyph atlas.
@@ -386,6 +404,40 @@ impl Renderer {
             make_atlas_bind(&device, &atlas_layout, &view, &atlas_sampler)
         };
 
+        // Whole-screen overlays bind a texture through the atlas layout, but
+        // neither of the two they need is the atlas itself. The white texel is
+        // enough for `OverlayKind::Colour` (the instance tint is the colour);
+        // the frozen frame gets its bind group when `freeze` first runs.
+        let overlay_white_bind = {
+            let white = device.create_texture_with_data(
+                &queue,
+                &wgpu::TextureDescriptor {
+                    label: Some("wolf-render overlay white"),
+                    size: wgpu::Extent3d {
+                        width: 1,
+                        height: 1,
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: FRAME_FORMAT,
+                    usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                    view_formats: &[],
+                },
+                wgpu::util::TextureDataOrder::LayerMajor,
+                &[255u8, 255, 255, 255],
+            );
+            let view = white.create_view(&wgpu::TextureViewDescriptor::default());
+            make_sampled_bind(
+                &device,
+                "wolf-render overlay white bind",
+                &atlas_layout,
+                &view,
+                &atlas_sampler,
+            )
+        };
+
         let sprite_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("wolf-render sprite layout"),
@@ -585,6 +637,13 @@ impl Renderer {
             mapped_at_creation: false,
         });
 
+        let overlay_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("wolf-render overlay instances"),
+            size: INITIAL_OVERLAY_CAPACITY as u64 * SpriteInstance::SIZE as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
         let scaler = Scaler::new(size.width, size.height);
 
         Ok(Self {
@@ -611,6 +670,13 @@ impl Renderer {
             instance_buffer,
             instance_capacity: INITIAL_INSTANCE_CAPACITY,
             instance_count: 0,
+            overlays: Vec::new(),
+            overlay_buffer,
+            overlay_capacity: INITIAL_OVERLAY_CAPACITY as u32,
+            overlay_count: 0,
+            overlay_white_bind,
+            frozen: None,
+            frozen_bind: None,
             text: None,
             text_items: Vec::new(),
             text_stats: TextStats::default(),
@@ -901,6 +967,132 @@ impl Renderer {
         self.instance_count = sprites.len() as u32;
     }
 
+    /// Snapshot the current logical frame for [`OverlayKind::Frozen`].
+    ///
+    /// Opcodes 160/161/162 freeze the *drawn* screen while the script keeps
+    /// running, so the game calls this when the transition starts and then
+    /// draws a [`ScreenOverlay::frozen`] over the new frame. The texture is
+    /// created on the first call and refreshed on every later one.
+    ///
+    /// Call this after the `present` whose frame should be kept: the snapshot
+    /// is of the logical frame as last presented (the frame texture is cleared
+    /// at the start of every `present`, so a call between `draw` and `present`
+    /// still captures the previous frame).
+    ///
+    /// The copy is submitted immediately rather than folded into the next
+    /// `present`: `present` clears the logical frame before drawing, so a
+    /// deferred copy would snapshot the *new* frame instead of the old one.
+    pub fn freeze(&mut self) {
+        if self.frozen.is_none() {
+            let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("wolf-render frozen frame"),
+                size: wgpu::Extent3d {
+                    width: LOGICAL_W,
+                    height: LOGICAL_H,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: FRAME_FORMAT,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+            self.frozen_bind = Some(make_sampled_bind(
+                &self.device,
+                "wolf-render frozen bind",
+                &self.atlas_layout,
+                &view,
+                &self.atlas_sampler,
+            ));
+            self.frozen = Some(texture);
+        }
+
+        let frozen = self.frozen.as_ref().expect("frozen texture just created");
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("wolf-render freeze"),
+            });
+        // Same format and size, so a straight texture-to-texture copy is legal
+        // and byte-exact: the frozen frame is the frame, not a filtered version.
+        encoder.copy_texture_to_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.frame,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyTextureInfo {
+                texture: frozen,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::Extent3d {
+                width: LOGICAL_W,
+                height: LOGICAL_H,
+                depth_or_array_layers: 1,
+            },
+        );
+        self.queue.submit(Some(encoder.finish()));
+    }
+
+    /// Queue whole-screen overlays for the next `present`, replacing the list.
+    ///
+    /// Every overlay becomes one full-canvas instance. They live in their own
+    /// vertex buffer and are drawn one at a time after the sprite batch and the
+    /// text pass, because each kind binds a different texture and a single
+    /// `draw` can only sample one.
+    pub fn set_overlays(&mut self, overlays: &[ScreenOverlay]) {
+        self.overlays.clear();
+        self.overlays.extend_from_slice(overlays);
+        self.overlay_count = 0;
+        if overlays.is_empty() {
+            return;
+        }
+
+        let instances = overlay_instances(overlays);
+        let bytes: &[u8] = bytemuck::cast_slice(&instances);
+        if overlays.len() as u32 > self.overlay_capacity {
+            // Same power-of-two growth as the sprite batch; the capacity starts
+            // at eight, which already covers every effect the engine has.
+            let capacity = overlays
+                .len()
+                .next_power_of_two()
+                .max(INITIAL_OVERLAY_CAPACITY) as u32;
+            self.overlay_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("wolf-render overlay instances"),
+                size: u64::from(capacity) * SpriteInstance::SIZE as u64,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            self.overlay_capacity = capacity;
+        }
+
+        self.queue.write_buffer(&self.overlay_buffer, 0, bytes);
+        self.overlay_count = overlays.len() as u32;
+    }
+
+    /// Overlays queued by the last [`Renderer::set_overlays`].
+    #[must_use]
+    pub fn overlays(&self) -> &[ScreenOverlay] {
+        &self.overlays
+    }
+
+    /// How many overlays the next `present` will draw.
+    #[must_use]
+    pub fn overlay_count(&self) -> u32 {
+        self.overlay_count
+    }
+
+    /// Whether [`Renderer::freeze`] has produced a frozen frame to sample.
+    #[must_use]
+    pub fn has_frozen_frame(&self) -> bool {
+        self.frozen.is_some()
+    }
+
     /// Render the queued batch and put it on screen.
     ///
     /// Surface errors are handled, not returned: a 2D game has nothing useful
@@ -995,6 +1187,27 @@ impl Renderer {
                 if let Err(err) = text.render(&mut pass) {
                     self.text_error = Some(err.to_string());
                 }
+            }
+            // Whole-screen overlays come last: above the sprites and above the
+            // glyphs, but still inside the logical pass, so the blit and
+            // `capture_rgba` see exactly what the window shows. One draw per
+            // overlay (instance `i`) because each binds its own texture; the
+            // instance data is already in `overlay_buffer` from `set_overlays`.
+            for (index, overlay) in self.overlays.iter().enumerate() {
+                let bind = match overlay.kind {
+                    OverlayKind::Colour => &self.overlay_white_bind,
+                    OverlayKind::Frozen => match self.frozen_bind.as_ref() {
+                        Some(bind) => bind,
+                        // No freeze() yet: there is no old screen to fade, and
+                        // substituting black would draw a different effect.
+                        None => continue,
+                    },
+                };
+                pass.set_pipeline(&self.sprite_pipeline);
+                pass.set_bind_group(0, &self.sprite_screen_bind, &[]);
+                pass.set_bind_group(1, bind, &[]);
+                pass.set_vertex_buffer(0, self.overlay_buffer.slice(..));
+                pass.draw(0..4, index as u32..index as u32 + 1);
             }
         }
 
@@ -1293,14 +1506,20 @@ fn request_device(adapter: &wgpu::Adapter) -> Result<(wgpu::Device, wgpu::Queue)
     .map_err(|e: wgpu::RequestDeviceError| RenderError::DeviceRequest(e.to_string()))
 }
 
-fn make_atlas_bind(
+/// Atlas-style bind group: binding 0 = texture, binding 1 = sampler.
+///
+/// Shared by the sprite atlas, the overlay's white texel and the frozen frame,
+/// which is why the layout and sampler are arguments rather than fields read
+/// here: one layout serves all three textures.
+fn make_sampled_bind(
     device: &wgpu::Device,
+    label: &str,
     layout: &wgpu::BindGroupLayout,
     view: &wgpu::TextureView,
     sampler: &wgpu::Sampler,
 ) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("wolf-render atlas bind"),
+        label: Some(label),
         layout,
         entries: &[
             wgpu::BindGroupEntry {
@@ -1315,9 +1534,92 @@ fn make_atlas_bind(
     })
 }
 
+fn make_atlas_bind(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    view: &wgpu::TextureView,
+    sampler: &wgpu::Sampler,
+) -> wgpu::BindGroup {
+    make_sampled_bind(device, "wolf-render atlas bind", layout, view, sampler)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Offscreen renderer or skip, the same convention as `tests/offscreen.rs`:
+    /// a machine without a driver must not report the renderer as broken.
+    fn offscreen_or_skip() -> Option<Renderer> {
+        match Renderer::new_offscreen() {
+            Ok(renderer) => Some(renderer),
+            Err(err) => {
+                eprintln!("skipping GPU test: {err}");
+                None
+            }
+        }
+    }
+
+    fn frame_pixel(pixels: &[u8], x: u32, y: u32) -> [u8; 4] {
+        let i = ((y * LOGICAL_W + x) * 4) as usize;
+        [pixels[i], pixels[i + 1], pixels[i + 2], pixels[i + 3]]
+    }
+
+    /// End-to-end: an overlay must land in `frame` (and therefore in both the
+    /// blit and `capture_rgba`), even when `draw` queued nothing at all.
+    #[test]
+    fn a_colour_overlay_covers_the_frame_without_a_sprite_batch() {
+        let Some(mut renderer) = offscreen_or_skip() else {
+            return;
+        };
+        renderer.draw(&[]);
+        renderer.set_overlays(&[ScreenOverlay::colour([10, 20, 30], 1.0)]);
+        renderer.present();
+        let pixels = renderer.capture_rgba().expect("readback");
+        assert_eq!(frame_pixel(&pixels, 0, 0), [10, 20, 30, 255]);
+        assert_eq!(
+            frame_pixel(&pixels, LOGICAL_W - 1, LOGICAL_H - 1),
+            [10, 20, 30, 255]
+        );
+
+        // alpha 0 is a no-op: the black clear underneath survives untouched.
+        renderer.set_overlays(&[ScreenOverlay::colour([255, 255, 255], 0.0)]);
+        renderer.present();
+        let pixels = renderer.capture_rgba().expect("readback");
+        assert_eq!(frame_pixel(&pixels, 512, 288), [0, 0, 0, 255]);
+    }
+
+    /// 161's transition: frame N is frozen, frame N+1 clears to black and the
+    /// snapshot is faded back over it.
+    #[test]
+    fn a_frozen_overlay_is_the_snapshot_at_its_alpha() {
+        let Some(mut renderer) = offscreen_or_skip() else {
+            return;
+        };
+        renderer.draw(&[]);
+        renderer.set_overlays(&[ScreenOverlay::colour([255, 0, 0], 1.0)]);
+        renderer.present();
+        renderer.freeze();
+        assert!(renderer.has_frozen_frame());
+
+        // alpha 1 must restore the snapshot byte for byte.
+        renderer.set_overlays(&[ScreenOverlay::frozen(1.0)]);
+        renderer.present();
+        let pixels = renderer.capture_rgba().expect("readback");
+        assert_eq!(frame_pixel(&pixels, 512, 288), [255, 0, 0, 255]);
+
+        // alpha 0.5 over the black clear is the gamma-space blend
+        // (255 * 0.5 = 127.5 -> 127/128), not the ~188 a linear-light target
+        // would give; this is the same arithmetic the sprite tests pin.
+        renderer.set_overlays(&[ScreenOverlay::frozen(0.5)]);
+        renderer.present();
+        let pixels = renderer.capture_rgba().expect("readback");
+        let half = frame_pixel(&pixels, 512, 288);
+        assert!(
+            (127..=128).contains(&half[0]),
+            "half-alpha frozen red was {half:?}"
+        );
+        assert_eq!([half[1], half[2]], [0, 0]);
+    }
 
     #[test]
     fn a_ready_future_returns_its_value() {

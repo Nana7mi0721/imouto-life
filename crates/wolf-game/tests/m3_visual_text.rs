@@ -214,7 +214,7 @@ fn story_message_types_out() {
 
     let layout = game.message_layout().expect("layout present");
     assert_eq!(layout.font_px, 20.0, "default font size");
-    assert_eq!(layout.line_height, 26.0, "line height = font + 6");
+    assert_eq!(layout.line_height, 23.0, "line height = font + scaled spacing 3");
     assert_eq!(layout.typed, layout.total, "message finishes revealing");
     assert!(!layout.typing, "typing should be done");
     assert!(layout.rows.len() >= 1);
@@ -326,96 +326,90 @@ fn message_window_sub_events_and_always_events_run() {
 }
 
 // ---------------------------------------------------------------------------
-// Screen tint (opcode 151) and transition (160/161/162) state machines.
-// ---------------------------------------------------------------------------
 #[test]
 fn screen_transition_and_tint_state_machines() {
-    // Transition: fade to black at the midpoint and back.
+    // Transition: 160 installs, 161 freezes, 162 dissolves the frozen frame from
+    // opaque to transparent over the duration (docs/re/TRANSITION.md section 3).
     let mut transition = ScreenTransition::new();
     assert!(!transition.is_active());
-    assert_eq!(transition.brightness(), 1.0);
     assert_eq!(transition.alpha(), 0.0);
 
-    transition.start(0, 10);
+    transition.install(0, 0x0001_000A);
+    assert!(!transition.is_active(), "160 alone draws nothing");
+    assert_eq!(transition.alpha(), 0.0);
+    transition.prepare();
+    assert!(transition.take_freeze_request(), "161 asks for a freeze");
+    transition.execute();
     assert!(transition.is_active());
-    assert!(
-        (transition.brightness() - 1.0).abs() < 1e-6,
-        "starts bright"
-    );
+    assert!((transition.alpha() - 1.0).abs() < 1e-6, "old frame opaque");
     for _ in 0..5 {
         transition.tick();
     }
-    assert!(transition.progress() >= 0.5 - 1e-6);
-    assert!(
-        transition.brightness() < 0.05,
-        "midpoint black: {}",
-        transition.brightness()
-    );
-    assert!(transition.alpha() > 0.95);
+    assert!((transition.alpha() - 0.5).abs() < 1e-6, "halfway");
+    assert!((transition.progress() - 0.5).abs() < 1e-6);
     for _ in 0..5 {
         transition.tick();
     }
-    assert!((transition.brightness() - 1.0).abs() < 1e-6, "ends bright");
+    assert_eq!(transition.alpha(), 0.0, "new frame fully visible");
+    assert!(!transition.is_active());
 
     transition.cancel();
     assert!(!transition.is_active());
-    assert_eq!(transition.brightness(), 1.0);
+    assert_eq!(transition.alpha(), 0.0);
 
-    // A hard cut (kind < 0) never activates.
-    let mut cut = ScreenTransition::new();
-    cut.start(-1, 10);
-    assert!(!cut.is_active());
-    assert_eq!(cut.brightness(), 1.0);
+    // A kind without a mask is the same uniform dissolve; this build never draws
+    // the mask picture ([Transition]Fade.png).
+    let mut masked = ScreenTransition::new();
+    masked.install(3, 0x000A);
+    assert!(masked.wants_mask());
+    masked.execute();
+    assert!(masked.is_active());
 
     // Zero frames is treated as one.
     let mut one = ScreenTransition::new();
-    one.start(3, 0);
+    one.install(-1, 0);
+    one.execute();
     one.tick();
-    assert!(one.progress() <= 1.0);
+    assert!(!one.is_active());
 
-    // Tint: neutral by default, packed RGB as percentages, flash round-trips.
+    // Tint: 100 is neutral, a channel above 100 clamps to neutral, and a ramp
+    // scales luminance instead of multiplying RGB.
     let mut tint = ScreenTint::new();
     assert_eq!(tint.rgb(), [1.0, 1.0, 1.0]);
     assert!(tint.is_neutral());
 
-    tint.set(0x0096_C896, 0); // R150 G200 B150 -> [1.5, 2.0, 1.5]
+    tint.set(0x0096_C896, 0); // R150 G200 B150 clamps to 255 = neutral
+    assert_eq!(tint.rgb(), [1.0, 1.0, 1.0], "brightness clamps at neutral");
+    assert!(tint.is_neutral());
+
+    tint.set(0x0028_281E, 0); // R40 G40 B30 -> 102/255, 102/255, 77/255
     let rgb = tint.rgb();
-    assert!((rgb[0] - 1.5).abs() < 1e-6, "R {}", rgb[0]);
-    assert!((rgb[1] - 2.0).abs() < 1e-6, "G {}", rgb[1]);
-    assert!((rgb[2] - 1.5).abs() < 1e-6, "B {}", rgb[2]);
+    assert!((rgb[0] - 102.0 / 255.0).abs() < 1e-6, "R {}", rgb[0]);
+    assert!((rgb[1] - 102.0 / 255.0).abs() < 1e-6, "G {}", rgb[1]);
+    assert!((rgb[2] - 77.0 / 255.0).abs() < 1e-6, "B {}", rgb[2]);
     assert!(!tint.is_neutral());
 
     tint.set(0x0064_6464, 0); // 100/100/100 -> neutral
     assert!(tint.is_neutral(), "100% channels are neutral");
 
-    // Flash ramps out to the colour at the midpoint and back to neutral.
+    // A flash queues a full-screen colour quad that fades out once, leaving the
+    // brightness ramp alone.
     let mut flash = ScreenTint::new();
-    flash.set(0x0100_00C8, 10); // flash flag + B=200
-    assert!(flash.is_neutral(), "flash starts at neutral");
+    flash.set(0x0100_00C8, 10); // flash flag + B=200 -> clamped to 255
+    assert_eq!(flash.rgb(), [1.0, 1.0, 1.0], "flash does not tint sprites");
+    assert_eq!(flash.flash_overlay(), Some(([0, 0, 255], 1.0)));
     for _ in 0..5 {
         flash.tick();
     }
-    let peak = flash.rgb();
-    assert!(
-        peak[2] > 1.9,
-        "flash peaks near 2.0 at midpoint, got {:?}",
-        peak
-    );
+    let (colour, alpha) = flash.flash_overlay().expect("still fading");
+    assert_eq!(colour, [0, 0, 255]);
+    assert!((alpha - 0.5).abs() < 1e-6, "alpha {} at the midpoint", alpha);
     for _ in 0..5 {
         flash.tick();
     }
-    assert!(
-        flash.is_neutral(),
-        "flash returns to neutral, got {:?}",
-        flash.rgb()
-    );
+    assert_eq!(flash.flash_overlay(), None, "flash fades out once");
+    assert!(flash.is_neutral());
 }
-
-// ---------------------------------------------------------------------------
-// Font fallback: with no font file under work/Data the renderer measures text
-// with the half-em advance, so "12345" (5 half-width digits at 20px) spans
-// 50px and, right-aligned at x=140, its left edge sits at ~90.
-// ---------------------------------------------------------------------------
 #[test]
 fn font_metrics_fallback_measures_half_em() {
     let mut game = match bedroom() {

@@ -99,8 +99,9 @@ use wolf_format::messagetext::{tokenize, Align, CodeKind, TextToken, VarBank, Va
 
 /// Line pitch as a multiple of the largest font size on the line.
 ///
-/// 1.3 is the ratio the message window uses (choice::LINE_HEIGHT is 30 for a 20 px
-/// font), and it is the only ratio the retail HUD is consistent with. For the
+/// 1.3 is the ratio the message window uses (a 20 px font advances 23 px, a 26 px one
+/// 29 px with the scaled Game.dat spacing), and it is the only ratio the retail HUD is
+/// consistent with. For the
 /// uniform-font lines that every multi-line text picture in this game uses, it
 /// reproduces the brief's "rows x font_px x ratio" exactly while still keeping a
 /// mixed-size line from colliding with the line under it.

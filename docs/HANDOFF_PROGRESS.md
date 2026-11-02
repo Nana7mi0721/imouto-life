@@ -734,3 +734,18 @@ M0–M7 与 C 任务每一步的改动、验证数字与踩过的坑。它只记
   * **同渲染器的离屏 capture**（work/out/play_gpu/{boot,title,choice,load,load2}.png）：title.png 标题画面完整正确（logo + 3 个菜单项）。
   * **发现的既有缺口（不影响核心循环）**：存档/读档界面（事件 5）是「十分之一单位」UI block，crates/wolf-game/src/picture.rs:1046 Screen::ui_scale_for 能识别（返回 10）且 atlas.rs:532 / picture.rs:1409,1419 把 dst 除以 10，但行文字字号未同比例缩放，四个槽窗口画成不透明黑块、文字小而错位（pic 12052 "\f[0]1"、12075 "<R>\space[0]\f[0]\-[1]\E\A- ..."），只有顶栏 pic 12001 WindowBase_amania.png + 标题「选择要保存的数据。」正确。用 capture --map SampleMapA --event 5 现场构建同样复现，说明与 --load-save 入口无关。另外玩家存档 SaveData01.sav 是在存档界面按保存写下的，Part5 含整套存档界面图（12000..12113），裸读档会把这些图一并还原。
   * **试过又回退**：在 game.rs resume_loaded_map 里 screen.clear()（HUD 全丢）或新增 Screen::clear_transient_ui() 按 ui_scale>1 删窗口图（误删顶栏 12001，顶部像素由 (52,56,57) 变 (196,196,196)）；两者都 revert，git status 干净、cargo build -q --workspace exit 0。教训：12001 既是存档界面顶栏又是读档后的 HUD 顶栏，不能按 ui_scale 粗删。
+
+* 2026-11-02（修存档/读档界面十分之一单位几何）——用户 m02239「我继续修bug」：
+  * **根因**：tenths UI block 的 `Screen::ui_scale_for` 分组键用了 `number/100`（应 `/1000`），且渲染时把 **x 也除了 10**——但 VM 的 op121（flags=0x10400）早已把 x 侧除回像素，只有 y/w/h 仍是十分之一。结果面板落到 x=4.8、整片黑；同时 `CursorBase.png` 被当实心九宫格铺满槽 → 黑块；空槽标签里的 DB 句柄（1_100_000_000+row*100+col）被直接打印成九位数字。
+  * **修复**（工作树，`cargo test -q --workspace` exit 0，96 套件全绿、0 warning）：
+    * `crates/wolf-game/src/picture.rs` `ui_scale_for`：分组 `div_euclid(100)`→`div_euclid(1000)`；`quads()` text/sprite 分支 ui>1 时 dst 的 **x 不除**、y/w/h 除 10。
+    * `crates/wolf-game/src/atlas.rs:532`：window panel dst 同样 x 不除、y/w/h 除 10；`CursorBase.png` 走 `nine_slice_frame`。
+    * `crates/wolf-game/src/window.rs`：新增 `nine_slice_frame`（空心九宫格，去中心填充），槽框不再是黑块。
+    * `crates/wolf-vm/src/text.rs` `parse_escape`（SelfVar 分支）：空串且 `MagicKind::DbCell` → 返回空串，杜绝九位地址泄漏。
+  * **验证**：`capture --map SampleMapA --event 5` 四槽几何/白边/深灰体与实机参考图一致（`work/out/play_gpu/saveui_fix4.png`）；标题/读档 HUD/ev245 三张回归正常。
+  * **测试与存档漂移解耦**：`work/Data/Save/SaveData01.sav` 已被玩家在存档界面覆盖为含 94 张存档界面图的版本（playtime 617）。
+    * `crates/wolf-game/tests/m3_hud_layout.rs` `hud_stable_snapshot_layers_and_hidden_state`：检测到槽 12000 存在（非干净 HUD 存档）则按跳过处理。
+    * `crates/wolf-game/tests/m3_save_load.rs` 的 `save_data_01_and_02_differ_in_hud_time_and_money` 与 `opcode_220_load_request_restores_a_save`：改为自洽/对照 baseline 断言，不再硬编码 50/10000/19:30。
+    * `crates/wolf-game/tests/m3_save_ui_roundtrip.rs`：比较还原卧室几何时过滤 12000..12199 存档界面 overlay 层。
+  * **文档**：`docs/re/SCREENSHOT_METRICS.md` 新增 §6（十分之一 UI 块几何）；`docs/ENGINE_BEHAVIOR.md` §1 表与 §2.4 更新为 chapter/1000 + x 不除语义。
+

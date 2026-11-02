@@ -162,7 +162,17 @@ fn parse_escape<L: VarLookup + ?Sized>(
         EscapeBank::SelfVar => {
             let text = lookup.lookup_str(bank, index);
             if text.is_empty() {
-                lookup.lookup_num(bank, index).to_string()
+                let num = lookup.lookup_num(bank, index);
+                // A self slot can hold an internal database value handle
+                // (1_100_000_000 + row*100 + column) that should resolve to a database
+                // cell's text; until that resolution exists, render it empty rather
+                // than leaking the nine-digit address into a filename, label or picture
+                // string (the save/load slot labels printed exactly such a handle).
+                if Magic::decode(num).kind() == MagicKind::DbCell {
+                    String::new()
+                } else {
+                    num.to_string()
+                }
             } else {
                 text
             }

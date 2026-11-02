@@ -1052,7 +1052,7 @@ impl Screen {
         {
             return 1.0;
         }
-        let block = number.div_euclid(100);
+        let block = number.div_euclid(1000);
         let oversized = self.pictures.values().any(|other| {
             // A widget the engine parks far off screen keeps an oversized window box
             // (the message window parks at y = 3840 between lines), but it is not a
@@ -1061,7 +1061,7 @@ impl Screen {
             // block, so skip anything parked outside the extended logical screen.
             let parked =
                 other.x.abs() > SCREEN_W as i32 * 2 || other.y.abs() > SCREEN_H as i32 * 2;
-            other.number.div_euclid(100) == block
+            other.number.div_euclid(1000) == block
                 && !parked
                 && other.kind.is_window()
                 && crate::sysgraphic::parse(&other.file).is_none()
@@ -1408,7 +1408,7 @@ impl Screen {
                 let mut dst = picture.transform(placed);
                 let ui = self.ui_scale_for(picture.number);
                 if ui > 1.0 {
-                    dst = [dst[0] / ui, dst[1] / ui, dst[2] / ui, dst[3] / ui];
+                    dst = [dst[0], dst[1] / ui, dst[2] / ui, dst[3] / ui];
                 }
                 ([0, 0, 0, 0], dst)
             } else {
@@ -1418,7 +1418,7 @@ impl Screen {
                 let mut dst = picture.destination(w as f32, h as f32);
                 let ui = self.ui_scale_for(picture.number);
                 if ui > 1.0 {
-                    dst = [dst[0] / ui, dst[1] / ui, dst[2] / ui, dst[3] / ui];
+                    dst = [dst[0], dst[1] / ui, dst[2] / ui, dst[3] / ui];
                 }
                 (src, dst)
             };

@@ -605,11 +605,20 @@ fn save_ui_writes_slot3_then_loads_it_back() {
 
     // Picture geometry of the restored bedroom must match a direct load of
     // SaveData01 (same base snapshot; only the sentinel vars differ).
+    //
+    // SaveData01 is the player's live save and may currently have been written
+    // from inside the save screen, in which case its Part5 also carries that
+    // screen's own overlay pictures (numbers 12000..12199). Those are not part of
+    // the bedroom field, so compare only the field/HUD layers and ignore them.
     let Some(reference) = open_loaded(1) else {
         return;
     };
-    let loaded_snapshot = snapshot(&loader);
-    let reference_snapshot = snapshot(&reference);
+    let field_only = |mut pics: Vec<Pic>| {
+        pics.retain(|p| !(12_000..=12_199).contains(&p.number));
+        pics
+    };
+    let loaded_snapshot = field_only(snapshot(&loader));
+    let reference_snapshot = field_only(snapshot(&reference));
     assert_eq!(
         loaded_snapshot.len(),
         reference_snapshot.len(),

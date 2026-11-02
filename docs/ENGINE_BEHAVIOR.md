@@ -67,7 +67,7 @@
 | 坐标倍率 | coordinate_scale = (屏宽/32, 屏高/24).max(1) → 1024x576 得 (32,24) | 实测+逆向 | 已实现 | crates/wolf-game/src/message.rs:97；crates/wolf-game/src/db.rs:159 | CE48 用 Sys116/32、Sys117/24；db.rs:290 写 CData(18,97/98) |
 | 逻辑画布 | LOGICAL_W=1024、LOGICAL_H=576 | 实测 | 已实现 | crates/wolf-render/src/scaler.rs:21,23 | 与 Game.dat 分辨率一致 |
 | ScaleMode | Integer（默认，整数倍）/ FitNearest / FitLinear | 实测 | 已实现 | crates/wolf-render/src/scaler.rs:27-35；crates/wolf-render/src/renderer.rs:641 | F9 循环切换；integer_scale/fit_scale 单测 |
-| 1/10 字符格 UI 块判定 | 同 block 内存在宽或高 >两屏（1024x2 / 576x2）的非停靠窗口 picture → 全块 10x | 逆向+实测 | 部分实现 | crates/wolf-game/src/picture.rs:1046（ui_scale_for） | CE95 设置屏 180x195 cells；/10 回像素 |
+| 1/10 字符格 UI 块判定 | 同 chapter(number/1000) 内存在宽或高 >两屏（1024x2 / 576x2）的非停靠窗口 picture → 全块 10x；块内 **x 已是像素（不除），y/w/h 才是十分之一（除 10）** | 逆向+实测 | 已实现（存档/读档界面已验证） | crates/wolf-game/src/picture.rs:1046（ui_scale_for）、crates/wolf-game/src/atlas.rs:532、crates/wolf-game/src/window.rs（nine_slice_frame） | CE94 存档屏/CE95 设置屏；见 docs/re/SCREENSHOT_METRICS.md §6 |
 | 停靠窗（parked）排除 | \|x\|>SCREEN_W*2 或 \|y\|>SCREEN_H*2 视为停靠，不做 1/10 缩放、不当全屏层 | 实测 | 已实现 | crates/wolf-game/src/picture.rs:1062-1063,1441 | balloon 库 24 控件 @(-2784,2880) 被丢弃 |
 | 消息窗默认原点 | default_origin(1024,576)=(2*rateX, 17*rateY+trunc(rateY/10))=(64,410) | 逆向 `[公式推断]` | 已实现 | crates/wolf-game/src/message.rs:111 | 实机截图核对文本原点 |
 | 取整方式 | 整除(/) 取整；default_origin 内 trunc(rateY/10) | 需逆向 `[未实测]` | 部分实现 | crates/wolf-game/src/db.rs:159；crates/wolf-game/src/message.rs:111 | 非 32/24 整数倍屏宽时核对 |
@@ -115,7 +115,8 @@
 下一步核对：在标题画面确认 op102 面板是否真的被隐藏（遮挡/坐标），再决定是否删掉居中回退。
 
 ### 2.4 1/10 UI 缩放规则
-现状依据：`coordinate_scale(screen)->(i32,i32)=((w/32).max(1),(h/24).max(1))`（crates/wolf-game/src/db.rs:159；message.rs:97 同式），1024x576→(32,24)；`LOGICAL_W=1024/LOGICAL_H=576`（crates/wolf-render/src/scaler.rs:21,23）；`ScaleMode{Integer,FitNearest,FitLinear}`（scaler.rs:27-35），`integer_scale`（:97）取 `min(win_w/1024,win_h/576).max(1)` 并居中，`fit_scale`（:134）取 `min(w/1024,h/576)`（<1 允许）。1/10 字符格判定 `Screen::ui_scale_for`（crates/wolf-game/src/picture.rs:1046）：同 block(number/100) 内若存在宽或高 >1024x2/576x2 的非停靠、非 sysgraphic 窗口 picture→返回 10.0，否则 1.0；停靠窗以 `\|x\|>SCREEN_W*2 或 \|y\|>SCREEN_H*2` 判据（:1062-1063）。
+现状依据：`coordinate_scale(screen)->(i32,i32)=((w/32).max(1),(h/24).max(1))`（crates/wolf-game/src/db.rs:159；message.rs:97 同式），1024x576→(32,24)；`LOGICAL_W=1024/LOGICAL_H=576`（crates/wolf-render/src/scaler.rs:21,23）；`ScaleMode{Integer,FitNearest,FitLinear}`（scaler.rs:27-35），`integer_scale`（:97）取 `min(win_w/1024,win_h/576).max(1)` 并居中，`fit_scale`（:134）取 `min(w/1024,h/576)`（<1 允许）。1/10 字符格判定 `Screen::ui_scale_for`（crates/wolf-game/src/picture.rs:1046）：同 chapter(number/1000) 内若存在宽或高 >1024x2/576x2 的非停靠、非 sysgraphic 窗口 picture→返回 10.0，否则 1.0；停靠窗以 `\|x\|>SCREEN_W*2 或 \|y\|>SCREEN_H*2` 判据（:1062-1063）。
+块内几何语义（2026-11-02 逆向+实机核对，docs/re/SCREENSHOT_METRICS.md §6）：**x 已由 VM 的 op121 缩放提前除回像素，渲染时不再除**；y/w/h 仍为十分之一，须除 10。实现见 crates/wolf-game/src/atlas.rs:532（window panel dst x 不除、y/w/h 除）与 crates/wolf-game/src/picture.rs quads()（text/sprite 分支同理）。槽框与光标框用 `nine_slice`/`nine_slice_frame`（去中心填充，空心框，crates/wolf-game/src/window.rs），否则 CursorBase 会把整槽铺成黑块。
 已知缺口：取整用整除而非 round/floor 的差异在**非 32/24 整数倍**分辨率下**未实测**；`default_origin` 的 `trunc(rateY/10)` 项是**推断**公式。
 下一步核对：以 1280x720 等非整数倍分辨率实机截图量像素比；逆向 coordinate_scale 与 UI 缩放的乘除点。
 

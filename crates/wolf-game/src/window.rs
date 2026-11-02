@@ -126,6 +126,25 @@ pub fn nine_slice_cornered(
     pieces
 }
 
+/// A window skin drawn as a hollow frame: the eight border pieces, no centre fill.
+///
+/// `SystemFile/CursorBase.png` is a solid 12x12 block, not a panel body. WOLF uses it as a
+/// selection cursor, so stretching its centre tile over the whole box (as a normal nine
+/// slice does) paints an opaque slab over the panel underneath. Dropping the centre piece
+/// leaves only the 4px border, which is what the retail save screen shows.
+pub fn nine_slice_frame(
+    dst: [f32; 4],
+    skin_w: u32,
+    skin_h: u32,
+    corner: u32,
+) -> Vec<WindowPiece> {
+    let mut pieces = nine_slice_cornered(dst, skin_w, skin_h, corner);
+    if pieces.len() == 9 {
+        pieces.remove(4);
+    }
+    pieces
+}
+
 /// Three cut points across a length: 0, corner, len - corner, len.
 fn split(len: u32, corner: u32) -> [u32; 4] {
     [0, corner, len - corner, len]

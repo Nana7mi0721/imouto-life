@@ -531,7 +531,9 @@ impl Atlas {
                 let mut dst = picture.destination(w as f32, h as f32);
                 let ui = screen.ui_scale_for(picture.number);
                 if ui > 1.0 {
-                    dst = [dst[0] / ui, dst[1] / ui, dst[2] / ui, dst[3] / ui];
+                    // In a tenths UI block the VM already divides x back to pixels (op121
+                    // with the extra /10 operand); only y, w and h stay in tenths.
+                    dst = [dst[0], dst[1] / ui, dst[2] / ui, dst[3] / ui];
                 }
                 // The balloon library parks its panels off screen between bubbles; a panel
                 // that cannot touch the screen would still cost nine quads and a skin pack.
@@ -552,7 +554,14 @@ impl Atlas {
                 continue;
             };
             let tex = self.source_size(skin_name).unwrap_or([0, 0]);
-            for piece in window::nine_slice(dst, tex[0], tex[1]) {
+            // The cursor skin is a hollow selection frame, not a panel: fill it only when
+            // it is used as a panel body (it never is in this game).
+            let pieces = if skin_name.ends_with("CursorBase.png") {
+                window::nine_slice_frame(dst, tex[0], tex[1], 4)
+            } else {
+                window::nine_slice(dst, tex[0], tex[1])
+            };
+            for piece in pieces {
                 out.push(SpriteQuad {
                     number,
                     rect: snap(piece.rect),

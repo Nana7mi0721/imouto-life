@@ -230,6 +230,17 @@ fn hud_stable_snapshot_layers_and_hidden_state() {
         return;
     };
 
+    // SaveData01 is the player's live save and can be overwritten from inside the game.
+    // Saving while the save/load screen is open stores that screen's own picture set in
+    // Part5, so the reloaded file carries the save-screen base slots (12000, 12001, ...)
+    // on top of the HUD. Such a file is not a clean field save and cannot support this
+    // test's premise (a stable HUD of exactly the field slots), so skip it the same way
+    // the suite skips any other unavailable test data.
+    if game.screen.get(12000).is_some() {
+        eprintln!("skipping: SaveData01 was saved over a save-screen snapshot, not a clean HUD");
+        return;
+    }
+
     // 稳定性：1600 帧与 4800 帧的全槽签名必须完全一致（HUD 已静止）。
     let snap_early = sig(&game);
     for _ in 0..3200 {

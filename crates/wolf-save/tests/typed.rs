@@ -105,7 +105,7 @@ fn every_part3_re_encodes_byte_for_byte() {
 /// common events and the last-used slot (ev131 CSelf12) are live gameplay state: they
 /// change every time the player saves again, so they are only checked for presence and
 /// a sane range here. The pinned values measured when these saves were first read are
-/// recorded in docs/SAVE_FORMAT.md.
+/// recorded in docs/HANDOFF_M0.md §3.5 and docs/BASELINE.json.
 ///
 /// What must hold for every save, whatever the player did since:
 /// * the normal-variable table is ten rows, the first 800 words long;

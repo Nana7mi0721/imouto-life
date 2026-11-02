@@ -14,13 +14,15 @@
 - M6 输入层对等：完成（`123` 选项字/掩码过滤/等待位、原始键码与改键闭环、`125`/`126` 编码、`121` min-max）
 - M7 三项增强：完成（完整英语语言包 `docs/translations/en.full.tsv`、mod 记录级二进制补丁、模拟器热键重绑定 `--hotkeys`；本地提交）
 
-最新详细状态、已验证数字与遗留缺口见 **[docs/HANDOFF_M0.md](docs/HANDOFF_M0.md)** 的「§11 进度」。
+当前状态摘要与遗留事项见 **[docs/HANDOFF_M0.md](docs/HANDOFF_M0.md) §11**；完整历史进度见 **[docs/HANDOFF_PROGRESS.md](docs/HANDOFF_PROGRESS.md)**。
 开工前必读协作约定见 **[AGENTS.md](AGENTS.md)**。
 
 ## 文档入口
 
 - **[docs/README.md](docs/README.md)** — 全量文档索引（按里程碑与用途分组，标注现行/历史）
-- **[docs/HANDOFF_M0.md](docs/HANDOFF_M0.md)** — 新会话交接：数据事实、世代差异、M0 清单、进度
+- **[docs/HANDOFF_M0.md](docs/HANDOFF_M0.md)** — 新会话交接：数据事实、世代差异、M0 清单、当前状态摘要
+- **[docs/HANDOFF_PROGRESS.md](docs/HANDOFF_PROGRESS.md)** — 完整进度日志（M0–M7 与 C 任务）
+- **[docs/ENGINE_BEHAVIOR.md](docs/ENGINE_BEHAVIOR.md)** — 引擎行为规范；逆向细节见 [docs/RE_GAME_EXE.md](docs/RE_GAME_EXE.md) 与 [docs/re/](docs/re/)
 - **[docs/BASELINE.json](docs/BASELINE.json)** — 本作自己的 verify 基线（不是姊妹作的）
 - **[docs/REFERENCE.md](docs/REFERENCE.md)** — 日文原版、攻略、实机截图与存档样本索引
 

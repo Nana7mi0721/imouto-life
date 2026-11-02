@@ -24,7 +24,7 @@ cd '/e/Study/github program/Imouto Life' && source tools/env.sh >/dev/null 2>&1
 
 - 数据根是 **work/Data**（已解包的本作数据，175MB，已 gitignore）。不要把它提交进 git。
 - 默认 `cargo test -q --workspace` 会跳过需要数据的用例（缺数据就 eprintln skipping 后 return），必须保持 exit 0。
-- 真正跑本作数据测试用：`WOLF_DATA_ROOT="$PWD/work/Data" cargo test -q -p <crate>`。**必须绝对路径**——`cargo test` 以各 crate 根为工作目录，`work/Data` 这类相对路径会被解析到 crate 目录而静默 skip（于是假「全绿」）；已知本作数据上跑整套 `-p wolf-game` 会有若干姊妹作期望值/事件语义差异用例失败（长期记录于 HANDOFF §11），不是缺陷。
+- 真正跑本作数据测试用：`WOLF_DATA_ROOT="$PWD/work/Data" cargo test -q -p <crate>`。**必须绝对路径**——`cargo test` 以各 crate 根为工作目录，`work/Data` 这类相对路径会被解析到 crate 目录而静默 skip（于是假「全绿」）；已知本作数据上跑整套 `-p wolf-game` 会有若干姊妹作期望值/事件语义差异用例失败（长期记录于 docs/HANDOFF_PROGRESS.md），不是缺陷。
 - 每个里程碑结束跑：`cargo test -q --workspace`、`WOLF_DATA_ROOT=work/Data ./target/debug/wolf-cli.exe verify`（PASS 64 / 1 SKIP 为 M0 基线），需要时再跑 `verify --wolf <安装目录>/Data.wolf`。
 - 本作自己的期望值在 docs/BASELINE.json；**不要照抄姊妹作 imoto life 的 BASELINE.json**（那是第一部游戏的数值）。
 
@@ -47,7 +47,7 @@ cd '/e/Study/github program/Imouto Life' && source tools/env.sh >/dev/null 2>&1
 - 提交身份：`git -c user.name='imoto lead' -c user.email='lead@imoto.local' commit -F <msgfile>`。
 - push：全局 http.proxy 是死代理，必须 `git -c http.proxy= -c https.proxy= push origin master`。
 - 不要提交 work/、tools/bin|cmake|ffmpeg、*.exe、prt sc/、docs/相关链接.txt。
-- 每推进一步更新 docs/HANDOFF_M0.md 的「进度」段（方便下次交接）；里程碑结束写对应的 docs/M*_*.md 说明。
+- 每推进一步在 docs/HANDOFF_PROGRESS.md 末尾追加一条进度（历史日志），并把当前状态同步到 docs/HANDOFF_M0.md §11.1（方便下次交接）；里程碑结束写对应的 docs/M*_*.md 说明。
 
 
 ## 6. 内容安全
@@ -71,4 +71,4 @@ cd '/e/Study/github program/Imouto Life' && source tools/env.sh >/dev/null 2>&1
   ```
 - 永远不要删除：`work/Data`（175 MB 本作解包数据）、`work/out/dist`（发布产物）、`docs/`、`crates/`、`prt sc/`（用户实机截图）。
 - 临时探针只放 `work/out/` 或未跟踪的 `*.rs`，里程碑收尾时删除；不要把探针、`*.pdb`、`*_probe.exe` 提交。
-- 每次清理后把 `du -sh .` 的数字和删除项记进 `docs/HANDOFF_M0.md` 的「进度」段，作为下一次交接的现状。
+- 每次清理后把 `du -sh .` 的数字和删除项记进 `docs/HANDOFF_PROGRESS.md` 的进度日志（并在 `docs/HANDOFF_M0.md` §11.1 更新现状数字）。

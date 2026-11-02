@@ -269,6 +269,9 @@ WOLF_DATA_ROOT="$PWD/work/Data" ./target/debug/wolf-cli.exe verify | tail -20
   其中可落地部分**已改到 crates/**（提交 4ac380d）。
 * 验证基线：`cargo test -q --workspace` **exit 0**；`wolf-game --lib` 300 passed；
   `wolf-cli verify` **PASS 64 / 1 SKIP**（dxarchive.header）。
+* **真机 GPU play 路径已验证**（2026-11-02，RTX 5060 Laptop / Vulkan / 1024x576）：
+  boot 600 帧、load-save 900 帧、event 245 600 帧、menu-only 600 帧，四个入口全部
+  **exit 0 / 0 warning**；标题画面离屏 capture 正确。
 * 工作区 `du -sh .` = **4.6 GB**（target 4.0 G 可重编；work 543 M = Data 176 M +
   Ghidra 项目与全量伪码 dump；临时产物已按 §7 清理）。
 
@@ -278,7 +281,8 @@ WOLF_DATA_ROOT="$PWD/work/Data" ./target/debug/wolf-cli.exe verify | tail -20
 |---|---|---|
 | 2026-11-02 | C 任务静态逆向：Ghidra 反编译 4,375 个 ≥64B 函数，12 项引擎常量闭环，四份专题报告 | ab818c8 / 3f988bd |
 | 2026-11-02 | C 落地：过渡/叠色 overlay、行距 font+3、选择面板几何 + CursorBase 光标、wolf-save 测试解耦 | 4ac380d |
-| 2026-11-02 | 文档整理：HANDOFF 进度拆分为附录、文档索引重建、调研报告归档 | 本提交 |
+| 2026-11-02 | 文档整理：HANDOFF 进度拆分为附录、文档索引重建、调研报告归档 | 842238d / 211f27d |
+| 2026-11-02 | 真机 GPU 跑 play 路径四入口（0 warning），发现存档/读档界面十分之一单位文字缩放缺口 | 本提交 |
 
 ### 11.3 仍开放的事项
 

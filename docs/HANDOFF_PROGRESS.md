@@ -723,3 +723,14 @@ M0–M7 与 C 任务每一步的改动、验证数字与踩过的坑。它只记
   * **杂项**：`.gitignore` 增加 `/docs/攻略文档/`（用户本地攻略资料不入库）；`work/` 根下 15 份历史提交信息与 4 个一次性脚本移入 `work/out/_archive/`；修正 `crates/wolf-save/tests/typed.rs` 对不存在的 `docs/SAVE_FORMAT.md` 的引用。
   * **验证**：`cargo test -q --workspace` exit 0；文档相对链接检查全部可解析；`git status` 仅含本次文档/索引改动。
 
+
+* 2026-11-02（真机 GPU 跑 play 路径）——用户 m02042「现在真机 GPU 跑一遍 play 路径」：
+  * **环境**：play 走真实窗口 + GPU，适配器 NVIDIA GeForce RTX 5060 Laptop GPU (DiscreteGpu, backend Vulkan)，1024x576 逻辑分辨率、整数缩放；字体 C:\Windows\Fonts\msyhbd.ttc，fallback seguisym.ttf。
+  * **四个入口全部 exit 0、0 warning**：
+    * play --boot --until 600：600 帧 / 18,443 指令 / 14 picture op；诊断含 1x 160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask)。
+    * play --load-save work/Data/Save/SaveData01.sav --until 900：900 帧 / 58,072 指令 / 12,965 picture op。
+    * play --event 245 --until 600：600 帧 / 24,016 指令 / 32 picture op。
+    * play --menu-only --until 600（标题菜单）：600 帧 / 40 指令 / 5 picture op。
+  * **同渲染器的离屏 capture**（work/out/play_gpu/{boot,title,choice,load,load2}.png）：title.png 标题画面完整正确（logo + 3 个菜单项）。
+  * **发现的既有缺口（不影响核心循环）**：存档/读档界面（事件 5）是「十分之一单位」UI block，crates/wolf-game/src/picture.rs:1046 Screen::ui_scale_for 能识别（返回 10）且 atlas.rs:532 / picture.rs:1409,1419 把 dst 除以 10，但行文字字号未同比例缩放，四个槽窗口画成不透明黑块、文字小而错位（pic 12052 "\f[0]1"、12075 "<R>\space[0]\f[0]\-[1]\E\A- ..."），只有顶栏 pic 12001 WindowBase_amania.png + 标题「选择要保存的数据。」正确。用 capture --map SampleMapA --event 5 现场构建同样复现，说明与 --load-save 入口无关。另外玩家存档 SaveData01.sav 是在存档界面按保存写下的，Part5 含整套存档界面图（12000..12113），裸读档会把这些图一并还原。
+  * **试过又回退**：在 game.rs resume_loaded_map 里 screen.clear()（HUD 全丢）或新增 Screen::clear_transient_ui() 按 ui_scale>1 删窗口图（误删顶栏 12001，顶部像素由 (52,56,57) 变 (196,196,196)）；两者都 revert，git status 干净、cargo build -q --workspace exit 0。教训：12001 既是存档界面顶栏又是读档后的 HUD 顶栏，不能按 ui_scale 粗删。

@@ -150,6 +150,21 @@
 
 共 **12** 项需逆向/实测常量。
 
+### 3.1 C 任务（Game.exe 定点逆向）进展与结论
+
+工具链：`rea-agents` v6.7.0 可运行但本机无原生分析引擎（Hopper 仅 macOS、Ghidra 未装、IDA 未配、Kuna 未设），rea 的 decompile/analyze 不可用；改用 `pefile`+`capstone` 自建只读工具 `tools/re/wolfpe.py`。完整证据与反汇编片段见 **`docs/RE_GAME_EXE.md`**。
+
+已从二进制/随附资源**直接核对**（详见 RE_GAME_EXE.md §2–§4）：
+
+- 引擎身份：**WOLF RPG Editor ver2.22（Editor 构建 20180525）**，DxLib 静态链接单文件 exe。
+- 呈现后端：GDI 软件光栅（`CreateDIBSection`/`StretchDIBits`/`SetDIBitsToDevice`），**无 d3d9/d3d11/dxgi 导入 → 无 swapchain**（对应 §1.6 / §3-12 的 present 部分）。
+- 文本度量：走 GDI（`GetTextExtentPoint32W`/`GetTextMetricsA`/`GetGlyphOutlineW`）；字体以 `FindFirstFileA("*.ttf")` 枚举数据目录加载（对应 §2.2 字体来源）。
+- 九宫格：`WindowBase.png` 实测 18x18、3px 对称边框 → `CORNER=3`、无额外 padding（对应 §3-1）。
+- 过渡掩膜：`[Transition]Fade.png` 实测 640x480、8-bit 灰度（对应 §3-10 资源部分）。
+- 分辨率：数据驱动（运行时有 `[Read]Screen size X` 调试串；`assets --db-defaults` 已导出 1024x576）。
+
+仍**未解、需 Ghidra 反编译或逐帧实测**的项：§3-2 盒退化、§3-3 禁则、§3-4 行距缩放、§3-5 打字机精度、§3-6 选择面板越界阈值、§3-7 超宽选项、§3-8 取整方式、§3-9 `trunc(rateY/10)`、§3-10 曲线 easing/掩膜语义、§3-11 tint×fade 顺序、§3-12 帧率/窗口初始尺寸。
+
 ---
 
 ## 4 获取途径与优先级
@@ -160,6 +175,6 @@
 
 **黑盒实测（首选、低成本）**：游戏内 PrintScreen（Game.ini `ScreenShotFlag=1`，产物在安装目录，**1024x576 原生**）逐帧/逐像素测量；结合游戏内已知坐标（菜单按钮、消息框、状态面板）反推内边距、行距、面板落点与缩放倍率。仓库内已有 docs/REFERENCE.md 的 10 张实机截图目录可复用。注意：headless capture 的 wgpu 离屏初始化目前卡死，仅用于读回纹理，不作视觉核对主路径。
 
-**逆向（适合验证硬编码常量）**：适合验证"说明书没有、实测难分离"的量——九宫格绘制参数、文本度量常量（行长/禁则表）、choice 越界回退阈值、`coordinate_scale` 乘除点、过渡曲线与掩膜资源、present 帧率/窗口尺寸。做法：定位 Game.exe 中对应绘制/布局函数，取立即数常量并与本仓 `文件:行` 的取值比对。
+**逆向（适合验证硬编码常量）**：本仓已备好只读静态分析工具 **`tools/re/wolfpe.py`**（`pefile`+`capstone`：PE 事实/字符串/绝对地址 xref/前向反汇编），并产出 **`docs/RE_GAME_EXE.md`**（含 Game.exe SHA-256、引擎版本 ver2.22、导入表与已核对项）。该工具适合验证"说明书没有、实测难分离"的量——九宫格绘制参数、文本度量常量（行长/禁则表）、choice 越界回退阈值、`coordinate_scale` 乘除点、过渡曲线与掩膜资源、present 帧率/窗口尺寸。做法：定位 Game.exe 中对应绘制/布局函数，取立即数常量并与本仓 `文件:行` 的取值比对。
 
 **优先级建议**：(1) 先实测高频可见项——九宫格内边距、行距、标题图片菜单坐标（影响每帧 UI 观感）；(2) 再实测文本换行/打字机曲线（影响对话可读性）；(3) 对难以实测的禁则、回退阈值、过渡曲线与掩膜，排入逆向任务（对应第 3 节 12 项）。

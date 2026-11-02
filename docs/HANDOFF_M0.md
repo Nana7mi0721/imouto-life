@@ -918,3 +918,13 @@ WOLF_DATA_ROOT="$PWD/work/Data" ./target/debug/wolf-cli.exe verify | tail -20
   * **验证**：cargo build -q --workspace exit0；默认无数据 cargo test -q --workspace exit0；WOLF_DATA_ROOT=<绝对> WOLF_GAME_DIR=<不存在> cargo test -q -p wolf-game = **283 passed / 7 failed**，7 条与干净 HEAD 完全相同的既有姊妹作期望值/事件语义差异（db 2 + auto_events 3 + game 2），**非本轮回归**；标题套件 title_visibility 4 / title_mouse 8 全过（绝对数据根实跑）。wolf-cli verify **PASS 64 / 1 SKIP**。
   * **离屏实证**：capture --menu-only --frames 200 输出 pic -2 标题美术 + pic 3/4/5 = Picture/menu1_b/2_b/3_b 于 (10,400/450/500)，choice 锚点仍 (-1000,-1000)、engine rect [10,400,240,152]、text 0 项，画面与原版截图一致；capture --answer 0（新游戏）进入 19:30 场景后屏幕无任何 menu*_* 图片，证明 v0 进入游戏后已非 0、CE43 不泄漏到玩法。
   * **仍未闭环**：M3_TITLE_UX §4 建议 #2（取消读档后重启标题）仍未实现，软锁依旧（m3_title_mouse 有用例断言“不恢复”）。
+* 2026-11-02（A 任务：assets 数据库层导出 + B 文档《ENGINE_BEHAVIOR》）——用户 m02019 要求「先做 A+B，再做 C」：
+  * **A（代码）**：`wolf-cli assets` 新增 **`--db-defaults`** 开关，切到数据库层导出（与资产行**互斥**，单独成一份 JSON 以保合法）。在 crates/wolf-cli/src/main.rs 新增 `fn run_assets_db(root,format,filter,out)->ExitCode` 与 `push_json_key`/`push_tsv_row`；在 `run_assets` 签名加 `db:bool` 并在 format 校验后 `if db { return run_assets_db(...) }`。导出内容：
+    * 引擎默认值：`screen`(取 Game.dat，缺省 1024×576)、`coordinate_scale`=(w/32,h/24)、`window_skin`=SystemFile/WindowBase.png、`message_window` 按 CE63 布局规则推导（x=2*sx、w=sw−2*sx、h=7*sy、y=sh−h → 当前 (64,408,960,168)）。
+    * `tables`：Sys/Data/CData 三套库的表清单（container/type/type_name/rows/fields）。
+    * `cells`：Sys 侧**全部**单元格 + 名称型表（`fields=0`，如 文字列変数名/システム変数名/通常変数名）以 `field="name"`、`value=行名` 输出；Data/CData 仅在 `--filter` 时展开单元格（体量大）。`--filter` 按表名或类型索引子串匹配。
+    * 快照：**98 张表 / 1381 单元格**。Sys6（システム変数名）直接给出消息窗/选择窗坐标、姿势游标、基础字号、消息速度等槽位名，可作对齐原版依据。
+  * **A（文档/帮助）**：docs/ASSETS.md 增「DB 默认值导出（--db-defaults）」节并修正「覆盖与边界」；main.rs `print_help` 增 `--db-defaults` 说明（原 `--db` 属 dump 探针，已撞名，故用 `--db-defaults`）。
+  * **A（验证）**：cargo build -q --workspace exit0；`assets --db-defaults`/`--format json`/`--filter 6` 均正常；work/out/db_defaults.json 用 Python `json.load` 通过（tables=98,cells=1381,msgwin=(64,408,960,168)）；wolf-cli verify **PASS 64 / 1 SKIP**；WOLF_DATA_ROOT=<绝对> `cargo test -q --workspace` = 其余 crate 全 ok，wolf-game 283 passed / **7 failed**（与既有干净 HEAD 完全相同的姊妹作期望值/事件语义差异：db 2 + auto_events 3 + game 2，**非本轮回归**）。
+  * **B（文档）**：docs/ENGINE_BEHAVIOR.md（165 行，新增未跟踪）由子代理 944209e7 完成：§0 图例、§1 六类核心表（九宫格/文本度量换行/选择面板 H-MENU-1/1-10 UI 缩放/过渡淡入/present-swapchain，6 列含来源+现状+文件:行+核对方法）、§2 逐项说明、§3 **12 条需逆向/实测常量清单**、§4 获取途径与优先级。关键锚点：window.rs:62 nine_slice(3px)；message.rs:97/122 coordinate_scale 与 line_height=font+6；choice.rs:112/180-214/127；scaler.rs:21,23,27 + db.rs:159 + picture.rs:1046；renderer.rs:55/910 + play.rs:35。
+  * **下一步 C**：用 rea（npx rea-agents，MCP 做二进制/运行时逆向）对原版 Game.exe 定点验证 §3 的 12 条常量。

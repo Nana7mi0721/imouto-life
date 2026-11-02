@@ -157,9 +157,15 @@ fn main() -> ExitCode {
     // `--include-maps` also scans MapData/*.mps page commands; `--coords` prints one
     // row per draw site; `--format` selects tsv (default) or json. It reuses --filter
     // (asset substring) and --out (write to a file instead of stdout).
+    // --include-maps also folds the embedded MapData story events into the placement
+    // truth. --db-defaults instead switches to the DB defaults / SysDatabase export:
+    // the engine-owned values the boundary note listed as "not in data" actually do
+    // live in SysDatabase.dat / DataBase.dat, so they can be exported rather than
+    // guessed.
     let mut assets_include_maps = false;
     let mut assets_coords = false;
     let mut assets_format = "tsv".to_owned();
+    let mut assets_db = false;
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -249,6 +255,7 @@ fn main() -> ExitCode {
             // just CommonEvent.dat. `--coords`: one row per draw site instead of the
             // per-file summary. `--format tsv|json`: output encoding.
             "--include-maps" => assets_include_maps = true,
+            "--db-defaults" => assets_db = true,
             "--coords" => assets_coords = true,
             "--format" => assets_format = args.next().unwrap_or_else(|| "tsv".to_owned()),
             "--map" | "-m" => {
@@ -484,6 +491,7 @@ fn main() -> ExitCode {
         Some("assets") => run_assets(
             &root,
             assets_include_maps,
+            assets_db,
             assets_coords,
             &assets_format,
             event,
@@ -616,7 +624,9 @@ fn print_help() {
     println!("                                   [--debug] [--debug-var <ADDR,...>] [--stats]");
     println!("                                   [--hotkeys <FILE>]");
     println!("    wolf-cli [--root <DIR>] list [--filter <TEXT>]");
-    println!("    wolf-cli [--root <DIR>] assets [--include-maps] [--coords] [--format tsv|json]");
+    println!(
+        "    wolf-cli [--root <DIR>] assets [--include-maps] [--coords] [--db-defaults] [--format tsv|json]"
+    );
     println!("                                   [--filter <TEXT>] [--out <FILE>]");
     println!(
         "    wolf-cli [--root <DIR>] translations [--template <FILE>] [--check <FILE>] [--strict]"
@@ -655,6 +665,11 @@ fn print_help() {
     println!("    -t, --trace       Print every host callback in 'run', not just the summary.");
     println!("    -o, --out <FILE>  PNG path for 'capture' (default work/out/title.png).");
     println!("    --include-maps    'assets' also scans MapData/*.mps event pages.");
+    println!("    --db-defaults     'assets' exports the database layer instead of draw sites:");
+    println!("                      engine defaults (screen/scale/message-window rect), the table");
+    println!("                      inventory of Sys/Data/CData, and every populated SysDatabase");
+    println!("                      cell. --filter narrows tables; Data/CData cells expand only");
+    println!("                      under --filter.");
     println!("    --coords          'assets' prints one row per draw site (file/event/slot/coords)");
     println!("                      instead of the per-file summary.");
     println!("    --format <F>      'assets' output: tsv (default) or json.");
@@ -2445,6 +2460,7 @@ fn distinct_asset_files(sites: &[AssetSite]) -> usize {
 fn run_assets(
     root: &Path,
     include_maps: bool,
+    db: bool,
     coords: bool,
     format: &str,
     event: Option<u32>,
@@ -2455,6 +2471,9 @@ fn run_assets(
     if format != "tsv" && format != "json" {
         eprintln!("unknown --format '{format}' (use tsv or json)");
         return ExitCode::from(2);
+    }
+    if db {
+        return run_assets_db(root, &format, filter, out);
     }
     let basic = if root.join("BasicData").is_dir() {
         root.join("BasicData")
@@ -2659,6 +2678,355 @@ fn run_assets(
         eprintln!("{summary}");
     }
     ExitCode::SUCCESS
+}
+
+/// Output of assets --db: the database layer the placement boundary note said was
+/// missing. It exports what actually lives in the data: the engine-owned defaults
+/// (screen size, coordinate scale, message-window skin, and the message-window rect
+/// those imply), a table inventory for all three databases, and every populated
+/// SysDatabase cell with its editor label. --filter narrows tables by editor name or
+/// type index; --format selects tsv or json.
+fn run_assets_db(
+    root: &Path,
+    format: &str,
+    filter: Option<&str>,
+    out: Option<&Path>,
+) -> ExitCode {
+    let basic = if root.join("BasicData").is_dir() {
+        root.join("BasicData")
+    } else {
+        root.to_path_buf()
+    };
+    let (screen_w, screen_h) =
+        read_game_dat(root).map_or(wolf_game::db::DEFAULT_SCREEN, |dat| {
+            let (width, height) = dat.screen_size();
+            (u32::from(width), u32::from(height))
+        });
+    let (scale_x, scale_y) = wolf_game::db::coordinate_scale((screen_w, screen_h));
+    // CE63 lays the message window out from the coordinate scale: two steps of side
+    // margin, seven steps tall, flush with the bottom of the screen.
+    let msg_x = 2 * scale_x;
+    let msg_w = screen_w as i32 - 2 * scale_x;
+    let msg_h = 7 * scale_y;
+    let msg_y = screen_h as i32 - msg_h;
+
+    let needle = filter.map(|text| text.to_ascii_lowercase());
+
+    let mut sys = read(&basic.join("SysDatabase.dat"))
+        .and_then(|bytes| wf::sysdatabase::SysDatabase::parse(&bytes).ok());
+    if let (Some(db), Some(bytes)) = (sys.as_mut(), read(&basic.join("SysDatabase.project"))) {
+        db.apply_project_names(&bytes);
+    }
+    let mut data = read(&basic.join("DataBase.dat"))
+        .and_then(|bytes| wf::database::Database::parse(&bytes).ok());
+    if let (Some(db), Some(bytes)) = (data.as_mut(), read(&basic.join("DataBase.project"))) {
+        db.apply_project_names(&bytes);
+    }
+    let mut cdata = read(&basic.join("CDataBase.dat"))
+        .and_then(|bytes| wf::database::Database::parse(&bytes).ok());
+    if let (Some(db), Some(bytes)) = (cdata.as_mut(), read(&basic.join("CDataBase.project"))) {
+        db.apply_project_names(&bytes);
+    }
+
+    struct TableRow {
+        container: &'static str,
+        ty: usize,
+        name: String,
+        rows: usize,
+        fields: usize,
+    }
+    struct CellRow {
+        container: &'static str,
+        ty: usize,
+        row: usize,
+        row_name: String,
+        col: usize,
+        field: String,
+        value: String,
+    }
+    let mut tables: Vec<TableRow> = Vec::new();
+    let mut cells: Vec<CellRow> = Vec::new();
+    let wanted = |name: &str, ty: usize| match &needle {
+        None => true,
+        Some(needle) => {
+            name.to_ascii_lowercase().contains(needle.as_str())
+                || ty.to_string().contains(needle.as_str())
+        }
+    };
+
+    if let Some(db) = &sys {
+        for (ty, table) in db.types().iter().enumerate() {
+            let name = table.name.clone();
+            if !wanted(&name, ty) {
+                continue;
+            }
+            let rows = db.row_count(ty);
+            let fields = table.fields.len();
+            tables.push(TableRow { container: "Sys", ty, name, rows, fields });
+            for row in 0..rows {
+                let row_name = db.name_of(ty, row).unwrap_or("").to_owned();
+                for col in 0..fields {
+                    let Some(value) = table.value(row, col) else { continue };
+                    let text = match value {
+                        wf::database::RowValue::Num(number) => number.to_string(),
+                        wf::database::RowValue::Str(text) => text.to_owned(),
+                    };
+                    if text.is_empty() {
+                        continue;
+                    }
+                    let field = db.field_name(ty, col).unwrap_or("").to_owned();
+                    cells.push(CellRow {
+                        container: "Sys",
+                        ty,
+                        row,
+                        row_name: row_name.clone(),
+                        col,
+                        field,
+                        value: text,
+                    });
+                }
+                // Name-only tables (string-variable names, system-variable names, and
+                // the like) carry their labels in the row names, not in columns. Emit
+                // those so the export still lists what each slot means.
+                if fields == 0 && !row_name.is_empty() {
+                    cells.push(CellRow {
+                        container: "Sys",
+                        ty,
+                        row,
+                        row_name: row_name.clone(),
+                        col: 0,
+                        field: "name".to_owned(),
+                        value: row_name.clone(),
+                    });
+                }
+            }
+        }
+    }
+    for (label, database) in [("Data", &data), ("CData", &cdata)] {
+        let Some(db) = database else { continue };
+        for (ty, table) in db.types.iter().enumerate() {
+            let name = db.type_name(ty).unwrap_or("").to_owned();
+            if !wanted(&name, ty) {
+                continue;
+            }
+            let rows = table.rows.len();
+            let fields = table.fields.len();
+            tables.push(TableRow { container: label, ty, name, rows, fields });
+            // The .dat containers hold mutable game data, not engine config, and are
+            // large; only expand their cells when a filter narrowed the selection.
+            if needle.is_none() {
+                continue;
+            }
+            for row in 0..rows {
+                let row_name = db.row_name(ty, row).unwrap_or("").to_owned();
+                for col in 0..fields {
+                    let Some(value) = table.value(&table.rows[row], col) else { continue };
+                    let text = match value {
+                        wf::database::RowValue::Num(number) => number.to_string(),
+                        wf::database::RowValue::Str(text) => text.to_owned(),
+                    };
+                    if text.is_empty() {
+                        continue;
+                    }
+                    let field = db.field_name(ty, col).unwrap_or("").to_owned();
+                    cells.push(CellRow {
+                        container: label,
+                        ty,
+                        row,
+                        row_name: row_name.clone(),
+                        col,
+                        field,
+                        value: text,
+                    });
+                }
+            }
+        }
+    }
+
+    let mut text = String::new();
+    if format == "json" {
+        text.push('{');
+        push_json_key(&mut text, "screen");
+        text.push('{');
+        push_json_key(&mut text, "w");
+        text.push_str(&screen_w.to_string());
+        text.push(',');
+        push_json_key(&mut text, "h");
+        text.push_str(&screen_h.to_string());
+        text.push_str("},");
+        push_json_key(&mut text, "coordinate_scale");
+        text.push('{');
+        push_json_key(&mut text, "x");
+        text.push_str(&scale_x.to_string());
+        text.push(',');
+        push_json_key(&mut text, "y");
+        text.push_str(&scale_y.to_string());
+        text.push_str("},");
+        push_json_key(&mut text, "window_skin");
+        text.push_str(&json_str(wolf_game::db::WINDOW_SKIN_FILE));
+        text.push(',');
+        push_json_key(&mut text, "message_window");
+        text.push('{');
+        push_json_key(&mut text, "x");
+        text.push_str(&msg_x.to_string());
+        text.push(',');
+        push_json_key(&mut text, "y");
+        text.push_str(&msg_y.to_string());
+        text.push(',');
+        push_json_key(&mut text, "w");
+        text.push_str(&msg_w.to_string());
+        text.push(',');
+        push_json_key(&mut text, "h");
+        text.push_str(&msg_h.to_string());
+        text.push_str("},");
+        push_json_key(&mut text, "tables");
+        text.push('[');
+        for (index, table) in tables.iter().enumerate() {
+            if index > 0 {
+                text.push(',');
+            }
+            text.push('{');
+            push_json_key(&mut text, "container");
+            text.push_str(&json_str(table.container));
+            text.push(',');
+            push_json_key(&mut text, "type");
+            text.push_str(&table.ty.to_string());
+            text.push(',');
+            push_json_key(&mut text, "type_name");
+            text.push_str(&json_str(&table.name));
+            text.push(',');
+            push_json_key(&mut text, "rows");
+            text.push_str(&table.rows.to_string());
+            text.push(',');
+            push_json_key(&mut text, "fields");
+            text.push_str(&table.fields.to_string());
+            text.push('}');
+        }
+        text.push_str("],");
+        push_json_key(&mut text, "cells");
+        text.push('[');
+        for (index, cell) in cells.iter().enumerate() {
+            if index > 0 {
+                text.push(',');
+            }
+            text.push('{');
+            push_json_key(&mut text, "container");
+            text.push_str(&json_str(cell.container));
+            text.push(',');
+            push_json_key(&mut text, "type");
+            text.push_str(&cell.ty.to_string());
+            text.push(',');
+            push_json_key(&mut text, "row");
+            text.push_str(&cell.row.to_string());
+            text.push(',');
+            push_json_key(&mut text, "row_name");
+            text.push_str(&json_str(&cell.row_name));
+            text.push(',');
+            push_json_key(&mut text, "col");
+            text.push_str(&cell.col.to_string());
+            text.push(',');
+            push_json_key(&mut text, "field");
+            text.push_str(&json_str(&cell.field));
+            text.push(',');
+            push_json_key(&mut text, "value");
+            text.push_str(&json_str(&cell.value));
+            text.push('}');
+        }
+        text.push_str("]}");
+        text.push(char::from(10));
+    } else {
+        text.push_str("# engine defaults");
+        text.push(char::from(10));
+        push_tsv_row(&mut text, &["screen.w".to_owned(), screen_w.to_string()]);
+        push_tsv_row(&mut text, &["screen.h".to_owned(), screen_h.to_string()]);
+        push_tsv_row(&mut text, &["coordinate_scale.x".to_owned(), scale_x.to_string()]);
+        push_tsv_row(&mut text, &["coordinate_scale.y".to_owned(), scale_y.to_string()]);
+        push_tsv_row(
+            &mut text,
+            &["window.skin".to_owned(), wolf_game::db::WINDOW_SKIN_FILE.to_owned()],
+        );
+        push_tsv_row(&mut text, &["message_window.x".to_owned(), msg_x.to_string()]);
+        push_tsv_row(&mut text, &["message_window.y".to_owned(), msg_y.to_string()]);
+        push_tsv_row(&mut text, &["message_window.w".to_owned(), msg_w.to_string()]);
+        push_tsv_row(&mut text, &["message_window.h".to_owned(), msg_h.to_string()]);
+        text.push(char::from(10));
+        text.push_str("# tables: container, type, type_name, rows, fields");
+        text.push(char::from(10));
+        for table in &tables {
+            push_tsv_row(
+                &mut text,
+                &[
+                    table.container.to_owned(),
+                    table.ty.to_string(),
+                    table.name.clone(),
+                    table.rows.to_string(),
+                    table.fields.to_string(),
+                ],
+            );
+        }
+        text.push(char::from(10));
+        text.push_str("# cells: container, type, row, row_name, col, field, value");
+        text.push(char::from(10));
+        for cell in &cells {
+            push_tsv_row(
+                &mut text,
+                &[
+                    cell.container.to_owned(),
+                    cell.ty.to_string(),
+                    cell.row.to_string(),
+                    cell.row_name.clone(),
+                    cell.col.to_string(),
+                    cell.field.clone(),
+                    cell.value.clone(),
+                ],
+            );
+        }
+    }
+
+    let summary = format!(
+        "assets --db: {} table(s), {} cell(s)",
+        tables.len(),
+        cells.len()
+    );
+    if let Some(path) = out {
+        if let Some(parent) = path.parent() {
+            if !parent.as_os_str().is_empty() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+        }
+        if let Err(err) = std::fs::write(path, &text) {
+            eprintln!("cannot write {}: {err}", path.display());
+            return ExitCode::FAILURE;
+        }
+        eprintln!("{summary} -> {}", path.display());
+    } else {
+        print!("{text}");
+        eprintln!("{summary}");
+    }
+    ExitCode::SUCCESS
+}
+
+fn push_json_key(out: &mut String, key: &str) {
+    out.push(char::from(34));
+    out.push_str(key);
+    out.push(char::from(34));
+    out.push(':');
+}
+
+fn push_tsv_row(out: &mut String, cells: &[String]) {
+    for (index, cell) in cells.iter().enumerate() {
+        if index > 0 {
+            out.push(char::from(9));
+        }
+        for ch in cell.chars() {
+            if ch == char::from(9) || ch == char::from(10) || ch == char::from(13) {
+                out.push(char::from(32));
+            } else {
+                out.push(ch);
+            }
+        }
+    }
+    out.push(char::from(10));
 }
 
 fn read(path: &Path) -> Option<Vec<u8>> {

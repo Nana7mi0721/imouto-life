@@ -274,7 +274,10 @@ fn synthetic_relocation_makes_the_three_rows_mouse_hittable() {
     assert!(
         game.screen.iter().any(|p| p.file.contains("menu1")),
         "event 43 paints the real Picture/menu1_* button, not a text panel: {:?}",
-        game.screen.iter().map(|p| p.file.clone()).collect::<Vec<_>>()
+        game.screen
+            .iter()
+            .map(|p| p.file.clone())
+            .collect::<Vec<_>>()
     );
     for (row, line) in lines.iter().enumerate() {
         let (x, y) = row_centre(line);
@@ -380,8 +383,11 @@ fn left_click_load_opens_the_ce14_read_grid() {
         "common event 14 (the load screen) is alive: {:?}",
         live_events(&game)
     );
+    // The grid keeps 25 window/text pictures and a handful of icons; the old
+    // threshold of 30 counted the six stray "0" glyph pictures per slot that the
+    // save-slot text fix removed, so 20 still proves the full grid was built.
     assert!(
-        game.screen.len() > 30,
+        game.screen.len() > 20,
         "the load grid draws many pictures: {}",
         game.screen.len()
     );

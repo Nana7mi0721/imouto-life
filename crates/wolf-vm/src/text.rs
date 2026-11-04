@@ -87,6 +87,46 @@ pub fn has_escape(text: &str) -> bool {
     text.contains('\\')
 }
 
+/// Expand an opcode 102 choice label.
+///
+/// The only difference from [`expand`] is the bare `\cself[n]` shape: choice lists
+/// use it for an optional action whose label is stored in a string slot. An unwritten
+/// slot has no label, and WOLF paints no row for it, so this returns the string slot
+/// (empty) instead of falling back to the numeric slot. The normal expander has to
+/// keep that numeric fallback because `\f[\cself[19]]` selects a font size; that is a
+/// numeric context, unlike a whole-label choice entry.
+#[must_use]
+pub fn expand_choice<L: VarLookup + ?Sized>(text: &str, lookup: &L) -> String {
+    let trimmed = text.trim();
+    if let Some((EscapeBank::SelfVar, index)) = single_escape(trimmed) {
+        return lookup.lookup_str(EscapeBank::SelfVar, index);
+    }
+    expand(text, lookup)
+}
+
+/// Parse `text` when it is exactly one `\name[n]` escape, with no other characters.
+fn single_escape(text: &str) -> Option<(EscapeBank, usize)> {
+    let rest = text.strip_prefix('\\')?;
+    let mut j = 0;
+    let bytes = rest.as_bytes();
+    while j < bytes.len() && bytes[j].is_ascii_alphabetic() {
+        j += 1;
+    }
+    let bank = match rest.get(..j)? {
+        "cself" | "self" | "cself_s" | "self_s" => EscapeBank::SelfVar,
+        "v" | "corgv" => EscapeBank::Var,
+        "s" | "corgs" => EscapeBank::StrVar,
+        "sys" | "csys" => EscapeBank::SysVar,
+        _ => return None,
+    };
+    let after = rest.get(j..)?;
+    let digits = after.strip_prefix('[')?.strip_suffix(']')?;
+    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    Some((bank, digits.parse().ok()?))
+}
+
 /// One innermost-first substitution pass. `None` means "nothing left to expand".
 fn expand_once<L: VarLookup + ?Sized>(text: &str, lookup: &L) -> Option<String> {
     // Walk from the right so the *last* escape in the string is expanded first;
@@ -259,6 +299,19 @@ mod tests {
         assert_eq!(expand(r"\cself[5]", &f), "学习会");
         // With no string written, the numeric fallback still drives font sizes.
         assert_eq!(expand(r"\cself[1]", &f), "8");
+    }
+
+    #[test]
+    fn choice_labels_hide_an_unwritten_self_string() {
+        let mut f = fixed();
+        // A bare \cself[n] option is a label slot, not a number: when the branch did
+        // not fill it the menu must paint no row at all (the retail five-row menu).
+        assert_eq!(expand_choice(r"\cself[1]", &f), "");
+        f.self_strs[5] = "想做爱".into();
+        assert_eq!(expand_choice(r"\cself[5]", &f), "想做爱");
+        // Only the whole-label shape is special; embedded escapes keep the numeric
+        // fallback that font-size markup relies on.
+        assert_eq!(expand_choice(r"label \cself[1]", &f), "label 8");
     }
 
     #[test]

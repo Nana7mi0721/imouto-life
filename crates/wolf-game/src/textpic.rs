@@ -107,6 +107,26 @@ use wolf_format::messagetext::{tokenize, Align, CodeKind, TextToken, VarBank, Va
 /// mixed-size line from colliding with the line under it.
 pub const DEFAULT_LINE_PITCH_RATIO: f32 = 1.3;
 
+/// How far above [Run::y] the glyph ink of a line actually starts, as a fraction of the
+/// font size.
+///
+/// A [Run] box is one 1.3 em text line (see [DEFAULT_LINE_PITCH_RATIO]); cosmic-text
+/// puts the glyph's cap height in the middle of that line, leaving roughly 0.3 em of
+/// blank half-leading above it. WOLF's GDI text pass anchors the *ink* near the picture's
+/// y, so the host lifts the quad by this fraction to line the two up. The save-slot
+/// screenshot measures 16 px labels 5 px low without this nudge (data row 4 px, time row
+/// 5 px, slot name 6 px below their retail positions) and the same ~0.3 em offset holds
+/// at 20 px.
+pub const TEXT_TOP_NUDGE_RATIO: f32 = 0.3;
+
+/// Extra downward shift applied to plain-pixel text pictures.
+///
+/// The retail HUD puts 24 px `19:30` ink at y 11 for a picture at y 7, four pixels
+/// below the ink position the half-leading lift produces; 18 px `周一` and 16 px
+/// `持有金钱` show the same four-to-five pixel gap. Tenths UI blocks (save-slot
+/// labels) match without it, so this is only added when `ui <= 1`.
+pub const PLAIN_TEXT_TOP_OFFSET: f32 = 4.0;
+
 /// Smallest font size an escape may set, in pixels.
 ///
 /// `\f[0]` and `\f+[-40]` both occur in the wild; a zero or negative size would make
@@ -121,8 +141,14 @@ const MAX_ESCAPE_DEPTH: u8 = 8;
 /// The escape state a run inherits.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Style {
-    /// Font size in pixels as set by the last `\f[n]`.
+    /// Font size actually used to lay this run out, in pixels.
     pub font_px: f32,
+    /// Size requested by the last `\f[n]`, before the no-antialias adjustment.
+    pub requested_px: f32,
+    /// Whether `\A+` is in effect. Retail turns antialiasing off for the save-slot
+    /// names with `\A-`, and its raster path then draws with the fixed 16 px base
+    /// face; keeping the requested size here lets a later `\A+` restore it.
+    pub anti_alias: bool,
     /// Colour index as set by the last `\c[n]`, or `None` for the default (white; the
     /// picture's own tone still applies on top).
     pub colour: Option<i32>,
@@ -174,8 +200,17 @@ pub struct Ctx<'a> {
     /// The SystemDB `12:文字色` palette that `\c[n]` indexes.
     pub colours: &'a dyn Colours,
     /// Font size to use before any `\f` escape, normally SystemDB `8:フォントサイズ`
-    /// (20 px in this game, written there by common event 48).
+    /// (20 px in this game, written there by common event 48). A literal `\f[0]` also
+    /// means "default", i.e. this same size: the save-slot data/time rows use `\f[0]`
+    /// and measure 20 px in the reference screenshot.
     pub default_font_px: f32,
+    /// Size of retail's non-antialiased raster face (`A-`), 16 px in this game.
+    ///
+    /// The save-slot names switch antialiasing off right before their text; their glyphs
+    /// then measure 16 px while the same `\f[0]` rows above them draw at 20 px. Keeping
+    /// this as a separate value models that raster path without pretending `\f[0]` is
+    /// 16 px, which made every date/time row too small.
+    pub base_font_px: f32,
 }
 
 /// Numeric and string variable reads.
@@ -255,6 +290,7 @@ pub fn fingerprint(raw: &str, ctx: &Ctx<'_>) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut hasher = DefaultHasher::new();
     ctx.default_font_px.to_bits().hash(&mut hasher);
+    ctx.base_font_px.to_bits().hash(&mut hasher);
     let tokens = tokenize(raw);
     let dynamic = tokens
         .iter()
@@ -331,10 +367,16 @@ pub fn layout_with(
             .tail_from
             .unwrap_or(line.chunks.len())
             .min(line.chunks.len());
+        let line_font_px = line_font_px(ctx, line);
         let mut cursor = left;
         for chunk in &line.chunks[..split] {
             let width = width_of(&chunk.text, chunk.style.font_px, advance);
-            let mut run = run_of(chunk, cursor, top, false);
+            // Retail aligns every run on a line to the line's tallest font baseline:
+            // FUN_00494480 draws at `y + (line_max_font - run_font) * scale`
+            // (00494480_FUN_00494480.c:682/713). Without this a small run after a
+            // large one sits too high, e.g. the HUD `[32]1[14]天` block.
+            let run_y = top + (line_font_px - chunk.style.font_px);
+            let mut run = run_of(chunk, cursor, run_y, false);
             run.width = width;
             runs.push(run);
             cursor += width;
@@ -347,7 +389,8 @@ pub fn layout_with(
             cursor = left + block_w - tail;
             for chunk in &line.chunks[split..] {
                 let width = width_of(&chunk.text, chunk.style.font_px, advance);
-                let mut run = run_of(chunk, cursor, top, true);
+                let run_y = top + (line_font_px - chunk.style.font_px);
+                let mut run = run_of(chunk, cursor, run_y, true);
                 run.width = width;
                 runs.push(run);
                 cursor += width;
@@ -382,6 +425,11 @@ struct Line {
     /// Index of the first chunk that `<R>` moved to the right edge.
     tail_from: Option<usize>,
     width: f32,
+    /// `\space[n]` active when this line ended, if the author set one. `None` keeps
+    /// the legacy 1.3 em pitch used by the HUD; `Some(gap)` means the retail
+    /// "font size + line gap" pitch, which is how the save-slot names ask for a tight
+    /// two-line block (`\space[0]` -> exactly one em between baselines).
+    gap: Option<f32>,
 }
 
 /// Turns a markup string into [Line]s.
@@ -394,6 +442,8 @@ struct Builder<'a, 'b> {
     lines: Vec<Line>,
     /// The line being built; taken when the line ends.
     line: Line,
+    /// Line gap set by `\space[n]`; carried into every line that ends after it.
+    line_gap: Option<f32>,
     depth: u8,
 }
 
@@ -404,12 +454,15 @@ impl<'a, 'b> Builder<'a, 'b> {
             advance,
             style: Style {
                 font_px: ctx.default_font_px.max(MIN_FONT_PX),
+                requested_px: ctx.default_font_px.max(MIN_FONT_PX),
+                anti_alias: true,
                 colour: None,
                 outline: false,
             },
             buf: String::new(),
             lines: Vec::new(),
             line: Line::default(),
+            line_gap: None,
             depth: 0,
         }
     }
@@ -435,6 +488,11 @@ impl<'a, 'b> Builder<'a, 'b> {
             // `\\` is a literal backslash; the tokeniser already made it its own token.
             TextToken::Backslash => self.buf.push('\\'),
             TextToken::Newline => self.end_line(),
+            // The tokeniser turns a literal `\space[n]` into this dedicated token, not
+            // into [TextToken::Code]. Without this arm the gap silently stayed `None` and
+            // the slot-name block kept the legacy 1.3 em pitch (measured 20.8 px at 16 px
+            // instead of the retail 16).
+            TextToken::LineGap(gap) => self.line_gap = Some(*gap as f32),
             TextToken::Align(Align::Right) => self.right_align(),
             // `<C>` (centre) and `<L>` (left) are line-start alignment for the message window.
             // Inside a picture box the host already knows where the block goes, and this game
@@ -453,8 +511,17 @@ impl<'a, 'b> Builder<'a, 'b> {
             TextToken::FontSize(px) => {
                 self.set_font_px(*px as f32);
             }
+            // `\A-` switches retail to its non-antialiased raster path, which uses the
+            // fixed base face (16 px here). The save-slot names rely on it: their markup
+            // starts with \f[0] (Sys8 = 20 px) but the reference screenshot draws them
+            // at 16 px. `\A+` goes back to the size the last \f asked for.
+            TextToken::AntiAlias(on) => {
+                self.flush();
+                self.style.anti_alias = *on;
+                self.style.font_px = self.effective_font_px();
+            }
             TextToken::FontSizeDelta(delta) => {
-                let next = self.style.font_px + *delta as f32;
+                let next = self.style.requested_px + *delta as f32;
                 self.set_font_px(next);
             }
             TextToken::Var(var) => {
@@ -479,11 +546,24 @@ impl<'a, 'b> Builder<'a, 'b> {
     /// render the whole panel at 1/20 scale. Only positive values are literal sizes.
     fn set_font_px(&mut self, px: f32) {
         self.flush();
-        self.style.font_px = if px.is_finite() && px > 0.0 {
+        self.style.requested_px = if px.is_finite() && px > 0.0 {
             px.max(MIN_FONT_PX)
         } else {
             self.ctx.default_font_px.max(MIN_FONT_PX)
         };
+        self.style.font_px = self.effective_font_px();
+    }
+
+    /// The size the current style actually draws at.
+    ///
+    /// Antialiasing on is the normal path and keeps the requested size. Antialiasing
+    /// off selects retail's raster face, which is fixed at [`Ctx::base_font_px`].
+    fn effective_font_px(&self) -> f32 {
+        if self.style.anti_alias {
+            self.style.requested_px
+        } else {
+            self.ctx.base_font_px.max(MIN_FONT_PX)
+        }
     }
 
     /// A `\code[...]` whose argument did not parse as a plain integer.
@@ -502,7 +582,7 @@ impl<'a, 'b> Builder<'a, 'b> {
             }
             CodeKind::FontSizeDelta => {
                 if let Some(delta) = args.first().and_then(|arg| self.int_raw(arg)) {
-                    let next = self.style.font_px + delta as f32;
+                    let next = self.style.requested_px + delta as f32;
                     self.set_font_px(next);
                 }
             }
@@ -517,6 +597,14 @@ impl<'a, 'b> Builder<'a, 'b> {
             // where the author wanted it, and honouring them would need a second layout pass.
             // Recorded here so the omission is visible rather than silent.
             CodeKind::AbsoluteX | CodeKind::AbsoluteY => {}
+            // `\space[n]` must be honoured: the save-slot name block writes
+            // `\space[0]` before its two lines and the retail pitch is then exactly one
+            // em, not the legacy 1.3 em. Ignoring it put the second line 10 px too low.
+            CodeKind::LineGap => {
+                if let Some(gap) = args.first().and_then(|arg| self.int_raw(arg)) {
+                    self.line_gap = Some(gap as f32);
+                }
+            }
             // Every other code is either an inline object (icons, ruby) or a message-window
             // animation knob; neither moves the glyphs of this run.
             _ => {}
@@ -539,7 +627,8 @@ impl<'a, 'b> Builder<'a, 'b> {
     /// Finish the current line and start a new one.
     fn end_line(&mut self) {
         self.flush();
-        let line = std::mem::take(&mut self.line);
+        let mut line = std::mem::take(&mut self.line);
+        line.gap = self.line_gap;
         self.lines.push(line);
     }
 
@@ -674,18 +763,27 @@ fn width_of(text: &str, font_px: f32, advance: Advance<'_>) -> f32 {
 /// `\f[12]` body text keeps the same rhythm as the retail HUD instead of stacking
 /// two different baselines. An empty line still occupies one default pitch, which is
 /// what `\n`-only text pictures rely on.
-fn line_pitch(ctx: &Ctx<'_>, line: &Line) -> f32 {
+fn line_font_px(ctx: &Ctx<'_>, line: &Line) -> f32 {
     let font_px = line
         .chunks
         .iter()
         .map(|chunk| chunk.style.font_px)
         .fold(0.0_f32, f32::max);
-    let font_px = if font_px > 0.0 {
+    if font_px > 0.0 {
         font_px
     } else {
         ctx.default_font_px.max(MIN_FONT_PX)
-    };
-    font_px * DEFAULT_LINE_PITCH_RATIO
+    }
+}
+
+fn line_pitch(ctx: &Ctx<'_>, line: &Line) -> f32 {
+    let font_px = line_font_px(ctx, line);
+    // `\space[n]` is the author's explicit line gap; retail then advances by exactly
+    // font + gap. Without it the HUD labels keep the legacy 1.3 em approximation.
+    match line.gap {
+        Some(gap) => font_px + gap.max(0.0),
+        None => font_px * DEFAULT_LINE_PITCH_RATIO,
+    }
 }
 
 /// Top-left corner of a block of `(w, h)` whose anchor sits on `(x, y)`.
@@ -695,6 +793,9 @@ fn anchor_origin(anchor: u8, x: f32, y: f32, w: f32, h: f32) -> (f32, f32) {
         2 => (x, y - h),
         3 => (x - w, y),
         4 => (x - w, y - h),
+        // Internal spelling used by Game::text_quads: the 150 0x3000 text
+        // blocks centre horizontally on x but keep y as their top edge.
+        0x83 => (x - w * 0.5, y),
         // 0 is top-left, and so is every code this game never writes (5, 6, 7 are
         // reserved by the editor).
         _ => (x, y),
@@ -799,6 +900,7 @@ mod tests {
             cells: &NO_CELLS,
             colours: &NO_COLOURS,
             default_font_px: 20.0,
+            base_font_px: 20.0,
         }
     }
 
@@ -910,6 +1012,74 @@ mod tests {
     }
 
     #[test]
+    fn zero_font_size_means_the_default_not_the_raster_face() {
+        // `\f[0]` is the editor's "default size" spelling. The save-slot data and time
+        // rows use it and measure 20 px in the reference screenshot, so a distinct
+        // base_font_px (the `A-` raster face) must not leak into this path.
+        let ctx = Ctx {
+            vars: &NO_VARS,
+            cells: &NO_CELLS,
+            colours: &NO_COLOURS,
+            default_font_px: 20.0,
+            base_font_px: 16.0,
+        };
+        let runs = layout(r"\f[0]A", 0.0, 0.0, 0, &ctx);
+        assert!(approx(runs[0].font_px, 20.0));
+    }
+
+    #[test]
+    fn antialias_off_selects_the_raster_face_and_plus_restores() {
+        let ctx = Ctx {
+            vars: &NO_VARS,
+            cells: &NO_CELLS,
+            colours: &NO_COLOURS,
+            default_font_px: 20.0,
+            base_font_px: 16.0,
+        };
+        let runs = layout(r"\A-AB\A+C", 0.0, 0.0, 0, &ctx);
+        assert_eq!(runs.len(), 2);
+        assert_eq!(runs[0].text, "AB");
+        assert!(approx(runs[0].font_px, 16.0));
+        assert_eq!(runs[1].text, "C");
+        assert!(approx(runs[1].font_px, 20.0));
+    }
+
+    #[test]
+    fn save_slot_name_markup_uses_the_tight_16px_face() {
+        // The exact CE94 slot-name markup: \space[0] between two lines, \f[0] (20),
+        // then \A- (raster 16). Both lines must measure 16 px and sit 16 px apart.
+        let ctx = Ctx {
+            vars: &NO_VARS,
+            cells: &NO_CELLS,
+            colours: &NO_COLOURS,
+            default_font_px: 20.0,
+            base_font_px: 16.0,
+        };
+        let runs = layout(
+            concat!(r"<R>\space[0]\f[0]\-[1]\E\A- 1", "\n", "早泄 "),
+            0.0,
+            0.0,
+            0,
+            &ctx,
+        );
+        assert_eq!(runs.len(), 2);
+        assert!(runs.iter().all(|run| approx(run.font_px, 16.0)));
+        assert!(approx(runs[1].y - runs[0].y, 16.0));
+    }
+
+    #[test]
+    fn mixed_font_sizes_on_one_line_share_the_tallest_baseline() {
+        // The HUD status block is `\f[32]1\f[14]天`: retail draws the small run
+        // `line_max_font - run_font` lower (FUN_00494480), not at the line top.
+        let runs = layout(r"\f[32]1\f[14]天", 0.0, 0.0, 0, &bare());
+        assert_eq!(runs.len(), 2);
+        assert!(approx(runs[0].font_px, 32.0));
+        assert!(approx(runs[1].font_px, 14.0));
+        assert!(approx(runs[0].y, 0.0));
+        assert!(approx(runs[1].y, 18.0));
+    }
+
+    #[test]
     fn colour_escape_is_an_index_not_rgb() {
         let runs = layout(r"\c[2]X", 0.0, 0.0, 0, &bare());
         assert_eq!(runs[0].colour, Some(2));
@@ -925,6 +1095,7 @@ mod tests {
             cells: &NO_CELLS,
             colours: &colours,
             default_font_px: 20.0,
+            base_font_px: 20.0,
         };
         assert_eq!(rgb(&ctx, Some(1)), Some([255, 0, 0]));
         assert_eq!(rgb(&ctx, None), None);
@@ -951,6 +1122,7 @@ mod tests {
             cells: &NO_CELLS,
             colours: &NO_COLOURS,
             default_font_px: 20.0,
+            base_font_px: 20.0,
         };
         let runs = layout(r"\v[3]", 0.0, 0.0, 0, &ctx);
         assert_eq!(runs[0].text, "42");
@@ -969,6 +1141,7 @@ mod tests {
             cells: &NO_CELLS,
             colours: &NO_COLOURS,
             default_font_px: 20.0,
+            base_font_px: 20.0,
         };
         let runs = layout(r"\cself[9]", 0.0, 0.0, 0, &ctx);
         assert_eq!(runs[0].text, "周六");
@@ -989,6 +1162,7 @@ mod tests {
             cells: &NO_CELLS,
             colours: &NO_COLOURS,
             default_font_px: 20.0,
+            base_font_px: 20.0,
         };
         let runs = layout(r"\f[\cself[19]]21:40", 0.0, 0.0, 0, &ctx);
         assert_eq!(runs.len(), 1);
@@ -1004,6 +1178,7 @@ mod tests {
             cells: &cells,
             colours: &NO_COLOURS,
             default_font_px: 20.0,
+            base_font_px: 20.0,
         };
         let runs = layout(r"\cdb[0:12:0]\cdb[0:12:1]", 0.0, 0.0, 0, &ctx);
         assert_eq!(runs[0].text, "Lv3");

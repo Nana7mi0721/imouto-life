@@ -227,10 +227,7 @@ impl Databases {
         let mut data_bytes = read("DataBase.dat");
         let mut cdata_bytes = read("CDataBase.dat");
         let mut sys_bytes = read("SysDatabase.dat");
-        apply_byte_patches(
-            &mut data_bytes,
-            &["DataBase.dat", "BasicData/DataBase.dat"],
-        );
+        apply_byte_patches(&mut data_bytes, &["DataBase.dat", "BasicData/DataBase.dat"]);
         apply_byte_patches(
             &mut cdata_bytes,
             &["CDataBase.dat", "BasicData/CDataBase.dat"],
@@ -260,18 +257,16 @@ impl Databases {
         databases.apply_engine_defaults(screen);
         // Record patches run last so a mod can override even an engine-owned cell.
         if let Some(table) = databases.data.as_mut() {
-            if let Err(error) = patches.apply_records(
-                table,
-                &["DataBase.dat", "BasicData/DataBase.dat"],
-            ) {
+            if let Err(error) =
+                patches.apply_records(table, &["DataBase.dat", "BasicData/DataBase.dat"])
+            {
                 eprintln!("mod patch: DataBase.dat: {error}");
             }
         }
         if let Some(table) = databases.cdata.as_mut() {
-            if let Err(error) = patches.apply_records(
-                table,
-                &["CDataBase.dat", "BasicData/CDataBase.dat"],
-            ) {
+            if let Err(error) =
+                patches.apply_records(table, &["CDataBase.dat", "BasicData/CDataBase.dat"])
+            {
                 eprintln!("mod patch: CDataBase.dat: {error}");
             }
         }

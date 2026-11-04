@@ -342,13 +342,16 @@ fn ce242_action_and_energy_follow_cdata_status_cells() {
         }
         assert_eq!(game.stats.warnings, 0, "CE242 改值不应告警");
         let quads = quads_text(&game);
+        // Text quads split on ASCII spaces (the layout keeps the gap, not a space
+        // glyph), so compare the visible glyph run with whitespace removed.
+        let compact: String = quads.chars().filter(|c| !c.is_whitespace()).collect();
         assert!(
-            quads.contains(&format!("行动力{action}/{action_max}")),
+            compact.contains(&format!("行动力{action}/{action_max}")),
             "CE242 行动力应随 DB 单元变化：期望 行动力{action}/{action_max}，实际 quads={quads:?}"
         );
         assert!(
-            quads.contains(&format!("精力 {energy}/{energy_max}")),
-            "CE242 精力应随 DB 单元变化：期望 精力 {energy}/{energy_max}，实际 quads={quads:?}"
+            compact.contains(&format!("精力{energy}/{energy_max}")),
+            "CE242 精力应随 DB 单元变化：期望 精力{energy}/{energy_max}，实际 quads={quads:?}"
         );
     }
 

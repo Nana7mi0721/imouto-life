@@ -12,10 +12,19 @@
 //!   are alignment and decoration codes inside a text picture, and `parse` deliberately
 //!   rejects them so a caller cannot mistake one for a drawable shape.
 //!
-//! Every shape is drawn **white** and un-tinted. Colour comes from the picture's own tone
-//! (`crate::picture::field::TONE_R` and friends, percent per channel), which is why the
+//! Every **solid** shape is drawn white and un-tinted. Colour comes from the picture's own
+//! tone (`crate::picture::field::TONE_R` and friends, percent per channel), which is why the
 //! retail title banner is a `<SQUARE>` multiplied by 222/255 rather than a grey bitmap
 //! (docs/OPCODE_290.md section 3). Baking a colour in here would double-count that.
+//!
+//! The two gradient shapes are the exception: they are **black** shadows, not white fades.
+//! A `<GRADY-779-111>` full-screen box is how the save/load, status and battle screens
+//! darken the room behind them, and every one of the 38 gradient draws in this game leaves
+//! the picture tone at neutral white - so a white bitmap would *lighten* the scene instead
+//! of shadowing it. Retail evidence: in the reference save-screen shot the margin outside
+//! the slot panels is neutral dark (42,42,46) while a white 0.78-alpha ramp over any
+//! plausible room colour would sit above 190; a black ramp at the same alpha lands on the
+//! measured value. The gradient therefore carries its own black colour.
 //!
 //! The output is a plain `ImageData`, so a generated shape travels the exact same path as a
 //! decoded PNG: it goes into `crate::atlas::Atlas` under the key from `atlas_key`, gets
@@ -349,11 +358,11 @@ pub fn render(shape: Shape, w: u32, h: u32) -> Option<ImageData> {
         }
         Shape::GradX { from, to } => {
             let span = w.saturating_sub(1);
-            build(w, h, move |x, _| [255, 255, 255, ramp(from, to, x, span)])
+            build(w, h, move |x, _| [0, 0, 0, ramp(from, to, x, span)])
         }
         Shape::GradY { from, to } => {
             let span = h.saturating_sub(1);
-            build(w, h, move |_, y| [255, 255, 255, ramp(from, to, y, span)])
+            build(w, h, move |_, y| [0, 0, 0, ramp(from, to, y, span)])
         }
         Shape::Line if w == 0 => None,
         Shape::Line => build(w, h.max(1), |_, _| [255, 255, 255, 255]),
@@ -498,13 +507,13 @@ mod tests {
         assert_eq!(image.size(), (800, 500));
         assert_eq!(alpha_at(&image, 0, 0), 255);
         assert_eq!(alpha_at(&image, 799, 499), 0);
-        // Every row of a horizontal ramp ramps the same way, and the RGB stays white so
-        // the picture tone supplies the colour.
+        // Every row of a horizontal ramp ramps the same way, and the RGB stays black: a
+        // gradient is a shadow, so its own colour is the one that has to darken the scene.
         assert_eq!(alpha_at(&image, 0, 250), 255);
         assert_eq!(alpha_at(&image, 799, 250), 0);
         assert_eq!(
             image.pixel(400, 250).expect("middle"),
-            [255, 255, 255, alpha_at(&image, 400, 250)]
+            [0, 0, 0, alpha_at(&image, 400, 250)]
         );
         // A one-pixel-wide ramp has no room to interpolate: it takes the near endpoint.
         let thin = render(Shape::GradX { from: 500, to: 0 }, 1, 4).expect("thin gradient");

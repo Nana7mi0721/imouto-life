@@ -2,7 +2,7 @@
 //!
 //! The night command menu is a WOLF 102 choice prompt, not a picture-button
 //! overlay: SaveData01 restores the bedroom HUD, then start_event(245) opens the
-//! six-row menu "开始交流 / 泡茶 / 泡澡 / 网上购物 / 今天就这样睡吧 / 0" with the
+//! five-row menu "开始交流 / 泡茶 / 泡澡 / 网上购物 / 今天就这样睡吧" with the
 //! engine window parked at the system-variable anchor (512, 230). This file pins
 //! the mouse contract against that real prompt:
 //!
@@ -12,7 +12,7 @@
 //!     row pitch is exactly choice::line_pitch(20.0);
 //!   * a real left click (moved onto the row, then a press edge held for a while so
 //!     a single-frame poll can never miss it) lands on the intended branch for all
-//!     six rows, and the "0" debug row leaves the menu without breaking anything;
+//!     five rows, and the empty optional action is not painted as a sixth row;
 //!   * the cancel key closes the prompt without picking an option: it drops
 //!     CE245 outright, returns from the CE246 sub-menu to the parent menu, and
 //!     closes the CE249/CE250 branches without charging money or starting an
@@ -73,7 +73,7 @@ fn open_loaded_bedroom() -> Option<Game> {
     Some(game)
 }
 
-/// Starts CE245 (night command) and runs until its six-row choice prompt is live.
+/// Starts CE245 (night command) and runs until its five-row choice prompt is live.
 fn open_night_menu(game: &mut Game) {
     game.screen.clear();
     assert!(game.start_event(245), "common event 245 starts");
@@ -94,7 +94,7 @@ fn trimmed_options(game: &Game) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// The six live rows of the night menu, as the renderer would place them.
+/// The five live rows of the night menu, as the renderer would place them.
 fn row_rects(game: &Game) -> Vec<[f32; 4]> {
     let choices = game.choices.as_ref().expect("a choice prompt is open");
     let layout = wolf_game::choice::layout_at_sized(
@@ -162,18 +162,11 @@ fn live_events(game: &Game) -> Vec<u32> {
     events
 }
 
-fn is_six_row_night_menu(game: &Game) -> bool {
+fn is_night_menu(game: &Game) -> bool {
     trimmed_options(game)
-        == [
-            "开始交流",
-            "泡茶",
-            "泡澡",
-            "网上购物",
-            "今天就这样睡吧",
-            "0",
-        ]
-        .map(str::to_owned)
-        .to_vec()
+        == ["开始交流", "泡茶", "泡澡", "网上购物", "今天就这样睡吧"]
+            .map(str::to_owned)
+            .to_vec()
 }
 
 #[test]
@@ -192,7 +185,7 @@ fn hover_hit_test_matches_anchor_row_pitch_and_padding() {
     assert_eq!(game.font_px(), 20.0, "the menu draws at the Sys8 font size");
 
     let lines = row_rects(&game);
-    assert_eq!(lines.len(), 6, "six option rows");
+    assert_eq!(lines.len(), 5, "five option rows");
     // Uniform row pitch: consecutive rows are exactly one line pitch apart.
     for window in lines.windows(2) {
         assert_eq!(
@@ -221,7 +214,7 @@ fn hover_hit_test_matches_anchor_row_pitch_and_padding() {
             "hovering row {row} keeps hit-testing to row {row}"
         );
         assert!(
-            is_six_row_night_menu(&game),
+            is_night_menu(&game),
             "hover must not pick an option (row {row})"
         );
     }
@@ -248,12 +241,12 @@ fn hover_moves_the_highlight_and_left_click_still_hits() {
     };
     open_night_menu(&mut game);
     let lines = row_rects(&game);
-    assert_eq!(lines.len(), 6, "six option rows");
+    assert_eq!(lines.len(), 5, "five option rows");
 
     // Start on a non-zero row so a follow can be told apart from "stayed put".
-    game.set_choice_cursor(5);
+    game.set_choice_cursor(4);
     // Move to the centre of each row in turn; the highlight follows the pointer.
-    for row in 0..6usize {
+    for row in 0..5usize {
         let (x, y) = row_centre(&lines[row]);
         game.mouse = [x, y];
         game.frame();
@@ -263,7 +256,7 @@ fn hover_moves_the_highlight_and_left_click_still_hits() {
             "moving onto row {row} highlights row {row}"
         );
         assert!(
-            is_six_row_night_menu(&game),
+            is_night_menu(&game),
             "hovering hides nothing and picks no row ({row})"
         );
     }
@@ -312,15 +305,12 @@ fn hover_moves_the_highlight_and_left_click_still_hits() {
 fn left_click_hits_each_night_action() {
     // Row -> what the click must reach. Checked one fresh game per row so earlier
     // clicks cannot mutate the state a later row is judged in.
-    for row in 0..6usize {
+    for row in 0..5usize {
         let Some(mut game) = open_loaded_bedroom() else {
             return;
         };
         open_night_menu(&mut game);
-        assert!(
-            is_six_row_night_menu(&game),
-            "row {row}: starts on the menu"
-        );
+        assert!(is_night_menu(&game), "row {row}: starts on the menu");
 
         click_row(&mut game, row);
 
@@ -375,14 +365,6 @@ fn left_click_hits_each_night_action() {
                     "row 4 raises the sleep confirmation"
                 );
             }
-            5 => {
-                // The trailing "0" is a hidden debug row: it must leave the menu
-                // without leaving a live choice prompt or a warning behind.
-                assert!(
-                    game.choices.is_none(),
-                    "the debug row closes the six-row menu"
-                );
-            }
             _ => unreachable!(),
         }
         assert_eq!(game.stats.warnings, 0, "row {row} click is warning-free");
@@ -395,7 +377,7 @@ fn cancel_key_drops_ce245_without_picking() {
         return;
     };
     open_night_menu(&mut game);
-    assert!(is_six_row_night_menu(&game));
+    assert!(is_night_menu(&game));
 
     press_cancel(&mut game);
     for _ in 0..4 {
@@ -433,7 +415,7 @@ fn cancel_key_returns_from_ce246_to_parent_menu() {
     }
 
     assert!(
-        is_six_row_night_menu(&game),
+        is_night_menu(&game),
         "cancelling CE246 returns to the parent CE245 menu, got {:?}",
         trimmed_options(&game)
     );
@@ -505,7 +487,7 @@ fn right_button_cancels_the_night_menu() {
         return;
     };
     open_night_menu(&mut game);
-    assert!(is_six_row_night_menu(&game));
+    assert!(is_night_menu(&game));
 
     game.mouse = [500, 300];
     game.frame(); // settle the pointer so the press is a clean edge
@@ -556,7 +538,7 @@ fn right_button_returns_from_ce246_to_parent_menu() {
     }
 
     assert!(
-        is_six_row_night_menu(&game),
+        is_night_menu(&game),
         "a right click cancels CE246 back to the parent CE245 menu, got {:?}",
         trimmed_options(&game)
     );

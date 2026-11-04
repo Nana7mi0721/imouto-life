@@ -6,7 +6,7 @@
 //!
 //! | event | title (JP) | first-level choice (trimmed) | notes |
 //! |---|---|---|---|
-//! | 245 | 夜コマンド | 开始交流 / 泡茶 / 泡澡 / 网上购物 / 今天就这样睡吧 / 0 | the trailing "0" is a debug option |
+//! | 245 | 夜コマンド | 开始交流 / 泡茶 / 泡澡 / 网上购物 / 今天就这样睡吧 | the empty sixth slot is hidden |
 //! | 246 | コミュニケーション | 说话 / 看看电视吧 / 玩游戏吧 / 鸡鸡伸展！ | reached from 245 #0 |
 //! | 247 | ＴＶ視聴 | (none) | reached from 246 #1, plays three lines then ends |
 //! | 248 | ゲーム | 对战游戏 / 格斗游戏 / 竞速游戏 / 角色扮演游戏 / 0 / 0 / 0 | reached from 246 #2 |
@@ -227,9 +227,8 @@ fn ce245_menu_options() {
             "泡澡".to_owned(),
             "网上购物".to_owned(),
             "今天就这样睡吧".to_owned(),
-            "0".to_owned(),
         ],
-        "CE245 draws the five night actions plus a trailing debug option"
+        "CE245 draws exactly the five night actions"
     );
     assert_eq!(
         game.stats.warnings, 0,
@@ -533,7 +532,7 @@ fn ce247_tv_flow() {
 }
 
 // ---------------------------------------------------------------------------
-// CE248 ゲーム: four real titles plus three debug slots.
+// CE248 ゲーム: exactly the four real titles (the empty optional slots are hidden).
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -558,11 +557,8 @@ fn ce248_game_menu_and_branches() {
             "格斗游戏".to_owned(),
             "竞速游戏".to_owned(),
             "角色扮演游戏".to_owned(),
-            "0".to_owned(),
-            "0".to_owned(),
-            "0".to_owned(),
         ],
-        "CE248 lists four games plus three debug slots"
+        "CE248 lists the four games"
     );
     let menu_pics = pictures(&game);
     for number in [900, 901, 902, 903, 16_000, 16_001] {

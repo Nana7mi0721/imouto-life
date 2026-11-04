@@ -318,8 +318,15 @@ restart = F12
     #[test]
     fn an_invalid_key_name_is_reported_and_falls_back_to_default() {
         let (config, errors) = HotkeyConfig::parse("restart = F99\nstats = F7\n");
-        assert_eq!(errors.len(), 1, "one bad key should be reported: {errors:?}");
-        assert!(errors[0].contains("F99"), "error names the bad key: {errors:?}");
+        assert_eq!(
+            errors.len(),
+            1,
+            "one bad key should be reported: {errors:?}"
+        );
+        assert!(
+            errors[0].contains("F99"),
+            "error names the bad key: {errors:?}"
+        );
         // The bad line keeps the default; the valid one is still applied.
         assert_eq!(config.restart, NamedKey::F12);
         assert_eq!(config.stats, NamedKey::F7);

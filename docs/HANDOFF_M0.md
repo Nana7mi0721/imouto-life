@@ -261,7 +261,7 @@ WOLF_DATA_ROOT="$PWD/work/Data" ./target/debug/wolf-cli.exe verify | tail -20
 > **[HANDOFF_PROGRESS.md](HANDOFF_PROGRESS.md)**。本节只保留**当前状态摘要**；
 > 新会话判断“现在是什么状态”以本节 + 各专题文档为准，查历史细节再翻日志。
 
-### 11.1 当前状态（2026-11-02）
+### 11.1 当前状态（2026-11-03）
 
 * 里程碑 **M0–M7 全部完成并推送**。
 * **C 任务**（原版 Game.exe 静态逆向，Ghidra 12.2 + JDK 25）已完成，结论见
@@ -269,11 +269,15 @@ WOLF_DATA_ROOT="$PWD/work/Data" ./target/debug/wolf-cli.exe verify | tail -20
   其中可落地部分**已改到 crates/**（提交 4ac380d）。
 * 验证基线：`cargo test -q --workspace` **exit 0**；`wolf-game --lib` 300 passed；
   `wolf-cli verify` **PASS 64 / 1 SKIP**（dxarchive.header）。
+* 2026-11-03：opcode 102 的空可选行动不再画成 `0` 行（CE245 夜菜单 5 行、CE248 游戏菜单 4 行）；
+  `cargo test -q -p wolf-cli --test m14_visual_regression` 5 passed，日命令基线已按 5 行重录。
+* 2026-11-03：HUD/普通 text picture 改用 `Game.dat` 的 Bold face（cosmic-text 请求 400 时会退到 Segoe UI Symbol，数字窄 16%）；`19:30` 墨迹宽度 53→63 与实机参考一致，并补 4px 垂直基线偏移；存档 tenths UI 标签仍用 regular 400。`cargo test -q --workspace` exit 0，视觉回归 5 passed。
+* 2026-11-03：普通像素 HUD 文本的 ASCII 空格按 **0.5 em** 度量（原版混合字体/字距的事实规则），其余字形仍用 msyhbd 实际 advance；右上 `同居 1天` 整块由 x≈952.6 左移到 943.3，line2 宽 47.3→56.7（参考≈57），`19:30` 不变。capture 文本 quad 按空格拆成独立 span，单测里的空格式期望已改为忽略空白比较。`cargo test -q --workspace` exit 0，视觉回归 5 passed，verify PASS 64/1 SKIP。
+* 2026-11-03：新增可双击游玩发布包 `crates/wolf-launcher` + `tools/package-playable.sh`；安装到 `D:\program\Imouto Life`（`Imouto Life.exe` + `runtime\wolf-cli.exe` + 全量 `Data\`，188 MB），zip 153 MB 在 `work/out/dist/Imouto Life-0.1.0-playable.zip`。包内 release `wolf-cli verify` PASS 64/1 SKIP，`capture --menu-only` 1024x576 渲染成功。 `cargo test -q --workspace` exit 0。清理：删除 `work/out/zipcheck`、`work/out/launcher_probe`、`target/debug/incremental`、`target/release`；当前 `du -sh .` = 5.6 GB。
 * **真机 GPU play 路径已验证**（2026-11-02，RTX 5060 Laptop / Vulkan / 1024x576）：
   boot 600 帧、load-save 900 帧、event 245 600 帧、menu-only 600 帧，四个入口全部
   **exit 0 / 0 warning**；标题画面离屏 capture 正确。
-* 工作区 `du -sh .` = **4.6 GB**（target 4.0 G 可重编；work 543 M = Data 176 M +
-  Ghidra 项目与全量伪码 dump；临时产物已按 §7 清理）。
+* 工作区 `du -sh .` = **5.6 GB**（target 4.1 G 可重编、release/incremental 已清；work 1.5 G = Data 176 M + work/out 1.3 G；发布包在 `D:\program\Imouto Life` 188 M）。
 
 ### 11.2 最近三轮摘要
 

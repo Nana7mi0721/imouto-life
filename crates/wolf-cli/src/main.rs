@@ -670,7 +670,9 @@ fn print_help() {
     println!("                      inventory of Sys/Data/CData, and every populated SysDatabase");
     println!("                      cell. --filter narrows tables; Data/CData cells expand only");
     println!("                      under --filter.");
-    println!("    --coords          'assets' prints one row per draw site (file/event/slot/coords)");
+    println!(
+        "    --coords          'assets' prints one row per draw site (file/event/slot/coords)"
+    );
     println!("                      instead of the per-file summary.");
     println!("    --format <F>      'assets' output: tsv (default) or json.");
     println!(
@@ -1663,7 +1665,7 @@ impl Host for TraceHost {
         ));
     }
 
-    fn save_load(&mut self, op: &wolf_vm::SaveOp) -> Option<i32> {
+    fn save_load(&mut self, op: &wolf_vm::SaveOp) -> Option<wolf_vm::DbValue> {
         self.saves += 1;
         self.note(format!("  22x saveload op {} {:?}", op.opcode, op.file));
         None
@@ -2623,7 +2625,9 @@ fn run_assets(
                 first: placement.clone(),
             });
             entry.count += 1;
-            entry.scopes.insert(format!("{}:{}", site.scope, site.event_id));
+            entry
+                .scopes
+                .insert(format!("{}:{}", site.scope, site.event_id));
             entry.placements.insert(placement);
         }
         let mut rows: Vec<(&str, &Agg)> = agg.iter().map(|(file, agg)| (*file, agg)).collect();
@@ -2698,22 +2702,16 @@ fn run_assets(
 /// those imply), a table inventory for all three databases, and every populated
 /// SysDatabase cell with its editor label. --filter narrows tables by editor name or
 /// type index; --format selects tsv or json.
-fn run_assets_db(
-    root: &Path,
-    format: &str,
-    filter: Option<&str>,
-    out: Option<&Path>,
-) -> ExitCode {
+fn run_assets_db(root: &Path, format: &str, filter: Option<&str>, out: Option<&Path>) -> ExitCode {
     let basic = if root.join("BasicData").is_dir() {
         root.join("BasicData")
     } else {
         root.to_path_buf()
     };
-    let (screen_w, screen_h) =
-        read_game_dat(root).map_or(wolf_game::db::DEFAULT_SCREEN, |dat| {
-            let (width, height) = dat.screen_size();
-            (u32::from(width), u32::from(height))
-        });
+    let (screen_w, screen_h) = read_game_dat(root).map_or(wolf_game::db::DEFAULT_SCREEN, |dat| {
+        let (width, height) = dat.screen_size();
+        (u32::from(width), u32::from(height))
+    });
     let (scale_x, scale_y) = wolf_game::db::coordinate_scale((screen_w, screen_h));
     // CE63 lays the message window out from the coordinate scale: two steps of side
     // margin, seven steps tall, flush with the bottom of the screen.
@@ -2774,11 +2772,19 @@ fn run_assets_db(
             }
             let rows = db.row_count(ty);
             let fields = table.fields.len();
-            tables.push(TableRow { container: "Sys", ty, name, rows, fields });
+            tables.push(TableRow {
+                container: "Sys",
+                ty,
+                name,
+                rows,
+                fields,
+            });
             for row in 0..rows {
                 let row_name = db.name_of(ty, row).unwrap_or("").to_owned();
                 for col in 0..fields {
-                    let Some(value) = table.value(row, col) else { continue };
+                    let Some(value) = table.value(row, col) else {
+                        continue;
+                    };
                     let text = match value {
                         wf::database::RowValue::Num(number) => number.to_string(),
                         wf::database::RowValue::Str(text) => text.to_owned(),
@@ -2823,7 +2829,13 @@ fn run_assets_db(
             }
             let rows = table.rows.len();
             let fields = table.fields.len();
-            tables.push(TableRow { container: label, ty, name, rows, fields });
+            tables.push(TableRow {
+                container: label,
+                ty,
+                name,
+                rows,
+                fields,
+            });
             // The .dat containers hold mutable game data, not engine config, and are
             // large; only expand their cells when a filter narrowed the selection.
             if needle.is_none() {
@@ -2832,7 +2844,9 @@ fn run_assets_db(
             for row in 0..rows {
                 let row_name = db.row_name(ty, row).unwrap_or("").to_owned();
                 for col in 0..fields {
-                    let Some(value) = table.value(&table.rows[row], col) else { continue };
+                    let Some(value) = table.value(&table.rows[row], col) else {
+                        continue;
+                    };
                     let text = match value {
                         wf::database::RowValue::Num(number) => number.to_string(),
                         wf::database::RowValue::Str(text) => text.to_owned(),
@@ -2951,16 +2965,37 @@ fn run_assets_db(
         text.push(char::from(10));
         push_tsv_row(&mut text, &["screen.w".to_owned(), screen_w.to_string()]);
         push_tsv_row(&mut text, &["screen.h".to_owned(), screen_h.to_string()]);
-        push_tsv_row(&mut text, &["coordinate_scale.x".to_owned(), scale_x.to_string()]);
-        push_tsv_row(&mut text, &["coordinate_scale.y".to_owned(), scale_y.to_string()]);
         push_tsv_row(
             &mut text,
-            &["window.skin".to_owned(), wolf_game::db::WINDOW_SKIN_FILE.to_owned()],
+            &["coordinate_scale.x".to_owned(), scale_x.to_string()],
         );
-        push_tsv_row(&mut text, &["message_window.x".to_owned(), msg_x.to_string()]);
-        push_tsv_row(&mut text, &["message_window.y".to_owned(), msg_y.to_string()]);
-        push_tsv_row(&mut text, &["message_window.w".to_owned(), msg_w.to_string()]);
-        push_tsv_row(&mut text, &["message_window.h".to_owned(), msg_h.to_string()]);
+        push_tsv_row(
+            &mut text,
+            &["coordinate_scale.y".to_owned(), scale_y.to_string()],
+        );
+        push_tsv_row(
+            &mut text,
+            &[
+                "window.skin".to_owned(),
+                wolf_game::db::WINDOW_SKIN_FILE.to_owned(),
+            ],
+        );
+        push_tsv_row(
+            &mut text,
+            &["message_window.x".to_owned(), msg_x.to_string()],
+        );
+        push_tsv_row(
+            &mut text,
+            &["message_window.y".to_owned(), msg_y.to_string()],
+        );
+        push_tsv_row(
+            &mut text,
+            &["message_window.w".to_owned(), msg_w.to_string()],
+        );
+        push_tsv_row(
+            &mut text,
+            &["message_window.h".to_owned(), msg_h.to_string()],
+        );
         text.push(char::from(10));
         text.push_str("# tables: container, type, type_name, rows, fields");
         text.push(char::from(10));
@@ -3758,7 +3793,8 @@ fn render_capture_frame(
             };
             let mut item = TextItem::new(text.text.clone(), text.rect, size)
                 .with_alpha(text.alpha)
-                .with_colour(text.colour);
+                .with_colour(text.colour)
+                .with_weight(text.weight);
             if text.outline {
                 item = item.with_outline(2, [0, 0, 0]);
             }
@@ -5137,7 +5173,10 @@ mod asset_tests {
         let commands = vec![text, message];
         let mut sites = Vec::new();
         asset_sites_in(&commands, "CE", 1, &mut sites);
-        assert!(sites.is_empty(), "only opcode 150 with an image path should count");
+        assert!(
+            sites.is_empty(),
+            "only opcode 150 with an image path should count"
+        );
     }
 
     #[test]
@@ -5146,4 +5185,3 @@ mod asset_tests {
         assert_eq!(json_str("line\tbreak"), "\"line\\tbreak\"");
     }
 }
-

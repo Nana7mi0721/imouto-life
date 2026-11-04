@@ -1,7 +1,7 @@
 //! M2 日常循环（daily loop）测试：《妹！生活 ～単色～》
 //!
 //! 覆盖两段日常循环的公共事件：
-//! - CE245 夜コマンド（夜间命令菜单）：读档进入卧室 HUD 后，展开六项行动菜单，
+//! - CE245 夜コマンド（夜间命令菜单）：读档进入卧室 HUD 后，展开五项行动菜单，
 //!   选择第 5 项「今天就这样睡吧」会先问一句再弹出「是/否」sleep 确认。
 //! - CE251 就寝（bedtime）：从干净事件状态跑一遍「就寝 -> 翌朝 -> 早餐 -> 当日行动菜单」，
 //!   时间从 00:00 推进到 08:30，说明日循环真正跨到了第二天。
@@ -114,7 +114,7 @@ fn loaded_bedroom_hud_shows_the_evening_clock_and_stats() {
 }
 
 #[test]
-fn night_command_menu_ce245_offers_the_six_actions() {
+fn night_command_menu_ce245_offers_the_five_actions() {
     let Some(mut game) = loaded_game() else {
         return;
     };
@@ -124,7 +124,7 @@ fn night_command_menu_ce245_offers_the_six_actions() {
     assert!(game.start_event(245), "common event 245 starts");
     let options = wait_for_choices(&mut game, 60);
 
-    // 六项行动菜单，注意每项末尾的空格（最后一项 "0" 没有）。
+    // 五项行动菜单，注意每项末尾的空格。空的第 6 个可选行动不画出来。
     assert_eq!(
         options.as_deref(),
         Some(
@@ -134,11 +134,10 @@ fn night_command_menu_ce245_offers_the_six_actions() {
                 "泡澡 ".to_owned(),
                 "网上购物 ".to_owned(),
                 "今天就这样睡吧 ".to_owned(),
-                "0".to_owned(),
             ]
             .as_slice()
         ),
-        "the night command menu shows its six options"
+        "the night command menu shows its five actions"
     );
     assert_eq!(
         game.choice_cursor(),

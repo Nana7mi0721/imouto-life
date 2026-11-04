@@ -164,7 +164,11 @@ impl PatchSet {
     ///
     /// PatchError::LengthMismatch, PatchError::OutOfRange or PatchError::Mismatch
     /// when a patch does not fit the file.
-    pub fn apply_bytes(&self, data: &mut Vec<u8>, candidates: &[&str]) -> Result<usize, PatchError> {
+    pub fn apply_bytes(
+        &self,
+        data: &mut Vec<u8>,
+        candidates: &[&str],
+    ) -> Result<usize, PatchError> {
         let mut plan: Vec<(usize, &[u8])> = Vec::new();
         for op in &self.ops {
             let PatchOp::Bytes {
@@ -314,7 +318,9 @@ pub enum PatchError {
 impl fmt::Display for PatchError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Io { path, source } => write!(f, "cannot read patch {}: {source}", path.display()),
+            Self::Io { path, source } => {
+                write!(f, "cannot read patch {}: {source}", path.display())
+            }
             Self::Syntax {
                 path,
                 line,
@@ -409,13 +415,14 @@ fn parse_file(path: &Path) -> Result<Vec<PatchOp>, PatchError> {
     let is_bytes =
         lookup("offset").is_some() || lookup("expect").is_some() || lookup("replace").is_some();
     if is_bytes {
-        let (offset_text, offset_line) =
-            lookup("offset").ok_or_else(|| syntax(path, 1, "byte patch missing required 'offset'"))?;
+        let (offset_text, offset_line) = lookup("offset")
+            .ok_or_else(|| syntax(path, 1, "byte patch missing required 'offset'"))?;
         let offset =
             parse_usize(&offset_text).map_err(|message| syntax(path, offset_line, &message))?;
         let (expect_text, expect_line) =
             lookup("expect").ok_or_else(|| syntax(path, 1, "byte patch missing 'expect'"))?;
-        let expect = parse_hex(&expect_text).map_err(|message| syntax(path, expect_line, &message))?;
+        let expect =
+            parse_hex(&expect_text).map_err(|message| syntax(path, expect_line, &message))?;
         let (replace_text, replace_line) =
             lookup("replace").ok_or_else(|| syntax(path, 1, "byte patch missing 'replace'"))?;
         let replace =
@@ -463,7 +470,9 @@ fn parse_file(path: &Path) -> Result<Vec<PatchOp>, PatchError> {
             CellValue::Number(parse_i32(&value).map_err(|m| syntax(path, line, &m))?)
         }
         (None, Some((value, _line))) => CellValue::Text(value),
-        (Some(_), Some(_)) => return Err(syntax(path, 1, "use either 'number' or 'text', not both")),
+        (Some(_), Some(_)) => {
+            return Err(syntax(path, 1, "use either 'number' or 'text', not both"))
+        }
         (None, None) => return Err(syntax(path, 1, "record patch needs 'number' or 'text'")),
     };
     Ok(vec![PatchOp::Record {
@@ -485,7 +494,10 @@ fn syntax(path: &Path, line: usize, message: &str) -> PatchError {
 
 fn parse_usize(text: &str) -> Result<usize, String> {
     let trimmed = text.trim();
-    let parsed = if let Some(hex) = trimmed.strip_prefix("0x").or_else(|| trimmed.strip_prefix("0X")) {
+    let parsed = if let Some(hex) = trimmed
+        .strip_prefix("0x")
+        .or_else(|| trimmed.strip_prefix("0X"))
+    {
         usize::from_str_radix(hex, 16)
     } else {
         trimmed.parse::<usize>()
@@ -495,7 +507,10 @@ fn parse_usize(text: &str) -> Result<usize, String> {
 
 fn parse_i32(text: &str) -> Result<i32, String> {
     let trimmed = text.trim();
-    let parsed = if let Some(hex) = trimmed.strip_prefix("0x").or_else(|| trimmed.strip_prefix("0X")) {
+    let parsed = if let Some(hex) = trimmed
+        .strip_prefix("0x")
+        .or_else(|| trimmed.strip_prefix("0X"))
+    {
         i32::from_str_radix(hex, 16)
     } else {
         trimmed.parse::<i32>()
@@ -593,7 +608,10 @@ mod tests {
             replace: vec![9, 9],
         }]);
         let mut data = vec![0u8, 1, 2, 3, 4, 5];
-        assert_eq!(set.apply_bytes(&mut data, &["BasicData/foo.bin"]).unwrap(), 1);
+        assert_eq!(
+            set.apply_bytes(&mut data, &["BasicData/foo.bin"]).unwrap(),
+            1
+        );
         assert_eq!(data, vec![0, 9, 9, 3, 4, 5]);
     }
 
@@ -685,7 +703,8 @@ mod tests {
         ]);
         let mut db = database();
         assert_eq!(
-            set.apply_records(&mut db, &["BasicData/CDataBase.dat"]).unwrap(),
+            set.apply_records(&mut db, &["BasicData/CDataBase.dat"])
+                .unwrap(),
             2
         );
         let bytes = db.to_bytes();
@@ -763,4 +782,3 @@ mod tests {
         assert!(parse_hex("00 001").is_err());
     }
 }
-

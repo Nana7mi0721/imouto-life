@@ -208,8 +208,9 @@ fn every_save_parses_with_the_measured_shape() {
             save.header.seed1(),
             save.header.seed2(),
         ];
-        let pinned =
-            data.len() == expected.size && seeds == expected.seeds && save.stored_checksum == expected.checksum;
+        let pinned = data.len() == expected.size
+            && seeds == expected.seeds
+            && save.stored_checksum == expected.checksum;
         if !pinned {
             eprintln!(
                 "note: {} was saved again since the baseline ({} bytes, seeds {:?}, checksum {}); checking structure only",

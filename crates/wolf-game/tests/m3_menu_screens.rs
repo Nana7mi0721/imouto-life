@@ -187,7 +187,12 @@ fn ce131_save_slot_grid_draws_and_cancels() {
     );
 
     // Four numbered slots; slots 3 and 4 are empty.
-    for (slot, label) in [(12052, "1"), (12072, "2"), (12092, "3"), (12112, "4")] {
+    for (slot, label) in [
+        (12052, "数据 1"),
+        (12072, "数据 2"),
+        (12092, "数据 3"),
+        (12112, "数据 4"),
+    ] {
         assert_eq!(text_of(&game, slot), label, "CE131 slot label at {slot}");
     }
     assert_eq!(text_of(&game, 12093), "没有数据", "CE131 empty slot 3");

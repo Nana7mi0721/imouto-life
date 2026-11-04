@@ -146,7 +146,10 @@ fn size(options: &[String], font_px: f32) -> (f32, f32) {
         .fold(0.0_f32, f32::max);
     let width = widest + TEXT_INSET * 2.0;
     let rows = options.len().max(1) as f32;
-    (width.round(), (ROW_TOP + rows * line_pitch(font_px)).round())
+    (
+        width.round(),
+        (ROW_TOP + rows * line_pitch(font_px)).round(),
+    )
 }
 
 /// Builds rows and cursor rectangle for a panel whose top-left corner is `(x, y)`.
@@ -167,7 +170,10 @@ fn build(options: &[String], cursor: usize, x: f32, y: f32, font_px: f32) -> Cho
     // window frame and as tall as the font (not as tall as the row pitch). The retail
     // screenshots measure exactly that: bar 6 px in from the border, 20 px tall, with
     // the text 8 px in and 27 px apart.
-    let row = lines.get(cursor).copied().or_else(|| lines.first().copied());
+    let row = lines
+        .get(cursor)
+        .copied()
+        .or_else(|| lines.first().copied());
     let cursor_rect = match row {
         Some(row) => [rect[0] + ROW_TOP, row[1], rect[2] - ROW_TOP * 2.0, font_px],
         None => [rect[0], rect[1], rect[2], pitch],
@@ -254,10 +260,7 @@ pub fn layout_at_sized(
 /// script's own images be the menu (see [`title_image_layout`] for the hit rows).
 #[must_use]
 pub fn is_title_image_menu(options: &[String]) -> bool {
-    options.len() == 3
-        && options[0] == "menu1"
-        && options[1] == "menu2"
-        && options[2] == "menu3"
+    options.len() == 3 && options[0] == "menu1" && options[1] == "menu2" && options[2] == "menu3"
 }
 
 /// Fixed screen rows of the original title image-button menu.
@@ -334,12 +337,7 @@ fn draw(
     // 12x12 skin, one row tall and 6 px in from each side.
     if cursor < options.len() {
         if let Some(skin) = atlas.add_asset(assets, CURSOR_SKIN) {
-            for piece in window::nine_slice_cornered(
-                layout.cursor,
-                skin.w,
-                skin.h,
-                CURSOR_CORNER,
-            ) {
+            for piece in window::nine_slice_cornered(layout.cursor, skin.w, skin.h, CURSOR_CORNER) {
                 sprites.push(SpriteQuad {
                     number: window::PANEL_PICTURE,
                     rect: piece.rect,
@@ -362,6 +360,7 @@ fn draw(
             font_px: 0.0,
             colour: [255, 255, 255],
             outline: false,
+            weight: 700,
         });
     }
     (sprites, texts)
@@ -452,12 +451,16 @@ mod tests {
         // A four-option prompt of seven full-width characters: the retail 102 panel is
         // 156 px wide, 114 px tall, rows 27 px apart and text 8 px inside the frame.
         let rows = vec!["已经这个时间了".to_owned(); 4];
-        let panel = layout_at_sized(&rows, 0, 400, 200, 20.0)
-            .expect("an on-screen anchor yields a panel");
+        let panel =
+            layout_at_sized(&rows, 0, 400, 200, 20.0).expect("an on-screen anchor yields a panel");
         assert_eq!(panel.rect[2], 7.0 * 20.0 + TEXT_INSET * 2.0, "panel width");
         assert_eq!(panel.rect[3], ROW_TOP + 4.0 * 27.0, "four rows are 114 px");
         assert_eq!(panel.lines[0][0], panel.rect[0] + TEXT_INSET, "text inset");
-        assert_eq!(panel.lines[0][2], panel.rect[2] - TEXT_INSET * 2.0, "row width");
+        assert_eq!(
+            panel.lines[0][2],
+            panel.rect[2] - TEXT_INSET * 2.0,
+            "row width"
+        );
         for index in 1..4 {
             let pitch = panel.lines[index][1] - panel.lines[index - 1][1];
             assert!((pitch - 27.0).abs() < 0.01, "row {index} pitch is {pitch}");

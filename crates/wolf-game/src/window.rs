@@ -132,12 +132,7 @@ pub fn nine_slice_cornered(
 /// selection cursor, so stretching its centre tile over the whole box (as a normal nine
 /// slice does) paints an opaque slab over the panel underneath. Dropping the centre piece
 /// leaves only the 4px border, which is what the retail save screen shows.
-pub fn nine_slice_frame(
-    dst: [f32; 4],
-    skin_w: u32,
-    skin_h: u32,
-    corner: u32,
-) -> Vec<WindowPiece> {
+pub fn nine_slice_frame(dst: [f32; 4], skin_w: u32, skin_h: u32, corner: u32) -> Vec<WindowPiece> {
     let mut pieces = nine_slice_cornered(dst, skin_w, skin_h, corner);
     if pieces.len() == 9 {
         pieces.remove(4);

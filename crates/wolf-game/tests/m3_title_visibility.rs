@@ -153,7 +153,10 @@ fn title_menu_options_fall_back_to_a_visible_centred_panel() {
     assert!(
         game.screen.iter().any(|p| p.file.contains("menu1")),
         "event 43 paints the real Picture/menu1_* title button: {:?}",
-        game.screen.iter().map(|p| p.file.clone()).collect::<Vec<_>>()
+        game.screen
+            .iter()
+            .map(|p| p.file.clone())
+            .collect::<Vec<_>>()
     );
     assert!(
         panel.rect[0] >= 0.0

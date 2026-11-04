@@ -754,8 +754,7 @@ impl App {
 
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        let mut attributes =
-            Window::default_attributes().with_title("imoto-life | title screen");
+        let mut attributes = Window::default_attributes().with_title("imoto-life | title screen");
         if self.display.fullscreen {
             attributes = attributes.with_fullscreen(Some(Fullscreen::Borderless(None)));
         } else {

@@ -1018,7 +1018,10 @@ impl std::fmt::Display for PatchError {
                 write!(f, "type {ty} has {count} rows, cannot address row {row}")
             }
             Self::NoSuchColumn { ty, column, count } => {
-                write!(f, "type {ty} has {count} columns, cannot address column {column}")
+                write!(
+                    f,
+                    "type {ty} has {count} columns, cannot address column {column}"
+                )
             }
             Self::ColumnNameNotFound { ty, name } => {
                 write!(f, "type {ty} has no column named '{name}'")
@@ -1027,10 +1030,7 @@ impl std::fmt::Display for PatchError {
                 ty,
                 column,
                 expected,
-            } => write!(
-                f,
-                "type {ty} column {column} is not {expected}"
-            ),
+            } => write!(f, "type {ty} column {column} is not {expected}"),
         }
     }
 }

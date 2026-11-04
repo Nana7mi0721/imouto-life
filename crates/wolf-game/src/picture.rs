@@ -1059,8 +1059,7 @@ impl Screen {
             // tenths UI block: dividing its parked position by ten drags it back on
             // screen as a stray dark panel. Only an on-screen anchor marks a tenths
             // block, so skip anything parked outside the extended logical screen.
-            let parked =
-                other.x.abs() > SCREEN_W as i32 * 2 || other.y.abs() > SCREEN_H as i32 * 2;
+            let parked = other.x.abs() > SCREEN_W as i32 * 2 || other.y.abs() > SCREEN_H as i32 * 2;
             other.number.div_euclid(1000) == block
                 && !parked
                 && other.kind.is_window()

@@ -66,8 +66,14 @@ fn loading_a_save_installs_the_map_and_hud() {
         texts.iter().any(|text| text == "行动力60/65"),
         "HUD action text after load: {texts:?}"
     );
+    // The HUD layout splits at ASCII spaces, so the two spans are separate quads.
+    let compact: String = texts
+        .concat()
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect();
     assert!(
-        texts.iter().any(|text| text == "精力 3/3"),
+        compact.contains("精力3/3"),
         "HUD stamina text after load: {texts:?}"
     );
 }

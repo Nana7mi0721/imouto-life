@@ -8,6 +8,7 @@ members = [
     "crates/wolf-audio",
     "crates/wolf-game",
     "crates/wolf-cli",
+    "crates/wolf-launcher",
 ]
 
 [workspace.package]

@@ -454,7 +454,9 @@ pub struct SaveOp {
     pub file: SaveTarget,
     /// 221 only: the running variable that receives the loaded value.
     pub destination: i32,
-    /// 221/222: the variable address inside the save file, raw magic.
+    /// 221/222: the variable address inside the save file, already evaluated.
+    /// It is a literal save bank (2_000_000 n, 1_600_000 n, 9_000_000 n) or a
+    /// computed database address (1_100_000_000 + type*1_000_000 + row*100 + col).
     pub address: i32,
     /// 222 only: the source value, already evaluated.
     pub value: i32,
@@ -666,8 +668,10 @@ pub trait Host {
     /// `220 SaveLoad`, `221 LoadGame`, `222 SaveGame`.
     ///
     /// A `221` read returns the value the interpreter must store in
-    /// [`SaveOp::destination`]; the other two return `None`.
-    fn save_load(&mut self, op: &SaveOp) -> Option<i32> {
+    /// [`SaveOp::destination`]; the other two return `None`. The answer is a
+    /// [`DbValue`] because a save cell can be textual (a character name) as well
+    /// as numeric (a level).
+    fn save_load(&mut self, op: &SaveOp) -> Option<DbValue> {
         let _ = op;
         None
     }
@@ -1442,6 +1446,33 @@ fn eval_num(raw: i32, inst: &Instance, vars: &Variables) -> i32 {
     }
 }
 
+/// Resolve a `221`/`222` in-save address operand.
+///
+/// Most address operands are literals that live in a magic bank (2_000_000 n normal
+/// variable, 9_000_000 n system variable) and must reach the host unchanged. A few
+/// (CE94 pc325/335/338/341) instead pass a *self variable* whose runtime value is a
+/// computed database address such as 1_106_000_001. Only that self-variable form is
+/// dereferenced; everything else is kept raw so the save bank match still works.
+/// Evaluate an opcode-121 arithmetic operand. The exact base value 1_000_000
+/// is a literal constant here (see the CE94/CE79 multiply sites); every other
+/// operand in the self bank is still resolved through eval_num.
+fn eval_arith_operand(raw: i32, inst: &Instance, vars: &Variables) -> i32 {
+    if raw == crate::magic::SELF_BASE {
+        raw
+    } else {
+        eval_num(raw, inst, vars)
+    }
+}
+
+fn eval_save_address(raw: i32, inst: &Instance) -> i32 {
+    let magic = Magic::decode(raw);
+    if matches!(magic.kind(), MagicKind::SelfVar) {
+        inst.self_vars.get(magic.index() as usize)
+    } else {
+        raw
+    }
+}
+
 /// Read one `250` address operand (type / row / column) as a number.
 ///
 /// All three are ordinary magic operands, and the hottest cells of this game are
@@ -1525,6 +1556,18 @@ fn store_str(inst: &mut Instance, vars: &mut Variables, raw: i32, value: &str) {
 fn expand(raw: &str, inst: &Instance, vars: &Variables) -> String {
     let lookup = Lookup { inst, vars };
     text::expand(raw, &lookup)
+}
+
+/// Expand one opcode 102 option label.
+///
+/// A bare `\cself[n]` option is an optional action whose label lives in a string
+/// slot. When the current branch never wrote that slot, the text expander's numeric
+/// fallback would turn the empty label into `0` and paint a phantom sixth row (the
+/// retail five-row night menu has exactly this shape). Choice labels therefore use
+/// the string-only expansion, while every other escape keeps the normal rules.
+fn expand_choice(raw: &str, inst: &Instance, vars: &Variables) -> String {
+    let lookup = Lookup { inst, vars };
+    text::expand_choice(raw, &lookup)
 }
 
 /// Split the `@n` speaker prefix off a message (docs/OPCODE_SPEC.md §5.3).
@@ -1775,7 +1818,7 @@ fn execute(
                 let options: Vec<String> = cmd
                     .strings
                     .iter()
-                    .map(|option| expand(option, inst, vars))
+                    .map(|option| expand_choice(option, inst, vars))
                     .collect();
                 let block = match program.control.get(pc) {
                     Some(Control::Block(index)) => *index,
@@ -1826,8 +1869,13 @@ fn execute(
             }
             121 => {
                 let target = arg(cmd, 0);
-                let a = eval_num(arg(cmd, 1), inst, vars);
-                let b = eval_num(arg(cmd, 2), inst, vars);
+                // A bare 1_000_000 is a literal multiplier in the data (CE79
+                // pc41 and CE94 pc323/pc331 multiply an id by one million to
+                // build a database address). The magic decoder would otherwise
+                // read that exact value as self slot V0-0 (= 0), which drops the
+                // whole term and left the save-slot name reading the wrong cell.
+                let a = eval_arith_operand(arg(cmd, 1), inst, vars);
+                let b = eval_arith_operand(arg(cmd, 2), inst, vars);
                 let bits = arg(cmd, 3) as u32;
                 let bin = ((bits >> 12) & 0x0F) as u8;
                 // 0x6000 is a random range: docs/OPCODE_SPEC.md §3.2 calls it
@@ -1874,12 +1922,33 @@ fn execute(
                 }
             }
             122 => {
+                // 122 SetString has three forms that the data actually uses
+                // (docs/OPCODE_122.md). The second operand selects the form:
+                //   * 1 with a third operand - copy a value out of a string
+                //     variable (CE94 pc394 copies the hero name self[6] -> self[5]).
+                //   * bit 0x100 (256) set - append the literal string to whatever
+                //     the destination already holds. CE94 builds the play-time
+                //     " H:MM" prefix and then appends the minutes with this form,
+                //     and the save-slot label appends the slot number to the term.
+                //   * otherwise - plain assignment.
                 let target = arg(cmd, 0);
-                let value = cmd
-                    .strings
-                    .first()
-                    .map_or(String::new(), |raw| expand(raw, inst, vars));
-                store_str(inst, vars, target, &value);
+                let mode = arg(cmd, 1);
+                if mode == 1 && argc(cmd) >= 3 {
+                    let value = eval_str(arg(cmd, 2), inst, vars);
+                    store_str(inst, vars, target, &value);
+                } else {
+                    let value = cmd
+                        .strings
+                        .first()
+                        .map_or(String::new(), |raw| expand(raw, inst, vars));
+                    if mode & 0x100 != 0 {
+                        let mut combined = eval_str(target, inst, vars);
+                        combined.push_str(&value);
+                        store_str(inst, vars, target, &combined);
+                    } else {
+                        store_str(inst, vars, target, &value);
+                    }
+                }
                 inst.pc += 1;
                 None
             }
@@ -2255,7 +2324,16 @@ fn execute(
                     },
                     file,
                     destination: if opcode == 221 { arg(cmd, 0) } else { 0 },
-                    address: if opcode == 220 { 0 } else { arg(cmd, 2) },
+                    // The address is a *value*, not a raw operand: it is either a
+                    // literal save-bank address (9000029 = Sys29 play time) or a
+                    // self variable that holds a computed database address such as
+                    // 1_106_000_001 (CDataBase type 6, row 0, col 1). Evaluating it
+                    // here lets the host resolve both (docs/OPCODE_220_SAVE.md section 4).
+                    address: if opcode == 220 {
+                        0
+                    } else {
+                        eval_save_address(arg(cmd, 2), inst)
+                    },
                     value: if opcode == 222 {
                         eval_num(arg(cmd, 0), inst, vars)
                     } else {
@@ -2268,8 +2346,12 @@ fn execute(
                     },
                     owner: inst.program.id,
                 };
-                if let Some(value) = host.save_load(&op) {
-                    store_num(inst, vars, op.destination, value);
+                let answer = host.save_load(&op);
+                if let Some(answer) = answer {
+                    match answer {
+                        DbValue::Num(value) => store_num(inst, vars, op.destination, value),
+                        DbValue::Str(text) => store_str(inst, vars, op.destination, &text),
+                    }
                 }
                 inst.pc += 1;
                 None
@@ -2493,7 +2575,7 @@ fn enter_block(
             let options: Vec<String> = cmd
                 .strings
                 .iter()
-                .map(|option| expand(option, inst, vars))
+                .map(|option| expand_choice(option, inst, vars))
                 .collect();
             host.show_choices(&options);
             inst.wait = WaitState::Choice { block: block_index };
@@ -2828,7 +2910,7 @@ mod tests {
         // Every 220/221/222 the interpreter decoded, in order.
         saves: Vec<SaveOp>,
         // The answer served back for a 221 read.
-        save_answer: Option<i32>,
+        save_answer: Option<DbValue>,
         // Every 290 effect the interpreter decoded: (type, duration, evaluated args).
         effects: Vec<(i32, i32, Vec<i32>)>,
         // Every 123 poll the host answered: (mask, auto-input bits).
@@ -2887,9 +2969,9 @@ mod tests {
             self.databases.push(op.clone());
             self.db_answer.clone()
         }
-        fn save_load(&mut self, op: &SaveOp) -> Option<i32> {
+        fn save_load(&mut self, op: &SaveOp) -> Option<DbValue> {
             self.saves.push(op.clone());
-            self.save_answer
+            self.save_answer.clone()
         }
         fn effect(&mut self, kind: i32, duration: i32, args: &[i32]) {
             self.effects.push((kind, duration, args.to_vec()));
@@ -3856,7 +3938,7 @@ mod tests {
         let mut vm = vm_with(vec![ev]);
         vm.start_event(7).unwrap();
         let mut host = Recorder {
-            save_answer: Some(7),
+            save_answer: Some(DbValue::Num(7)),
             ..Recorder::default()
         };
         vm.step_frame(&mut host);

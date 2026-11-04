@@ -214,7 +214,10 @@ fn story_message_types_out() {
 
     let layout = game.message_layout().expect("layout present");
     assert_eq!(layout.font_px, 20.0, "default font size");
-    assert_eq!(layout.line_height, 23.0, "line height = font + scaled spacing 3");
+    assert_eq!(
+        layout.line_height, 23.0,
+        "line height = font + scaled spacing 3"
+    );
     assert_eq!(layout.typed, layout.total, "message finishes revealing");
     assert!(!layout.typing, "typing should be done");
     assert!(layout.rows.len() >= 1);
@@ -403,7 +406,11 @@ fn screen_transition_and_tint_state_machines() {
     }
     let (colour, alpha) = flash.flash_overlay().expect("still fading");
     assert_eq!(colour, [0, 0, 255]);
-    assert!((alpha - 0.5).abs() < 1e-6, "alpha {} at the midpoint", alpha);
+    assert!(
+        (alpha - 0.5).abs() < 1e-6,
+        "alpha {} at the midpoint",
+        alpha
+    );
     for _ in 0..5 {
         flash.tick();
     }

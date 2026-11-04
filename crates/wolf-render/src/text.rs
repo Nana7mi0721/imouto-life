@@ -30,7 +30,7 @@ use glyphon::cosmic_text::Align;
 use glyphon::{
     fontdb, Attrs, Buffer, Cache, Color, Family, FontSystem, Metrics, Resolution, Shaping,
     SwashCache, TextArea, TextAtlas, TextBounds, TextRenderer as GlyphonTextRenderer, Viewport,
-    Wrap,
+    Weight, Wrap,
 };
 use wgpu::{Device, MultisampleState, Queue, RenderPass, TextureFormat};
 
@@ -174,6 +174,9 @@ pub struct TextItem {
     pub colour: [u8; 3],
     /// Optional `\E` outline, drawn behind the body.
     pub outline: Option<Outline>,
+    /// Font weight for the retail face. `700` is Microsoft YaHei UI Bold, the only
+    /// face `Game.dat` names; `400` is used by the tenths save-slot labels.
+    pub weight: u16,
 }
 
 impl TextItem {
@@ -188,7 +191,15 @@ impl TextItem {
             align: TextAlign::Left,
             colour: [255, 255, 255],
             outline: None,
+            weight: 700,
         }
+    }
+
+    /// Set the face weight (400 regular, 700 bold).
+    #[must_use]
+    pub fn with_weight(mut self, weight: u16) -> Self {
+        self.weight = weight;
+        self
     }
 
     /// Set opacity (clamped to 0.0..=1.0 at prepare time).
@@ -464,6 +475,7 @@ pub fn missing_glyphs(font: &[u8], text: &str, size_px: f32) -> Vec<char> {
     let mut buffer = Buffer::new(&mut system, Metrics::new(size, size * LINE_HEIGHT_FACTOR));
     let attrs = Attrs::new()
         .family(Family::Name(&family))
+        .weight(Weight(700))
         .color(Color::rgb(255, 255, 255));
     buffer.set_text(text, &attrs, Shaping::Advanced, Some(Align::Left));
     buffer.shape_until_scroll(&mut system, false);
@@ -665,6 +677,7 @@ impl TextRenderer {
         align: TextAlign,
         colour: [u8; 3],
         alpha: u8,
+        weight: u16,
     ) -> usize {
         let family = self.font_family.clone();
         let mut buffer = Buffer::new(
@@ -675,6 +688,7 @@ impl TextRenderer {
         buffer.set_wrap(Wrap::WordOrGlyph);
         let attrs = Attrs::new()
             .family(Family::Name(&family))
+            .weight(Weight(weight))
             .color(Color::rgba(colour[0], colour[1], colour[2], alpha));
         buffer.set_text(text, &attrs, Shaping::Advanced, Some(align.to_cosmic()));
         buffer.shape_until_scroll(&mut self.font_system, false);
@@ -743,6 +757,7 @@ impl TextRenderer {
             // either path.
             let attrs = Attrs::new()
                 .family(Family::Name(&family))
+                .weight(Weight(item.weight))
                 .color(Color::rgba(
                     item.colour[0],
                     item.colour[1],
@@ -793,8 +808,15 @@ impl TextRenderer {
             if let Some(outline) = item.outline {
                 // The ring fades with the body: a 50% picture whose outline stayed
                 // opaque would grow a bright halo exactly where the glyphs vanish.
-                let index =
-                    self.shape_buffer(&shaped, size, &bx, item.align, outline.colour, alpha);
+                let index = self.shape_buffer(
+                    &shaped,
+                    size,
+                    &bx,
+                    item.align,
+                    outline.colour,
+                    alpha,
+                    item.weight,
+                );
                 let pad = i32::from(outline.width_px);
                 let clip = expand_clip(bx.clip, pad, self.screen);
                 let w = f32::from(outline.width_px);
@@ -1003,6 +1025,7 @@ mod tests {
         let mut buffer = Buffer::new(&mut system, Metrics::new(size, size * LINE_HEIGHT_FACTOR));
         let attrs = Attrs::new()
             .family(Family::Name(&family))
+            .weight(Weight(700))
             .color(Color::rgb(255, 255, 255));
         buffer.set_text("▶", &attrs, Shaping::Advanced, Some(Align::Left));
         buffer.shape_until_scroll(&mut system, false);

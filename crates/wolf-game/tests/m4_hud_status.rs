@@ -65,10 +65,13 @@ fn loading_a_save_keeps_action_and_stamina() {
         texts.iter().any(|text| text == "行动力60/65"),
         "HUD action text: {texts:?}"
     );
-    assert!(
-        texts.iter().any(|text| text == "精力 3/3"),
-        "HUD stamina text: {texts:?}"
-    );
+    // The HUD layout splits at ASCII spaces, so the two spans are separate quads.
+    let compact: String = texts
+        .concat()
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect();
+    assert!(compact.contains("精力3/3"), "HUD stamina text: {texts:?}");
 }
 
 #[test]

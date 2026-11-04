@@ -139,3 +139,24 @@ CE94 pc83-107 先按坐标倍率把槽字段放大，再用 op121 flags=0x10400 
 ### 6.5 空槽文本与 DB 句柄
 CE94 pc319 `179 self[16]` 按队伍人数循环，离线 capture 无真实存档时会误入并画「000000」零值串（真实游戏读到干净存档 self[16]=0 不画，属数据层依赖）。槽标签文本里的未解析字符串槽存的是 DB 值句柄（`1_100_000_000 + row*100 + col`），`crates/wolf-vm/src/text.rs` 的 `parse_escape`（SelfVar 分支）已识别 `MagicKind::DbCell` 并返回空串，避免把九位地址（如 1100001204）印到屏幕。
 
+
+### 6.6 全屏渐变是黑色阴影，不是白色遮罩（背景发黄的根因）
+CE94 pc153 画出全屏 `pic 12000 file "<GRADY-779-111>"`（window 1024x576、tone 默认中性 100%）。`crates/wolf-game/src/sysgraphic.rs` 原先把所有系统图形都合成**白色**纹理再乘 picture tone，于是这条 0.779→0.111 alpha 的渐变把下层房间**提亮**：对 SampleMapA 的米黄地面即得到实机截图中的亮黄背景 (255,244,217)。
+
+实测参考图面板外背景是中性偏暗的卧室：逻辑 (30,300)≈(25,25,31)、(760,300)≈(67,67,67)、(30,800)≈(42,42,46)。若按白 0.78 alpha 覆盖，任何合理房间色都会被抬到 ≥190，与该测量值矛盾；按**黑**同 alpha 覆盖则吻合（底层色 55~150 时落在 25~70）。
+
+全量扫描 `150` 的 38 条渐变绘制（`cargo run -p wolf-format --example dump_event -- scan work/Data/BasicData/CommonEvent.dat 0`）确认它们只出现在商店/菜单/角色/装备/存档/读档/系统/上部状态/战斗等 **UI 与战斗背景**，全部用于压暗场景，且 tone 一律中性白——所以黑纹理是唯一自洽解释。
+
+修复：`crates/wolf-game/src/sysgraphic.rs::render` 的 `Shape::GradX/GradY` 改为填充 `[0,0,0,alpha]`（其余 `<SQUARE>/<SQUARE>FRAME/<LINE>/<CIRCLE>/<TRI-*>` 仍为白纹理、由 tone 上色）。验证：`capture --map SampleMapA --event 5` 背景由 (255,244,217) 变暗为 (86,75,48)（底层米黄地面被压暗）；标题/开机截帧与修复前逐字节相同（渐变只用在这些界面帧）。
+
+### 6.7 HUD / 普通文本的字重与垂直基线（2026-11-03 实测）
+- 字体：`Game.dat` 的 `Microsoft YaHei UI Bold`（`C:\Windows\Fonts\msyhbd.ttc`，唯一 face 为 weight 700）。cosmic-text 若按默认 weight 400 请求，会跳过主 face 退到 `seguisym.ttf`，其 digit advance=0.5391em：24px `19:30` 行宽只有 56.95px（glyph 全来自 fallback）。
+- 修复后（weight 700）：24px `19:30` 行宽 66.06px，墨迹 x36..98/y11..28（参考 x37..99/y11..28，宽 63）；`持有金钱` 宽 159（参考158）；`周一` 宽34。
+- 普通 text picture（HUD、对话等 `ui<=1`）需在 half-leading 抬升后再下移 **4px**：`textpic::PLAIN_TEXT_TOP_OFFSET`。tenths UI 存档标签（`ui>1`）不加此偏移，保持 regular weight 400；存档 data 墨迹 x71..121/宽51（参考 x68..118/宽51），time 宽34~35（参考37，受 LANCZOS 阈值差 2px）。
+- 视觉回归：`day_command` nonblack 532756→533165，`hud` 554374→554868；`title/map_idle/saveui` 不变。
+
+### 6.8 HUD ASCII 空格按 0.5 em 度量（2026-11-03 实测）
+- 参考 `prt sc/{3FAD3D6F-1F44-4F33-8D2B-89D27FB911F8}.png`（1536x860）右上 `同居 1天`：`同居` 墨迹 x944..969.3、`1` x960..969.3、`天` x980.7..989.3；line2 总宽≈57。msyhbd 的 ` 1天 ` 只有 `10+19.27+14+4≈47.3`，整块右移 9~10px。
+- 度量对照：`19:30` ink 参考 58 / msyhbd 59 / 07 63；`10000円` 参考158 / msyhbd159 / 07 159。⇒ 主字形必须是 msyhbd，但 ASCII 空格在原版按 **0.5 em**（32px→16px）计。
+- 实现：`crates/wolf-game/src/game.rs::build_text_picture` 的 advance 对 `ui<=1 && ' '` 用 `px*0.5`，其余用 `font_metrics.advance`；含空格 run 拆成独立 span（空格只推进 cursor，不画 quad），span 单独定位并做 `on_screen` 过滤。
+- 结果：picture252 block left 952.56→943.27，line2 宽 56.73；`同居/1/天` 与参考重合，`19:30` 不变。视觉回归 hud textpics14/items13/glyphs44/lines13/nonblack554890，day_command textpics23/items22/glyphs76/lines22/nonblack533187。

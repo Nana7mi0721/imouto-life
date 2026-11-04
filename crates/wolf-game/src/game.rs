@@ -113,8 +113,21 @@ pub const HISTORY_LIMIT: usize = 200;
 /// A pending choice prompt.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Choices {
-    /// The option labels, in order.
+    /// The option labels the player can see, in display order.
+    ///
+    /// WOLF builds the raw list from opcode 102's strings, which may contain empty
+    /// entries (an optional action whose label lives in a self variable that the
+    /// current branch never wrote). The engine does not paint a row for those, so
+    /// neither do we: the empty entries are filtered out of this list.
     pub options: Vec<String>,
+    /// Source index in opcode 102's original option array for each visible row.
+    ///
+    /// Filtering empty rows must not shift the case ids: opcode 102's case table is
+    /// keyed by the original option position (docs/OPCODE_SPEC.md section 4.2), and
+    /// an empty dynamic row can sit in the middle of the list (CE249 stores a
+    /// conditional fourth entry before the constant 撤退). A click on visible row
+    /// i therefore answers with sources[i], not with i.
+    pub sources: Vec<usize>,
     /// Frames this prompt has been on screen.
     pub frames: u32,
 }
@@ -316,6 +329,14 @@ pub struct Game {
     /// Real glyph advances for text-picture anchors, when the host has loaded the game's
     /// font. `None` keeps the testable half-em fallback in [`crate::textpic`].
     pub font_metrics: Option<crate::fontmetrics::FontMetrics>,
+    /// Game.dat u8[0], the base font size used when a picture writes `\f[0]`.
+    ///
+    /// Size of retail's non-antialiased raster face, selected by `\A-`.
+    ///
+    /// This is not the meaning of `\f[0]` (that is Sys8, 20 px). The save-slot names
+    /// turn antialiasing off and measure 16 px, so this value is the raster face's size;
+    /// Game.dat u8[0] happens to hold 16 as well and is the best available source.
+    text_base_font_px: f32,
     /// Bumped whenever [`Self::set_font_metrics`] installs a font, so the text layout cache
     /// knows a cached advance table is stale.
     text_font_gen: u64,
@@ -521,6 +542,12 @@ impl Game {
             screen_transition: ScreenTransition::new(),
             font_metrics: None,
             text_font_gen: 0,
+            text_base_font_px: game_dat.as_ref().map_or(16.0, |dat| {
+                match dat.u8_settings.first().copied() {
+                    Some(px) if (8..=64).contains(&px) => f32::from(px),
+                    _ => 16.0,
+                }
+            }),
             text_cache: RefCell::new(TextQuadCache::default()),
             translator,
             tilemap: None,
@@ -1311,6 +1338,18 @@ impl Game {
         self.choice_cursor
     }
 
+    /// Original opcode 102 index for a visible choice row.
+    ///
+    /// [`show_choices`](Self) drops empty raw options, so the visible row number and
+    /// the script's case id can differ. The VM maps a reply back with `index + 2`, so
+    /// every reply path has to translate through this table first.
+    fn choice_source_index(&self, visible: usize) -> usize {
+        self.choices
+            .as_ref()
+            .and_then(|choices| choices.sources.get(visible).copied())
+            .unwrap_or(visible)
+    }
+
     /// Where the engine puts the current choice window, from system variables 3 (X) and
     /// 4 (Y).
     ///
@@ -1474,6 +1513,7 @@ impl Game {
             cells: &cells,
             colours: &colours,
             default_font_px: self.font_px(),
+            base_font_px: self.text_base_font_px,
         };
         // The cache lives behind a RefCell so this stays `&self`; every caller and test
         // borrows the game immutably and must keep working.
@@ -1495,8 +1535,25 @@ impl Game {
             // shift together keeps every row in the same frame.
             let (dx, dy) = picture.effect_offset();
             let ui = self.screen.ui_scale_for(picture.number);
-            let x = (picture.x as f32 + dx) / ui;
+            // In the tenths UI blocks (ui > 1) the base x is already a pixel
+            // coordinate and only the 290 offset is in tenths; y is in tenths
+            // throughout. Dividing x by ui too put every label ~43px left of
+            // the retail layout (screenshot metrics §6).
+            let x = picture.x as f32 + dx / ui;
             let y = (picture.y as f32 + dy) / ui;
+            // Inside a tenths UI block (ui > 1) the save-slot labels carry
+            // 0x3000 with a dummy x=1001 and centre their ink on the 928px
+            // panel's middle at 512. In ordinary pixels 0x3000 is an
+            // ordinary top-right anchor: the HUD time (x=100) and money
+            // counter (x=1000) both rely on that, and centring them stacked
+            // the clock and the money on the middle of the screen.
+            let centred_in_ui = picture.anchor == 3 && ui > 1.0;
+            let layout_anchor = if centred_in_ui { 0x83 } else { picture.anchor };
+            let x = if centred_in_ui {
+                SCREEN_W as f32 * 0.5
+            } else {
+                x
+            };
             let alpha = picture.alpha();
             // The variable-derived text rides inside the fingerprint; the rest of the
             // shape of the quad list comes from the base position, anchor, alpha and the
@@ -1521,7 +1578,7 @@ impl Game {
                 cache.hits += 1;
                 cached
             } else {
-                let built = self.build_text_picture(picture, x, y, alpha, &ctx);
+                let built = self.build_text_picture(picture, x, y, layout_anchor, alpha, ui, &ctx);
                 cache.misses += 1;
                 cache.pictures.insert(
                     picture.number,
@@ -1547,45 +1604,118 @@ impl Game {
         picture: &crate::picture::Picture,
         x: f32,
         y: f32,
+        anchor: u8,
         alpha: f32,
+        ui: f32,
         ctx: &crate::textpic::Ctx<'_>,
     ) -> Vec<crate::atlas::TextQuad> {
-        let runs = if let Some(metrics) = &self.font_metrics {
-            let advance = |ch: char, px: f32| metrics.advance(ch, px);
-            crate::textpic::layout_with(&picture.text, x, y, picture.anchor, ctx, &advance)
-        } else {
-            crate::textpic::layout(&picture.text, x, y, picture.anchor, ctx)
+        // Retail draws the HUD with a Japanese (CJK) face whose ASCII space is a full
+        // half-em (16 px at 32 px). The named Windows family this build uses
+        // (Microsoft YaHei UI Bold) has a much narrower 0.298 em space, so every
+        // space-bearing HUD block - the top-right 同居 / 1天 block is the clearest
+        // case - measures 9-10 px narrow and its right anchor pushes the whole block
+        // that far right. Use the retail 0.5 em space for plain-pixel (UI scale 1)
+        // text. Tenths UI blocks (save-slot rows) keep the real face advance:
+        // "データ 1" matches the screenshot only with it.
+        let metrics = self.font_metrics.as_ref();
+        let advance = |ch: char, px: f32| -> f32 {
+            if ui <= 1.0 && ch == ' ' {
+                px * 0.5
+            } else if let Some(metrics) = metrics {
+                metrics.advance(ch, px)
+            } else {
+                crate::choice::advance_at(ch, px)
+            }
         };
+        let runs = crate::textpic::layout_with(&picture.text, x, y, anchor, ctx, &advance);
         let mut quads = Vec::new();
         for run in runs {
             if run.text.is_empty() {
                 continue;
             }
-            // The balloon library keeps its controls parked far off screen;
-            // shaping and drawing them costs time and cannot reach a pixel.
-            if !crate::picture::on_screen([run.x, run.y, run.font_px, run.font_px * 2.0]) {
-                continue;
-            }
-            // The box only has to be wide enough that the glyph pass never re-wraps what
-            // the layout already broke; one extra em of slack covers the shaped advance
-            // being a few percent off the half-em rule. The width comes from the same
-            // advances the layout used to place the run, so measuring it again here would
-            // only repeat that walk.
-            let width = run.width + run.font_px;
-            quads.push(crate::atlas::TextQuad {
-                number: picture.number,
-                text: run.text,
-                rect: [
-                    run.x,
-                    run.y,
+            // A [textpic::Run] is a 1.3 em line box; glyphon puts the ink in the middle
+            // of it, while WOLF anchors the ink near the picture y. Lift the quad by the
+            // half-leading so the two agree (see textpic::TEXT_TOP_NUDGE_RATIO).
+            // Plain-pixel text pictures (the HUD, message window) sit four pixels lower
+            // in the retail build than the half-leading lift alone predicts; tenths UI
+            // blocks (save-slot labels) are already calibrated without this.
+            let top = run.y - run.font_px * crate::textpic::TEXT_TOP_NUDGE_RATIO
+                + if ui > 1.0 {
+                    0.0
+                } else {
+                    crate::textpic::PLAIN_TEXT_TOP_OFFSET
+                };
+            // Split HUD runs at ASCII spaces and place every visible span explicitly.
+            // The renderer shapes a span with the real face, whose space is narrower than
+            // the retail half-em the layout above used; drawing the space would slide the
+            // glyphs after it left by that difference. Whitespace spans are dropped, so
+            // each glyph lands exactly where the layout put it.
+            let segments: Vec<(String, f32, f32)> = if ui <= 1.0 && run.text.contains(' ') {
+                let mut out: Vec<(String, f32, f32)> = Vec::new();
+                let mut text = String::new();
+                let mut span_x = run.x;
+                let mut cursor = run.x;
+                for ch in run.text.chars() {
+                    let advance_px = advance(ch, run.font_px);
+                    if ch == ' ' {
+                        if !text.is_empty() {
+                            let width: f32 = text.chars().map(|c| advance(c, run.font_px)).sum();
+                            out.push((std::mem::take(&mut text), span_x, width));
+                        }
+                        cursor += advance_px;
+                        span_x = cursor;
+                    } else {
+                        if text.is_empty() {
+                            span_x = cursor;
+                        }
+                        text.push(ch);
+                        cursor += advance_px;
+                    }
+                }
+                if !text.is_empty() {
+                    let width: f32 = text.chars().map(|c| advance(c, run.font_px)).sum();
+                    out.push((text, span_x, width));
+                }
+                out
+            } else {
+                vec![(run.text.clone(), run.x, run.width)]
+            };
+            for (text, span_x, span_w) in segments {
+                // The box only has to be wide enough that the glyph pass never re-wraps
+                // what the layout already broke; one extra em of slack covers the shaped
+                // advance being a few percent off the half-em rule.
+                let width = span_w + run.font_px;
+                let dst = [
+                    span_x,
+                    top,
                     width.max(1.0),
                     run.font_px * crate::textpic::DEFAULT_LINE_PITCH_RATIO,
-                ],
-                alpha,
-                font_px: run.font_px,
-                colour: crate::textpic::rgb(ctx, run.colour).unwrap_or([255, 255, 255]),
-                outline: run.outline,
-            });
+                ];
+                // The balloon library keeps its controls parked far off screen;
+                // shaping and drawing them costs time and cannot reach a pixel.
+                if !crate::picture::on_screen(dst) {
+                    continue;
+                }
+                quads.push(crate::atlas::TextQuad {
+                    number: picture.number,
+                    text,
+                    rect: [
+                        span_x,
+                        top,
+                        width.max(1.0),
+                        run.font_px * crate::textpic::DEFAULT_LINE_PITCH_RATIO,
+                    ],
+                    alpha,
+                    font_px: run.font_px,
+                    colour: crate::textpic::rgb(ctx, run.colour).unwrap_or([255, 255, 255]),
+                    outline: run.outline,
+                    // Tenths UI blocks (save-slot data/time/name rows) match the retail
+                    // screenshots with the regular face; plain-pixel text uses the
+                    // Game.dat bold face, without which cosmic-text borrows digits from
+                    // Segoe UI Symbol and draws them ~12% too narrow.
+                    weight: if ui > 1.0 { 400 } else { 700 },
+                });
+            }
         }
         quads
     }
@@ -1793,7 +1923,7 @@ impl Game {
         let clicked = self.mouse_buttons & 1 != 0 && self.previous_mouse_buttons & 1 == 0;
         if clicked {
             if let Some(row) = self.choice_row_at(self.mouse[0], self.mouse[1]) {
-                self.reply(ChoiceReply::Index(row));
+                self.reply(ChoiceReply::Index(self.choice_source_index(row)));
                 self.choice_cursor = 0;
                 return;
             }
@@ -1827,7 +1957,9 @@ impl Game {
         }
         self.choice_cursor = self.choice_cursor.min(count - 1);
         if pressed & crate::key::OK != 0 {
-            self.reply(ChoiceReply::Index(self.choice_cursor));
+            self.reply(ChoiceReply::Index(
+                self.choice_source_index(self.choice_cursor),
+            ));
             self.choice_cursor = 0;
         } else if pressed & crate::key::CANCEL != 0 {
             self.reply(ChoiceReply::Cancel);
@@ -1857,8 +1989,10 @@ impl Game {
         // 43 can light up the matching Picture/menu*_a.png button (it reads Sys20 == 0/1/2
         // to pick the bright over the dim image). Only the three-key title prompt uses it.
         let title_cursor = self.choices.as_ref().and_then(|choices| {
-            crate::choice::is_title_image_menu(&choices.options)
-                .then(|| self.choice_cursor.min(choices.options.len().saturating_sub(1)))
+            crate::choice::is_title_image_menu(&choices.options).then(|| {
+                self.choice_cursor
+                    .min(choices.options.len().saturating_sub(1))
+            })
         });
         if let Some(cursor) = title_cursor {
             self.vm.vars.set_sys(20, cursor as i32);
@@ -2091,21 +2225,50 @@ fn combine_cell(op: u8, current: i32, operand: i32) -> i32 {
 /// variable `n`, `1_600_000+n` is self variable `n` of the *calling* event, and
 /// `9_000_000+n` is system variable `n`. `Sys24` is the save-existence flag the
 /// menu probes before it offers a slot; `Sys29` is the play time in seconds.
-fn save_address(save: &wolf_save::SaveFile, op: &SaveOp) -> Option<i32> {
+fn save_address(save: &wolf_save::SaveFile, op: &SaveOp) -> Option<DbValue> {
     match op.address {
-        2_000_000..=2_999_999 => save.normal_var((op.address - 2_000_000) as usize),
-        1_600_000..=1_699_999 => save.self_var(op.owner, (op.address - 1_600_000) as usize),
+        2_000_000..=2_999_999 => save
+            .normal_var((op.address - 2_000_000) as usize)
+            .map(DbValue::Num),
+        1_600_000..=1_699_999 => save
+            .self_var(op.owner, (op.address - 1_600_000) as usize)
+            .map(DbValue::Num),
         9_000_000..=9_099_999 => {
             let index = (op.address - 9_000_000) as usize;
             match index {
-                24 => Some(1),
-                29 => save.playtime_frames().map(|frames| (frames / 60) as i32),
+                24 => Some(DbValue::Num(1)),
+                29 => save
+                    .playtime_frames()
+                    .map(|frames| DbValue::Num((frames / 60) as i32)),
                 0..=12 => save
                     .part2
                     .vars3_21
                     .get(index + 6)
-                    .map(|value| *value as i32),
+                    .map(|value| DbValue::Num(*value as i32)),
                 _ => None,
+            }
+        }
+        // A computed database address: 1_100_000_000 + type*1_000_000 + row*100 + col.
+        // CE94 builds these through self variables to read the hero id (type 6) and
+        // the character name / level cells (type 0). The value can be textual, so the
+        // answer is a DbValue, decoded with the game's own encoding detector.
+        1_100_000_000..=1_200_000_000 => {
+            let off = (op.address - 1_100_000_000) as usize;
+            let db_type = off / 1_000_000;
+            let rem = off % 1_000_000;
+            let row = rem / 100;
+            let col = rem % 100;
+            if let Some(value) = save.vardb.number(db_type, row, col) {
+                Some(DbValue::Num(value))
+            } else {
+                save.vardb.string(db_type, row, col).map(|bytes| {
+                    // Fixed-width cell: WolfSave drops the single trailing NUL
+                    // terminator (MemData::toString). Keep any trailing spaces --
+                    // e.g. the term cell stores "数据 " on purpose -- but do not
+                    // let the NUL reach the renderer as a stray glyph.
+                    let body = bytes.strip_suffix(&[0u8]).unwrap_or(bytes);
+                    DbValue::Str(wolf_format::bytes::decode_wolf_str(body))
+                })
             }
         }
         _ => None,
@@ -2427,15 +2590,37 @@ impl Host for GameHost<'_> {
     }
 
     fn show_choices(&mut self, options: &[String]) {
-        let options: Vec<String> = options
-            .iter()
-            .map(|option| {
-                self.translator
-                    .translate_in(TextContext::Choice, option)
-                    .map_or_else(|| option.clone(), str::to_owned)
-            })
-            .collect();
-        *self.choices = Some(Choices { options, frames: 0 });
+        // Opcode 102 hands over the script's raw strings. An empty string is an
+        // optional action whose label the current branch never wrote; WOLF paints no
+        // row for it (the measured five-row night menu has six raw strings, the last
+        // one a bare \cself[5] that resolves empty). Keep the original index so the
+        // case table still maps correctly when a conditional row sits in the middle.
+        let mut visible = Vec::with_capacity(options.len());
+        let mut sources = Vec::with_capacity(options.len());
+        for (index, option) in options.iter().enumerate() {
+            let translated = self
+                .translator
+                .translate_in(TextContext::Choice, option)
+                .map_or_else(|| option.clone(), str::to_owned);
+            if translated.trim().is_empty() {
+                continue;
+            }
+            visible.push(translated);
+            sources.push(index);
+        }
+        // A prompt with no non-empty labels would be unanswerable; fall back to the
+        // raw list so the script can still be driven (data has never hit this).
+        if visible.is_empty() {
+            for (index, option) in options.iter().enumerate() {
+                visible.push(option.clone());
+                sources.push(index);
+            }
+        }
+        *self.choices = Some(Choices {
+            options: visible,
+            sources,
+            frames: 0,
+        });
         self.stats.choices += 1;
     }
 
@@ -2452,9 +2637,13 @@ impl Host for GameHost<'_> {
             .as_ref()
             .map_or(true, |choices| choices.frames >= self.auto_choice_delay);
         if self.auto_choice && settled {
+            let source = self
+                .choices
+                .as_ref()
+                .and_then(|choices| choices.sources.get(self.cursor).copied())
+                .unwrap_or(self.cursor);
             *self.choices = None;
-            let index = self.cursor;
-            return Some(ChoiceReply::Index(index));
+            return Some(ChoiceReply::Index(source));
         }
         None
     }
@@ -2841,7 +3030,7 @@ impl Host for GameHost<'_> {
         }
     }
 
-    fn save_load(&mut self, op: &SaveOp) -> Option<i32> {
+    fn save_load(&mut self, op: &SaveOp) -> Option<DbValue> {
         let path = self.save_path(&op.file);
         match op.opcode {
             220 => {
@@ -2860,10 +3049,10 @@ impl Host for GameHost<'_> {
                 None
             }
             221 => match crate::savegame::read_save(&path) {
-                Ok(save) => Some(save_address(&save, op).unwrap_or(0)),
+                Ok(save) => save_address(&save, op).or(Some(DbValue::Num(0))),
                 // A missing slot is the normal "no save here" answer: 221 is used for
                 // existence probes (docs/OPCODE_220_SAVE.md section 3.3).
-                Err(_) => Some(0),
+                Err(_) => Some(DbValue::Num(0)),
             },
             222 => {
                 match crate::savegame::read_save(&path) {
@@ -3398,22 +3587,44 @@ mod tests {
         let Some(save) = retail_save(1) else { return };
         // SaveData01 row 0 of the normal-variable table: slot 7 is the money the HUD
         // shows as 7586 G, and slot 8 is the action points the same HUD shows as 25.
-        assert_eq!(save_address(&save, &save_op(221, 2_000_007, 0)), Some(7586));
-        assert_eq!(save_address(&save, &save_op(221, 2_000_008, 0)), Some(25));
+        assert_eq!(
+            save_address(&save, &save_op(221, 2_000_007, 0)),
+            Some(DbValue::Num(7586))
+        );
+        assert_eq!(
+            save_address(&save, &save_op(221, 2_000_008, 0)),
+            Some(DbValue::Num(25))
+        );
         // Event 131 keeps the save-slot number in its self variable 12.
         assert_eq!(
             save_address(&save, &save_op(221, 1_600_012, 131)),
-            Some(8),
+            Some(DbValue::Num(8)),
             "self variables are addressed by the calling event id"
         );
         // 9_000_003 is the choice-window X the saved screen was using, and 9_000_029 is
         // the play time in whole seconds (the save stores frames).
-        assert_eq!(save_address(&save, &save_op(221, 9_000_003, 0)), Some(512));
+        assert_eq!(
+            save_address(&save, &save_op(221, 9_000_003, 0)),
+            Some(DbValue::Num(512))
+        );
         assert_eq!(
             save_address(&save, &save_op(221, 9_000_029, 0)),
-            Some((save.playtime_frames().expect("play time") / 60) as i32)
+            Some(DbValue::Num(
+                (save.playtime_frames().expect("play time") / 60) as i32
+            ))
         );
         assert_eq!(save_address(&save, &save_op(221, 2_000_999, 0)), None);
+        // A computed database address: CE94 reads the hero name through
+        // 1_100_000_000 + type*1_000_000 + row*100 + col. Type 0 row 12 col 0 is the
+        // player's name ("早泄" in SaveData01), and col 4 is the level (1).
+        assert_eq!(
+            save_address(&save, &save_op(221, 1_100_001_200, 0)),
+            Some(DbValue::Str("早泄".to_owned()))
+        );
+        assert_eq!(
+            save_address(&save, &save_op(221, 1_100_001_204, 0)),
+            Some(DbValue::Num(1))
+        );
     }
 
     #[test]
@@ -3424,7 +3635,10 @@ mod tests {
         let mut op = save_op(222, 2_000_007, 0);
         op.value = 1234;
         assert!(write_save_address(&mut save, &op));
-        assert_eq!(save_address(&save, &save_op(221, 2_000_007, 0)), Some(1234));
+        assert_eq!(
+            save_address(&save, &save_op(221, 2_000_007, 0)),
+            Some(DbValue::Num(1234))
+        );
         let mut playtime = save_op(222, 9_000_029, 0);
         playtime.value = 277;
         assert!(write_save_address(&mut save, &playtime));
@@ -3616,6 +3830,7 @@ mod tests {
         let mut game = Game::new(&root).expect("game");
         game.choices = Some(Choices {
             options: vec!["one".to_owned(), "two".to_owned(), "three".to_owned()],
+            sources: vec![0, 1, 2],
             frames: 0,
         });
         game.mouse_buttons = 2;
@@ -3633,6 +3848,7 @@ mod tests {
         let mut game = Game::new(&root).expect("game");
         let options = vec!["one".to_owned(), "two".to_owned(), "three".to_owned()];
         game.choices = Some(Choices {
+            sources: (0..options.len()).collect(),
             options: options.clone(),
             frames: 0,
         });

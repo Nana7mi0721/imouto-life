@@ -140,6 +140,10 @@ pub struct TextQuad {
     pub colour: [u8; 3],
     /// True when the run asked for the \E outline.
     pub outline: bool,
+    /// Font weight the retail face is drawn with (`400` for the tenths UI labels,
+    /// `700` for the bold HUD/message text). Stored per quad because one screen can
+    /// mix the save-slot raster labels with bold top-bar text.
+    pub weight: u16,
 }
 
 /// Why a picture never made it into the atlas.
@@ -522,6 +526,16 @@ impl Atlas {
                 if sysgraphic::parse(&picture.file).is_some() {
                     return None;
                 }
+                // `CursorBase.png` is the 12x12 anti-aliased choice cursor
+                // (docs/re/RUNTIME_CONSTANTS.md §4.3), not a nine-slice window skin.
+                // CE94 issues four type-4 window pictures whose file comes from self[9]
+                // (the cursor DB row), one for each save slot; treating them as panels
+                // painted a near-black 4 px frame around and between all four slots,
+                // which the retail save screen does not show. A real cursor belongs to
+                // the input/choice layer, so it must not enter the picture panel pass.
+                if picture.file.ends_with("CursorBase.png") {
+                    return None;
+                }
                 let (w, h) = picture.window?;
                 if w <= window::MIN_BOX || h <= window::MIN_BOX {
                     return None;
@@ -637,6 +651,7 @@ pub fn texts(screen: &Screen) -> Vec<TextQuad> {
             font_px: 0.0,
             colour: [255, 255, 255],
             outline: false,
+            weight: 700,
         })
         .collect()
 }

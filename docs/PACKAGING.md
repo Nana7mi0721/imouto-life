@@ -89,3 +89,35 @@ ls -l work/out/dist/<version>/   # 期望：wolf-cli.exe README.txt Play-ImoutoL
 - 数据根必须是解包目录，不是 `Data.wolf`；`play` 不接受 `.wolf`。
 - 不改 `game.rs`/`tilemap.rs` 等范围外文件；本任务是纯打包交付物。
 
+## 7. 可双击游玩的完整发布包（Playable Package）
+
+前面的 `tools/package.sh` / `package.ps1` 是诊断包：只有一个 CLI 和 .cmd 启动器，
+不带游戏数据，适合开发验证。面向“像正常游戏一样双击 exe 就能玩”的交付使用：
+
+```bash
+cd "/e/Study/github program/Imouto Life"
+bash tools/package-playable.sh \
+  --out-dir "/d/program/Imouto Life" \
+  --zip-dir work/out/dist
+```
+
+产物结构：
+
+```text
+D:\program\Imouto Life\
+  Imouto Life.exe        # GUI 启动器，双击即启动，无控制台黑窗
+  runtime\wolf-cli.exe   # Rust 引擎（release 构建）
+  Data\                  # 完整解包游戏数据（176 MB，含测试存档）
+  README.txt             # 中文游玩说明
+  checksums.txt          # 启动器/引擎/README 的 SHA-256
+```
+
+启动器是 `crates/wolf-launcher`（std-only，无外部依赖）：定位同目录 `Data\BasicData`
+与 `runtime\wolf-cli.exe`，以 `play --root <Data> --audio` 启动引擎，并用 Windows
+`CREATE_NO_WINDOW` 隐藏控制台；引擎 stdout/stderr 写入同目录 `game-log.txt`，启动失败
+弹 MessageBox 并写 `launcher-error.log`。额外参数会原样转发，例如
+`Imouto Life.exe --load-save "Data\Save\SaveData01.sav"`。
+
+脚本选项：`--skip-build`、`--no-zip`、`--force`（替换已有输出目录）、`--data-root`。
+`--force` 只会删除 `work/out/` 或 `D:\program/` 下的目录，避免误删。
+

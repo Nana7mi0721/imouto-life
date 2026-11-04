@@ -301,11 +301,95 @@ fn cp932_gbk_reading(raw: &[u8]) -> (String, i32) {
     if cp_bad && !gb_bad {
         return (gb, gb_total);
     }
+    // Fan-translation boundary: a genuine CP932 string whose kana/kanji bytes
+    // happen to pair up into valid GBK rare characters can out-score the correct
+    // reading. Recognise it by shape, not raw length: the CP932 reading must be
+    // pure Japanese (ASCII / kana / kanji / fullwidth, no Greek or tofu), must
+    // contain real halfwidth katakana (legit in this game), must contain at least
+    // one full CP932 kanji pair, and the GBK reading must also lean on 0x81..=0x9F
+    // kanji leads (GBK extension, i.e. rare chars). Genuine GB2312 display text is
+    // built from the common B0..=0xF7 leads and stays GBK.
+    if !cp_bad
+        && !gb_bad
+        && cp_looks_japanese(&cp)
+        && has_halfwidth_kana(&cp)
+        && cp932_kanji_pairs(raw) >= 1
+        && gbk_kanji_lead_pairs(raw) >= 1
+    {
+        return (cp, cp_total);
+    }
+
     if gb_total > cp_total + 2 {
         (gb, gb_total)
     } else {
         (cp, cp_total)
     }
+}
+
+/// Count CP932 kanji/kana double-byte pairs: lead 0x81..=0x9F or 0xE0..=0xEA
+/// with a valid CP932 trail. Genuine Japanese text has these; GBK Chinese uses
+/// the B0..=0xF7 leads instead, so a positive count is a CP932 fingerprint.
+fn cp932_kanji_pairs(raw: &[u8]) -> usize {
+    let mut count = 0;
+    let mut i = 0;
+    while i + 1 < raw.len() {
+        let (b, t) = (raw[i], raw[i + 1]);
+        if b < 0x80 {
+            i += 1;
+            continue;
+        }
+        let cp_lead = (0x81..=0x9F).contains(&b) || (0xE0..=0xEA).contains(&b);
+        let cp_trail = (0x40..=0x7E).contains(&t) || (0x80..=0xFC).contains(&t);
+        if cp_lead && cp_trail {
+            count += 1;
+            i += 2;
+        } else {
+            i += 1;
+        }
+    }
+    count
+}
+
+/// Count GBK double-byte pairs whose lead is 0x81..=0x9F (GBK extension band).
+fn gbk_kanji_lead_pairs(raw: &[u8]) -> usize {
+    let mut count = 0;
+    let mut i = 0;
+    while i + 1 < raw.len() {
+        let (b, t) = (raw[i], raw[i + 1]);
+        if b < 0x80 {
+            i += 1;
+            continue;
+        }
+        if (0x81..=0x9F).contains(&b) && ((0x40..=0x7E).contains(&t) || (0x80..=0xFE).contains(&t))
+        {
+            count += 1;
+        }
+        i += 2;
+    }
+    count
+}
+
+/// True when `text` is entirely plausible Japanese: printable ASCII, kana,
+/// kanji, fullwidth punctuation. Greek/Cyrillic or U+FFFD means a misread GBK
+/// byte pair, so a genuine Japanese string never contains them.
+fn cp_looks_japanese(text: &str) -> bool {
+    text.chars().all(|ch| {
+        let c = u32::from(ch);
+        ch.is_ascii()
+            || (0x3000..=0x30FF).contains(&c)
+            || (0x4E00..=0x9FFF).contains(&c)
+            || (0xFF01..=0xFF60).contains(&c)
+            || (0xFF61..=0xFF9F).contains(&c)
+            || (0x2190..=0x27BF).contains(&c) // arrows, box drawing, symbols
+            || (0x2460..=0x24FF).contains(&c)
+            || (0x2000..=0x206F).contains(&c)
+    })
+}
+
+/// True when `text` contains a halfwidth katakana glyph (U+FF61..=U+FF9F).
+fn has_halfwidth_kana(text: &str) -> bool {
+    text.chars()
+        .any(|ch| (0xFF61..=0xFF9F).contains(&u32::from(ch)))
 }
 
 /// Score valid UTF-8 multibyte sequences: +3 each. Only called after

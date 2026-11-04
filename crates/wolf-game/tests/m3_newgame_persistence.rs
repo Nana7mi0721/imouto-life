@@ -6,7 +6,7 @@
 //! 2) 用「干净事件态」的 Game::new 驱动日循环（docs/M2_SLICE.md §4：CE251 就寝必须用
 //!    干净 Game::new 状态；新游戏/读档的 19:30 直接 start_event(251) 只吐「…………」并
 //!    停在 00:00）。每天推进到 19:30 后跑 CE251 就寝到次日 08:30；连续 3 日。
-//!    CE245 夜菜单仅在 boot 的真实地图事件态可打开，由 test1 断言六项含「今天就这样
+//!    CE245 夜菜单仅在 boot 的真实地图事件态可打开，由 test1 断言含「今天就这样
 //!    睡吧」后取消验证。每日早上把当前状态
 //!    save_to(work/out 临时槽) -> 全新 Game（同 root）load_save，断言 v99/v6/时钟
 //!    v4/v5/v14/金钱/vars0..302/DB cell 快照/screen 图片几何/playtime 与保存时刻一致，
@@ -149,7 +149,7 @@ fn morning_wait(game: &mut Game) {
     game.key_bits = 0;
 }
 
-/// 打开 CE245 夜菜单，断言六项含就寝项，然后用 CANCEL 关闭，回到无菜单的事件态。
+/// 打开 CE245 夜菜单，断言含就寝项，然后用 CANCEL 关闭，回到无菜单的事件态。
 fn open_and_cancel_night_menu(game: &mut Game) {
     assert!(game.start_event(245), "CE245 夜菜单应能打开");
     for _ in 0..200 {
@@ -383,7 +383,7 @@ fn title_new_game_reaches_sample_map_a_and_records_initial_state() {
     assert!(!db_snapshot(&game).is_empty());
     assert!(!screen_snapshot(&game).is_empty());
 
-    // 新游戏 boot 到 19:30 的实机状态里，CE245 夜菜单可正常打开（六项含就寝项），
+    // 新游戏 boot 到 19:30 的实机状态里，CE245 夜菜单可正常打开（含就寝项），
     // 取消后状态不变。这也是本任务里唯一能在「真实地图事件态」验证 CE245 的位置。
     game.auto_choice = false;
     open_and_cancel_night_menu(&mut game);

@@ -53,9 +53,21 @@ fn screen_tint_scales_the_tile_layer() {
         "tinting leaves the geometry alone"
     );
     for quad in &tinted {
-        assert!((quad.tint[0] - 102.0 / 255.0).abs() < 1e-5, "red {}", quad.tint[0]);
-        assert!((quad.tint[1] - 102.0 / 255.0).abs() < 1e-5, "green {}", quad.tint[1]);
-        assert!((quad.tint[2] - 77.0 / 255.0).abs() < 1e-5, "blue {}", quad.tint[2]);
+        assert!(
+            (quad.tint[0] - 102.0 / 255.0).abs() < 1e-5,
+            "red {}",
+            quad.tint[0]
+        );
+        assert!(
+            (quad.tint[1] - 102.0 / 255.0).abs() < 1e-5,
+            "green {}",
+            quad.tint[1]
+        );
+        assert!(
+            (quad.tint[2] - 77.0 / 255.0).abs() < 1e-5,
+            "blue {}",
+            quad.tint[2]
+        );
     }
 
     // 150% channels clamp to 255 = neutral, they do not multiply by 1.5.

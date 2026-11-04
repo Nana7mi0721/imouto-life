@@ -165,7 +165,8 @@ fn ce242_action_and_energy_numeric_cells_render_their_numbers() {
         "行动力60/65",
         "槽 230 行动力数字应可见"
     );
-    assert_eq!(quads_for(&game, 240), "精力 3/3", "槽 240 精力数字应可见");
+    let energy: String = quads_for(&game, 240).split_whitespace().collect();
+    assert_eq!(energy, "精力3/3", "槽 240 精力数字应可见");
 }
 
 #[test]
@@ -217,7 +218,8 @@ fn ce244_status_panel_numeric_slots_still_render() {
         "行动力60/65",
         "CE244 槽 230 行动力应可见"
     );
-    assert_eq!(quads_for(&game, 240), "精力 3/3", "CE244 槽 240 精力应可见");
+    let energy: String = quads_for(&game, 240).split_whitespace().collect();
+    assert_eq!(energy, "精力3/3", "CE244 槽 240 精力应可见");
     assert!(
         quads_for(&game, 251).contains("10000円"),
         "CE244 槽 251 金钱应可见"

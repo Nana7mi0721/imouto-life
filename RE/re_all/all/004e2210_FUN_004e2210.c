@@ -1,0 +1,27 @@
+
+undefined4
+FUN_004e2210(undefined4 param_1,undefined4 param_2,undefined4 param_3,undefined4 param_4,
+            undefined1 param_5)
+
+{
+  undefined4 uVar1;
+  int iVar2;
+  void *pvStack_10;
+  undefined1 *puStack_c;
+  undefined4 local_8;
+  
+  local_8 = 0xffffffff;
+  puStack_c = &LAB_007b16e1;
+  pvStack_10 = ExceptionList;
+  ExceptionList = &pvStack_10;
+  uVar1 = FUN_004ea6c0(1);
+  local_8 = 0;
+  iVar2 = FUN_004e22e0(0x30,uVar1);
+  local_8 = CONCAT31(local_8._1_3_,1);
+  if (iVar2 != 0) {
+    FUN_004eb780(param_1,param_2,param_3,param_4,param_5);
+  }
+  ExceptionList = pvStack_10;
+  return uVar1;
+}
+

@@ -1,0 +1,16 @@
+M5-E: mod data overlays
+
+Add repeatable --mod <dir> overlays for play and capture. Overlay roots
+mirror the data tree and are searched newest first before the base root.
+Covered files: pictures, CommonEvent.dat, Game.dat, TileSetData.dat,
+DataBase/CDataBase/SysDatabase/.project, and MapData maps. Saves and
+System.sav continue to write to the base root.
+
+Tests:
+- assets overlay precedence and pixel replacement unit test
+- m5_mod_overlay integration on the real data root
+- CLI overlay precedence / BasicData nesting / fallback unit test
+- full workspace default and WOLF_DATA_ROOT=work/Data both exit 0
+- verify PASS 64/1 SKIP; verify --wolf PASS 72, 1361/1361 bytes equal
+
+Docs: M5_BEYOND, README, docs/README, HANDOFF M0.

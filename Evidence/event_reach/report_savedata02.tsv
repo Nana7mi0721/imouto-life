@@ -1,0 +1,391 @@
+kind	source	id	name	page	pages	trigger	status	frames	messages	choices	pictures	sounds	warnings	first_message	first_choice	conditions	diagnostics
+common	CommonEvent	0	○アイテム増減	-	0	-	ended	2	0	0	0	0	0				
+common	CommonEvent	1	○武器増減	-	0	-	ended	2	0	0	0	0	0				
+common	CommonEvent	2	○防具増減	-	0	-	ended	2	0	0	0	0	0				
+common	CommonEvent	3	○お金の増減	-	0	-	ended	2	0	0	0	0	0				
+common	CommonEvent	4	○回復・ダメージ処理	-	0	-	ended	5	0	0	0	0	0				
+common	CommonEvent	5	○メンバーの増減	-	0	-	ended	7	0	0	0	0	0				270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	6	○主人公情報の変更	-	0	-	ended	3	0	0	0	0	0				
+common	CommonEvent	7	○能力値増減	-	0	-	ended	7	0	0	0	0	0				
+common	CommonEvent	8	○特殊技能増減	-	0	-	ended	2	0	0	0	0	0				
+common	CommonEvent	9	○状態異常変化	-	0	-	ended	6	0	0	0	0	0				
+common	CommonEvent	10	○経験値・Lv増減	-	0	-	ended	7	0	0	0	0	0				
+common	CommonEvent	11	○装備武器の変更	-	0	-	ended	10	1	0	1	0	0	>「X[移]装備装着・解除」エラー： 　装備しようとしているアイテムが 　武器で…			
+common	CommonEvent	12	○装備防具の変更	-	0	-	ended	10	1	0	1	0	0	>「X[移]装備装着・解除」エラー： 　装備しようとしているアイテムが 　武器で…			
+common	CommonEvent	13	○戦闘コマンドの変更	-	0	-	ended	3	0	0	0	0	0				
+common	CommonEvent	14	○各種メニュー呼出	-	0	-	running	180	0	0	24	0	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	15	○セーブ許可・禁止設定	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	16	---------------------------------	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	17	▲アイテム所持数取得	-	0	-	ended	2	0	0	0	0	0				
+common	CommonEvent	18	▲武器所持数取得	-	0	-	ended	2	0	0	0	0	0				
+common	CommonEvent	19	▲防具所持数取得	-	0	-	ended	2	0	0	0	0	0				
+common	CommonEvent	20	▲所持金取得	-	0	-	ended	2	0	0	0	0	0				
+common	CommonEvent	21	▲装備取得	-	0	-	ended	3	1	0	1	0	0	>「X[移]選択箇所装備コード取得」エラー： 　装備箇所が8以下です。 　=>　…			
+common	CommonEvent	22	▲メンバー情報取得[数値]	-	0	-	ended	2	0	0	0	0	0				
+common	CommonEvent	23	▲メンバー情報取得[文字列]	-	0	-	ended	2	0	0	0	0	0				
+common	CommonEvent	24	▲状態異常の取得	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	25	▲特殊技能の有無取得	-	0	-	ended	2	0	0	0	0	0				
+common	CommonEvent	26	▲戦闘コマンド有無の判定	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	27	---------------------------------	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	28	◆バトルの発生	-	0	-	running	180	0	0	64	1	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	29	◆[戦闘用]敵キャラの追加	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	30	◆[戦闘用]メッセージ表示	-	0	-	ended	43	0	0	1	0	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	31	◆[戦闘用]ダメージ処理	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	32	---------------------------------	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	33	【1】 お店 初期化	-	0	-	ended	2	0	0	0	0	0				
+common	CommonEvent	34	【2】 お店 商品の追加	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	35	【3】 お店処理 実行	-	0	-	running	180	0	0	22	0	0				106 debug line: リセット x1; 160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	36	◆立ち絵表示コモン	-	0	-	ended	1	0	0	1	0	0				
+common	CommonEvent	37	◇ランダムエンカウント処理 	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	38	---------------------------------	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	39	---------------------------------	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	40	---------------------------------	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	41		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	42	オリジナルタイトル画面Ａ	-	0	-	ended	17	0	3	0	0	0		menu1		130 Teleport: MapData/Map003.mps at (60, 34) target -1 options 0x1 x1
+common	CommonEvent	43	┗オリジナルタイトル画面Ｂ	-	0	-	ended	2	0	0	3	0	0				
+common	CommonEvent	44	■■■■■■■■■■■■	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	45	■以下､変更･呼出不可■■	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	46	■----------------- ■■	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	47	■■【共通・内部処理】 ■■	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	48	X[共]基本ｼｽﾃﾑ自動初期化	-	0	-	ended	139	0	0	0	0	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x2; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x2; 270 Party: 1 argument(s) recorded only x2
+common	CommonEvent	49	X[共]システムSE再生	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	50	X[共]アイテム増減	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	51	X[共]武器増減	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	52	X[共]防具増減	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	53	X[共]所持金増減	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	54	X[共]ｱｲﾃﾑ所持数取得	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	55	X[共]武器所持数取得	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	56	X[共]防具所持数取得	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	57	X[共]所持金取得	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	58	X[共]技能の習得・消去	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	59	X[共]ウェイト(キー押しで中断)	-	0	-	ended	3	0	0	0	0	0				
+common	CommonEvent	60	X[共]ウェイト2(キー押しで加速)	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	61	X[共]キー押し加速ｳｪｲﾄ計算	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	62	■■【共通・画面処理】■■	-	0	-	running	180	0	0	21	0	0				106 debug line: リセット x1; 160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	63	X[共]メッセージウィンドウ	-	0	-	running	180	0	0	0	0	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	64	X[共]万能ｳｨﾝﾄﾞｳ描画処理	-	0	-	ended	1	0	0	17	0	0				
+common	CommonEvent	65	X[共]万能ｳｨﾝﾄﾞｳ選択実行	-	0	-	running	180	0	0	3	0	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	66	X[共]万能ｳｨﾝﾄﾞｳ説明欄変更	-	0	-	ended	1	0	0	1	0	0				
+common	CommonEvent	67	X[共]全体エフェクト実行	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	68	■■■■■■■■■■■■■	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	69	■■【移動時・内部処理】■■	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	70	X[移]パラメータ増減	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	71	X[移]パラメータ取得	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	72	X[移]パラメータ変更(文字列)	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	73	X[移]パラメータ取得(文字列)	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	74	X[移]レベルアップ処理	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	75	X[移]状態付与/消去	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	76	X[移]状態更新	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	77	X[移]戦闘コマンド変更	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	78	X[移]戦闘コマンド取得	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	79	X[移]パーティー情報計算	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	80	X[移]パーティー画像再設定	-	0	-	ended	1	0	0	0	0	0				270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	81	■■【お店関連処理】■■	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	82	X[移]お店商品初期化	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	83	X[移]お店商品追加	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	84	X[移]お店実行	-	0	-	running	180	0	0	22	0	0				106 debug line: リセット x1; 160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	85	X[移]┣ お店　描画	-	0	-	ended	7	0	0	28	0	0				106 debug line: リセット x1
+common	CommonEvent	86	X[移]┗ お店内部情報更新	-	0	-	ended	2	0	0	0	0	0				
+common	CommonEvent	87	■■【メニュー画面処理】■■	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	88	X[移]メニュー描画	-	0	-	ended	2	0	0	12	0	0				106 debug line: コマンドコード10 相談 0 x1; 106 debug line: コマンドコード11 0 1 x1; 106 debug line: コマンドコード12 0 2 x1; 106 debug line: コマンドコード13 0 3 x1; 106 debug line: コマンドコード14 ？？？？ 4 x1; 106 debug line: コマンドコード15 ？？？？ 5 x1; 106 debug line: コマンドコード16 ？？？？ 6 x1; 106 debug line: コマンドコード17 ？？？？ 7 x1
+common	CommonEvent	89	X┗[移]メニューコマンド算出	-	0	-	ended	1	0	0	0	0	0				106 debug line: コマンドコード10 相談 0 x1; 106 debug line: コマンドコード11 0 1 x1; 106 debug line: コマンドコード12 0 2 x1; 106 debug line: コマンドコード13 0 3 x1; 106 debug line: コマンドコード14 ？？？？ 4 x1; 106 debug line: コマンドコード15 ？？？？ 5 x1; 106 debug line: コマンドコード16 ？？？？ 6 x1; 106 debug line: コマンドコード17 ？？？？ 7 x1
+common	CommonEvent	90	X[移]キャラクター欄描画	-	0	-	ended	1	0	0	20	0	0				
+common	CommonEvent	91	X[移]ｷｬﾗｸﾀｰ欄_座標算出	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	92	X[移]キャラ欄_全員描画	-	0	-	ended	9	0	0	20	0	0				
+common	CommonEvent	93	X[移]装備画面描画	-	0	-	ended	15	0	0	56	0	0				106 debug line: リセット x1
+common	CommonEvent	94	X[移]セーブ・ロード画面描画	-	0	-	ended	1	0	0	24	0	0				
+common	CommonEvent	95	X[移]システム画面描画	-	0	-	ended	6	0	0	50	0	0				
+common	CommonEvent	96	X[移]ﾀﾞﾒｰｼﾞ・回復ﾎﾟｯﾌﾟｱｯﾌﾟ	-	0	-	ended	1	0	0	0	0	0				106 debug line: >>19000 -49 0 (-49 -48)　0 3 50 x1
+common	CommonEvent	97	X[移]指定ｷｬﾗHP/SP回復表示	-	0	-	ended	5	0	0	20	0	0				
+common	CommonEvent	98	X[移]指定ｷｬﾗ状態付与表示	-	0	-	ended	6	0	0	20	0	0				106 debug line: >>19000 4527 1056 (4527 1008)　0 3 50 x1
+common	CommonEvent	99	X[移]残りアイテム数表示	-	0	-	ended	1	0	0	2	0	0				
+common	CommonEvent	100	X[移]ミニウィンドウ表示	-	0	-	ended	1	0	0	2	0	0				
+common	CommonEvent	101	X[移]メニュー時文章表示	-	0	-	ended	1	0	0	2	0	0				
+common	CommonEvent	102	X[移]上部ステータス描画	-	0	-	ended	1	0	0	11	0	0				
+common	CommonEvent	103	■■【メニュー内部処理】■■	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	104	X[移]選択位置主人公ID設定	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	105	X[移]選択位置主人公ID取得	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	106	X[移]選択箇所装備コード取得	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	107	X[移]選択箇所装備コード設定	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	108	X[移]ｷｬﾗｸﾀｰ欄_選択実行	-	0	-	running	180	0	0	0	0	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1; 290 Effect: kind 5 for 0 frame(s) (7 args) has no live picture in its range (no-op) x6; 290 Effect: kind 5 for 25 frame(s) (7 args) has no live picture in its range (no-op) x1
+common	CommonEvent	109	X[移]装備欄_選択実行	-	0	-	running	180	0	0	2	0	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	110	X[移]ｱｲﾃﾑ一覧算出	-	0	-	ended	1	0	0	0	0	0				250 DatabaseAccess: CData (7, 10, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 11, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 12, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 13, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 14, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 15, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 16, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 17, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 18, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 19, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 20, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 21, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 22, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 23, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 24, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 10, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 11, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 12, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 13, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 14, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 15, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 16, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 17, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 18, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 19, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 20, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 21, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 22, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 23, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 24, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 25, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 26, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 27, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 28, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 29, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 30, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 31, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 32, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 33, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 34, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 35, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 36, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 37, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 38, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 39, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 1, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 10, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 11, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 12, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 13, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 14, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 15, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 16, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 17, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 18, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 19, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 2, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 20, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 21, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 22, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 23, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 24, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 25, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 26, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 27, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 28, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 29, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 3, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 30, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 31, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 32, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 33, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 34, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 35, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 36, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 37, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 38, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 39, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 4, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 5, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 6, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 7, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 8, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 9, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1
+common	CommonEvent	111	X[移]技能一覧算出	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	112	X[移]装備一覧算出	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	113	X[移]装備装着・解除	-	0	-	ended	4	1	0	1	0	0	>「X[移]装備装着・解除」エラー： 　装備しようとしているアイテムが 　武器で…			
+common	CommonEvent	114	X[移]装備ﾊﾟﾗﾒｰﾀ差分算出	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	115	X[移]キーリピート設定	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	116	X[移]記憶キー位置取得	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	117	X[移]記憶キー位置設定	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	118	X[移]ｱｲﾃﾑ使用効果処理	-	0	-	ended	2	1	0	1	0	0	>「X[移]ｱｲﾃﾑ使用効果処理」エラー 「-1」番以下のアイテムコードが指定さ…			
+common	CommonEvent	119	X[移]技能使用効果処理	-	0	-	ended	2	0	0	2	0	0				
+common	CommonEvent	120	X[移]ｱｲﾃﾑ使用_消費処理	-	0	-	running	180	0	0	2	0	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	121	X[移]技能使用_消費処理	-	0	-	running	180	0	0	2	0	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	122	X[移]一時ｽﾃ計算<初期化>	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	123	X[移]一時ｽﾃ計算<装備補正>	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	124	X[移]一時ｽﾃ計算<状態補正>	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	125	■■【メニュー実行処理】■■	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	126	X[移]歩行時_並列キー処理	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	127	X[移]メニュー起動	-	0	-	running	180	0	0	33	0	0				106 debug line: コマンドコード10 相談 0 x1; 106 debug line: コマンドコード11 0 1 x1; 106 debug line: コマンドコード12 0 2 x1; 106 debug line: コマンドコード13 0 3 x1; 106 debug line: コマンドコード14 ？？？？ 4 x1; 106 debug line: コマンドコード15 ？？？？ 5 x1; 106 debug line: コマンドコード16 ？？？？ 6 x1; 106 debug line: コマンドコード17 ？？？？ 7 x1; 160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	128	X┣[移]アイテム欄実行	-	0	-	running	180	0	0	5	0	0				106 debug line: リセット x1; 160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 250 DatabaseAccess: CData (7, 10, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 11, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 12, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 13, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 14, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 15, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 16, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 17, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 18, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 19, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 20, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 21, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 22, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 23, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 24, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 10, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 11, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 12, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 13, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 14, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 15, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 16, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 17, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 18, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 19, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 20, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 21, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 22, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 23, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 24, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 25, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 26, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 27, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 28, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 29, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 30, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 31, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 32, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 33, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 34, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 35, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 36, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 37, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 38, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 39, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 1, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 10, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 11, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 12, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 13, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 14, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 15, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 16, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 17, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 18, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 19, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 2, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 20, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 21, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 22, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 23, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 24, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 25, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 26, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 27, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 28, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 29, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 3, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 30, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 31, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 32, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 33, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 34, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 35, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 36, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 37, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 38, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 39, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 4, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 5, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 6, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 7, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 8, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 9, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	129	X┣[移]技能欄実行	-	0	-	running	180	0	0	2	0	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1; 290 Effect: kind 5 for 0 frame(s) (7 args) has no live picture in its range (no-op) x6; 290 Effect: kind 5 for 25 frame(s) (7 args) has no live picture in its range (no-op) x1
+common	CommonEvent	130	X┣[移]装備欄実行	-	0	-	running	180	0	0	0	0	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1; 290 Effect: kind 5 for 0 frame(s) (7 args) has no live picture in its range (no-op) x6; 290 Effect: kind 5 for 25 frame(s) (7 args) has no live picture in its range (no-op) x1
+common	CommonEvent	131	X┣[移]セーブ欄実行	-	0	-	running	180	0	0	24	0	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	132	X┗[移]システム欄実行	-	0	-	running	180	0	0	50	0	0				106 debug line: 0 x1; 160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1; 290 Effect: kind 1 for 0 frame(s) (7 args) has no live picture in its range (no-op) x6; 290 Effect: kind 5 for 0 frame(s) (7 args) has no live picture in its range (no-op) x6
+common	CommonEvent	133	■■■■■■■■■■■■■	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	134	■■【戦闘用・内部処理】■■	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	135	X[戦]パラメータ増減	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	136	X[戦]パラメータ取得	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	137	X[戦]状態付与/消去	-	0	-	ended	2	0	0	0	0	0				
+common	CommonEvent	138	X[戦]┗状態変化ﾒｯｾｰｼﾞ	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	139	X[戦]状態更新	-	0	-	ended	3	0	0	0	0	0				
+common	CommonEvent	140	X[戦]戦闘変数初期化	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	141	X[戦]ｽﾛｯﾄから主人公ID取得	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	142	X[戦]指定主人公更新処理	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	143	X[戦]主人公DB→戦闘DBコピー	-	0	-	ended	9	0	0	0	0	0				
+common	CommonEvent	144	X[戦]敵DB→戦闘DBコピー	-	0	-	ended	9	0	0	0	0	0				
+common	CommonEvent	145	X[戦]選択箇所装備コード取得	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	146	X[戦]一時ｽﾃ計算<初期化>	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	147	X[戦]一時ｽﾃ計算<装備補正>	-	0	-	ended	6	0	0	0	0	0				
+common	CommonEvent	148	X[戦]一時ｽﾃ計算<状態補正>	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	149	X[戦]戦闘DB→主人公DBへ戻す	-	0	-	ended	5	0	0	0	0	0				
+common	CommonEvent	150	X[戦]戦闘コマンド取得	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	151	X[戦]戦闘コマンド設定	-	0	-	ended	2	0	0	0	0	0				
+common	CommonEvent	152	X[戦]戦闘ｺﾏﾝﾄﾞ一覧算出	-	0	-	ended	9	0	0	0	0	0				
+common	CommonEvent	153	X[戦]ｱｲﾃﾑ一覧算出	-	0	-	ended	1	0	0	0	0	0				250 DatabaseAccess: CData (7, 10, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 11, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 12, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 13, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 14, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 15, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 16, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 17, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 18, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 19, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 20, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 21, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 22, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 23, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 24, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 10, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 11, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 12, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 13, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 14, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 15, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 16, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 17, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 18, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 19, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 20, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 21, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 22, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 23, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 24, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 25, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 26, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 27, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 28, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 29, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 30, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 31, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 32, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 33, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 34, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 35, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 36, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 37, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 38, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 39, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 1, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 10, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 11, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 12, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 13, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 14, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 15, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 16, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 17, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 18, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 19, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 2, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 20, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 21, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 22, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 23, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 24, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 25, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 26, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 27, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 28, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 29, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 3, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 30, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 31, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 32, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 33, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 34, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 35, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 36, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 37, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 38, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 39, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 4, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 5, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 6, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 7, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 8, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 9, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1
+common	CommonEvent	154	X[戦]技能一覧算出	-	0	-	ended	51	0	0	0	0	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	155	X[戦]記憶キー位置取得	-	0	-	ended	2	0	0	0	0	0				
+common	CommonEvent	156	X[戦]記憶キー位置設定	-	0	-	ended	2	0	0	0	0	0				
+common	CommonEvent	157	X[戦]コマンド登録	-	0	-	running	180	0	0	0	0	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1; 290 Effect: kind 5 for 0 frame(s) (7 args) has no live picture in its range (no-op) x17; 290 Effect: kind 5 for 25 frame(s) (7 args) has no live picture in its range (no-op) x1
+common	CommonEvent	158	X[戦]ｱｲﾃﾑ選択実行	-	0	-	running	180	0	0	5	0	0				106 debug line: リセット x1; 160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 250 DatabaseAccess: CData (7, 10, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 11, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 12, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 13, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 14, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 15, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 16, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 17, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 18, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 19, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 20, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 21, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 22, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 23, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (7, 24, 0) flags 0x51000 labels "┣所持アイテム個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 10, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 11, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 12, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 13, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 14, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 15, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 16, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 17, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 18, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 19, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 20, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 21, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 22, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 23, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 24, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 25, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 26, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 27, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 28, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 29, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 30, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 31, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 32, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 33, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 34, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 35, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 36, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 37, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 38, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (8, 39, 0) flags 0x51000 labels "┣所持武器個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 1, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 10, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 11, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 12, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 13, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 14, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 15, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 16, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 17, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 18, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 19, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 2, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 20, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 21, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 22, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 23, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 24, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 25, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 26, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 27, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 28, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 29, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 3, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 30, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 31, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 32, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 33, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 34, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 35, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 36, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 37, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 38, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 39, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 4, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 5, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 6, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 7, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 8, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 250 DatabaseAccess: CData (9, 9, 0) flags 0x51000 labels "┗所持防具個数"/"所持個数" unanswered x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	159	X[戦]技能選択実行	-	0	-	running	180	0	0	16	0	0				106 debug line: リセット x1; 160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1; 290 Effect: kind 5 for 0 frame(s) (7 args) has no live picture in its range (no-op) x6
+common	CommonEvent	160	X[戦]AI実行	-	0	-	ended	37	0	0	0	0	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 250 DatabaseAccess: CData (13, 11, 0) flags 0x11000 labels "×┣ 状態リスト"/"" unanswered x1; 250 DatabaseAccess: CData (13, 12, 0) flags 0x11000 labels "×┣ 状態リスト"/"" unanswered x1; 250 DatabaseAccess: CData (13, 13, 0) flags 0x11000 labels "×┣ 状態リスト"/"" unanswered x1; 250 DatabaseAccess: CData (13, 14, 0) flags 0x11000 labels "×┣ 状態リスト"/"" unanswered x1; 250 DatabaseAccess: CData (13, 15, 0) flags 0x11000 labels "×┣ 状態リスト"/"" unanswered x1; 250 DatabaseAccess: CData (13, 16, 0) flags 0x11000 labels "×┣ 状態リスト"/"" unanswered x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	161	X[戦]味方対象選択実行	-	0	-	running	180	0	0	0	0	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1; 290 Effect: kind 5 for 0 frame(s) (7 args) has no live picture in its range (no-op) x6; 290 Effect: kind 5 for 25 frame(s) (7 args) has no live picture in its range (no-op) x1
+common	CommonEvent	162	X[戦]敵対象選択実行	-	0	-	running	180	0	0	0	0	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1; 290 Effect: kind 5 for 0 frame(s) (7 args) has no live picture in its range (no-op) x17; 290 Effect: kind 5 for 25 frame(s) (7 args) has no live picture in its range (no-op) x1
+common	CommonEvent	163	X[戦]敵･味方行動対象算出	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	164	X[戦]行動実行結果算出	-	0	-	ended	4	1	0	1	0	0	>X[戦]敵･味方行動対象算出：エラー 　単体を対象とした技能の対象判定がおかし…			
+common	CommonEvent	165	X[戦]┗単体処理	-	0	-	ended	52	0	0	16	0	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	166	X[戦]　　┗ｶｳﾝﾀｰ判定	-	0	-	ended	2	0	0	0	0	0				
+common	CommonEvent	167	X[戦]ｶｳﾝﾀｰ実行結果算出	-	0	-	ended	4	1	0	1	0	0	>X[戦]敵･味方行動対象算出：エラー 　単体を対象とした技能の対象判定がおかし…			106 debug line: 　＞行動対象 -1 x1
+common	CommonEvent	168	X[戦]変身判定	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	169	X[戦]ｱｲﾃﾑ使用_消費処理	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	170	X[戦]技能使用_消費処理	-	0	-	ended	2	0	0	0	0	0				
+common	CommonEvent	171	X[戦]敵撃破処理	-	0	-	ended	33	0	0	0	0	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1; 290 Effect: kind 1 for 0 frame(s) (7 args) has no live picture in its range (no-op) x1
+common	CommonEvent	172	X[戦]敵/味方・勝敗判定	-	0	-	ended	2	0	0	0	0	0				
+common	CommonEvent	173	X[戦]┗ 残りターン数表示	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	174	X[戦]味方欄_座標算出	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	175	X[戦]敵キャラ_座標算出	-	0	-	ended	2	1	0	1	0	0	>「X[移]敵キャラ_座標算出」：エラー 10番未満は指定できません			
+common	CommonEvent	176	X[戦]基本状態取得	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	177	■■【戦闘用・画面処理】■■	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	178	X[戦]味方欄_単体描画	-	0	-	ended	1	0	0	15	0	0				
+common	CommonEvent	179	X[戦]敵キャラ_単体描画	-	0	-	ended	2	1	0	1	0	0	>「X[戦]敵キャラ_単体描画」：エラー  表示位置10番未満は指定できません …			
+common	CommonEvent	180	X[戦]バックグラウンド描画	-	0	-	ended	1	0	0	1	0	0				
+common	CommonEvent	181	X[戦]ﾀﾞﾒｰｼﾞ・回復ﾎﾟｯﾌﾟｱｯﾌﾟ	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	182	X[戦]戦闘メッセージ表示	-	0	-	ended	42	0	0	1	0	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	183	X[戦]技能エフェクト描画	-	0	-	ended	4	0	0	0	1	0				
+common	CommonEvent	184	X[戦]警告文章表示	-	0	-	ended	1	0	0	2	0	0				
+common	CommonEvent	185	X[戦]上部ステータス描画	-	0	-	ended	1	0	0	11	0	0				
+common	CommonEvent	186	X[戦]戦利品獲得画面	-	0	-	ended	1	0	0	2	0	0				
+common	CommonEvent	187	■■【戦闘用・実行処理】■■	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	188	X◆戦闘処理	-	0	-	running	180	0	0	64	1	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	189	X┣◆戦闘初期化	-	0	-	ended	4	0	0	1	0	0				
+common	CommonEvent	190	X┣◆戦闘キャラ配置	-	0	-	ended	73	0	0	22	0	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	191	X┣◆行動内容のセット	-	0	-	running	180	0	0	14	0	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	192	X┃┣◆味方コマンド選択	-	0	-	ended	4	0	0	0	0	0				
+common	CommonEvent	193	X┃┗◆敵・味方AI計算	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	194	X┣◆行動順の計算	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	195	X┣◆１ターンの処理を実行	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	196	X┃┣◆行動可能判定	-	0	-	ended	7	1	0	1	0	0	>「X[戦]基本状態取得」エラー： 　戦闘スロットが「-1」以下になっています。…			290 Effect: kind 0 for 25 frame(s) (7 args) has no live picture in its range (no-op) x1
+common	CommonEvent	197	X┃┗◆１行動ループ	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	198	X┣◆ターン終了処理	-	0	-	ended	57	0	0	0	0	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 250 DatabaseAccess: CData (10, 18, 17) flags 0x51000 labels "×┏ 戦闘一時ステータス[基]"/"ｷｬﾗｸﾀ番号[1万以上は敵]" unanswered x1; 250 DatabaseAccess: CData (10, 19, 17) flags 0x51000 labels "×┏ 戦闘一時ステータス[基]"/"ｷｬﾗｸﾀ番号[1万以上は敵]" unanswered x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	199	X┣◆主人公ＤＢ復元	-	0	-	ended	7	0	0	0	0	0				
+common	CommonEvent	200	X┣◆戦利品獲得処理	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	201	X┗◆戦闘終了処理	-	0	-	ended	45	0	0	0	0	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	202	■■■■■■■■■■■■■	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	203	○[変更可]戦闘開始時処理	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	204	○[変更可]1ﾀｰﾝ開始時処理	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	205	○[変更可]1ﾀｰﾝ終了時処理	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	206	○[変更可]戦闘終了後処理	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	207	■■■■■■■■■■■■■	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	208	【基本ｼｽﾃﾑVer2.20説明書】	-	0	-	running	180	0	0	16	0	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1; 290 Effect: kind 5 for 0 frame(s) (7 args) has no live picture in its range (no-op) x17; 290 Effect: kind 5 for 25 frame(s) (7 args) has no live picture in its range (no-op) x1
+common	CommonEvent	209	■■■■■■■■■■■■■	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	210	■以下､自由に使用可■■	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	211	■■■■■■■■■■■■■	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	212	フキダシ会話文表示	-	0	-	spin	3	0	0	0	0	0				
+common	CommonEvent	213	アイコン表示長い	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	214	応援会話リコ	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	215	経過日数表示	-	0	-	ended	1	0	0	1	0	0				
+common	CommonEvent	216	性興味監視	-	0	-	ended	2	0	0	0	0	0				
+common	CommonEvent	217		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	218		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	219	■事後処理中断	-	0	-	ended	2	0	0	8	0	0				
+common	CommonEvent	220	■事後処理	-	0	-	ended	1	0	0	8	0	0				
+common	CommonEvent	221	[北]ぴぽや感情・状態ｱｲｺﾝ表示	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	222	画面拡大	-	0	-	ended	1	0	0	1	0	0				290 Effect: kind 0 for 20 frame(s) (7 args) has no live picture in its range (no-op) x1; 290 Effect: kind 4 for 20 frame(s) (7 args) has no live picture in its range (no-op) x2
+common	CommonEvent	223	ウィンドウ処理	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	224	フィールド上処理	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	225	深夜1吐息A	-	0	-	running	180	0	0	1	0	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	226	深夜1吐息B	-	0	-	running	180	0	0	1	0	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	227	深夜1表示	-	0	-	ended	1	0	0	4	0	0				
+common	CommonEvent	228	深夜1衣服	-	0	-	ended	1	0	0	5	0	0				290 Effect: kind 3 for 0 frame(s) (7 args) has no live picture in its range (no-op) x2
+common	CommonEvent	229	深夜1アニメ	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	230	深夜1	-	0	-	ended	15	2	0	19	2	0	……咽口水。			290 Effect: kind 3 for 0 frame(s) (7 args) has no live picture in its range (no-op) x2
+common	CommonEvent	231	文字エフェクトみぎ	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	232	文字エフェクトひだり	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	233	文字エフェクトセリフ	-	0	-	running	180	0	0	1	0	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	234	文字エフェクト挿入	-	0	-	ended	101	0	0	0	0	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	235	文字エフェクト例外	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	236		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	237	Hステータス	-	0	-	ended	1	0	0	9	0	0				
+common	CommonEvent	238	ステータス	-	0	-	ended	1	0	0	6	0	0				
+common	CommonEvent	239	アイテムリスト	-	0	-	ended	1	0	0	20	0	0				
+common	CommonEvent	240	立ち絵表示	-	0	-	ended	1	0	0	4	0	0				
+common	CommonEvent	241	┗立ち絵瞬き	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	242	ステータス表示	-	0	-	ended	1	0	0	5	0	0				
+common	CommonEvent	243	時刻表示	-	0	-	ended	1	0	0	2	0	0				
+common	CommonEvent	244	行動力変動	-	0	-	ended	21	0	0	1	0	0				
+common	CommonEvent	245	夜コマンド	-	0	-	ended	67	3	6	15	0	0	我说……	开始交流 		160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x4; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	246	┣コミュニケーション	-	0	-	ended	62	3	4	9	0	0	我说……	说话 		160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x2; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	247	┣ＴＶ視聴	-	0	-	ended	95	3	0	9	0	0	一起看电视吧。			160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x2; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	248	┣ゲーム	-	0	-	ended	146	8	7	11	0	0	那么，去玩游戏吧。	对战游戏 		160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x2; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	249	┣お風呂	-	0	-	running	180	8	2	10	3	0	还是去洗澡吧…	一个人洗		160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	250	┣ネットショップ	-	0	-	ended	33	3	3	29	0	0	看一眼网上商店吧。	安全套　           2…		160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	251	┗就寝	-	0	-	running	180	0	0	3	1	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x2; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	252	日中処理学生	-	0	-	running	180	0	0	2	2	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	253	日中処理フリーター	-	0	-	running	180	4	5	3	2	0	那么，该怎么做呢。	无所事事地度过 		160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x2; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	254	日中処理社会人	-	0	-	running	180	0	0	2	2	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	255	日中処理ダメ人間	-	0	-	running	180	4	5	3	2	0	那么，该怎么做呢。	无所事事地度过 		160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x2; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	256	日中メニュー	-	0	-	running	180	5	5	3	0	0	那么，该怎么做呢。	无所事事地度过 		160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x2; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	257	帰宅メニュー	-	0	-	running	180	0	0	0	1	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	258	晩ごはん処理	-	0	-	running	180	0	0	3	0	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	259	休日メニュー	-	0	-	running	180	8	5	10	0	0	今天休息呢，要怎么度过呢。	和妹妹一起玩 		160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x2; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	260	┗休日ゲーム	-	0	-	ended	164	8	7	11	0	0	那么，一起玩游戏吧。	对战游戏		160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	261	×◆座標変数初期化	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	262	▲先頭空白削除	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	263	▲文字列数値判定	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	264	○◆メッセージウィンドウ[ｲﾝﾀﾌｪｰｽ]	-	0	-	ended	5	0	0	13	0	0				
+common	CommonEvent	265	○┣[ﾒｯｾｰｼﾞ]ウィンドウの変更	-	0	-	ended	2	0	0	0	0	0				
+common	CommonEvent	266	○┣[ﾒｯｾｰｼﾞ]表示位置の変更	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	267	○┣[ﾒｯｾｰｼﾞ]顔グラフィックの変更	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	268	○┣[ﾒｯｾｰｼﾞ]名前欄の変更	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	269	亊劙[爷景嫁]弶婜壔丒愝掕	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	270	亊劙[爷景嫁]昞帵張棟	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	271	×┗[ﾒｯｾｰｼﾞ]オートスキップ	-	0	-	ended	7	0	0	0	0	0				106 debug line: >>19000 8207 1056 (8207 1008)　0 3 50 x1
+common	CommonEvent	272		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	273	お風呂タイマー2	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	274	お風呂タイマー1	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	275	カットイン呼び出しお風呂	-	0	-	ended	1	0	0	2	0	0				
+common	CommonEvent	276	カットイン顔表示	-	0	-	ended	1	0	0	4	0	0				
+common	CommonEvent	277	┣警戒度メータ	-	0	-	ended	101	0	0	2	0	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	278	┗カットイン顔瞬き	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	279	実行バー表記	-	0	-	running	180	0	0	2	0	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	280	カットイン呼び出し	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	281	カットインタイマー右	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	282	カットインタイマー左	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	283	カットイン呼び出し夜	-	0	-	ended	1	0	0	2	0	0				
+common	CommonEvent	284	射精	-	0	-	running	180	0	0	0	0	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	285	文字エフェクトローター	-	0	-	ended	101	0	0	0	0	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	286	文字エフェクト電マ	-	0	-	ended	101	0	0	0	0	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	287	文字エフェクトバイブ	-	0	-	ended	101	0	0	0	0	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	288	文字エフェクトアナルバイブ	-	0	-	ended	101	0	0	0	0	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	289		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	290	コマンドカットイン	-	0	-	ended	1	0	0	0	0	0				290 Effect: kind 9 for 0 frame(s) (7 args) has no live picture in its range (no-op) x1
+common	CommonEvent	291		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	292		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	293	カットイン呼び出しトイレ	-	0	-	ended	1	0	0	3	0	0				
+common	CommonEvent	294	トイレタイマー1	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	295	トイレ処理	-	0	-	running	180	6	2	11	0	0	…………	去偷看 		160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x2; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	296	■プレイ傾向	-	0	-	ended	1	0	0	4	0	0				
+common	CommonEvent	297	スタッフロール	-	0	-	running	180	0	0	1	3	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	298	素股処理	-	0	-	running	180	9	0	9	1	0	……………			160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	299	素股タイマー	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	300	カットイン呼び出し素股	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	301	アルバム表示	-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	302	クレジット	-	0	-	running	180	0	0	1	3	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	303	アルバム画面呼び出し	-	0	-	running	180	0	0	8	1	0				160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+common	CommonEvent	304		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	305		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	306		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	307		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	308		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	309		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	310		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	311		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	312		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	313		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	314		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	315		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	316		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	317		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	318		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	319		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	320		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	321		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	322		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	323		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	324		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	325		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	326		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	327		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	328		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	329		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	330		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	331		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	332		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	333		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	334		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	335		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	336		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	337		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	338		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	339		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	340		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	341		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	342		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	343		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	344		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	345		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	346		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	347		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	348		-	0	-	ended	1	0	0	0	0	0				
+common	CommonEvent	349		-	0	-	ended	1	0	0	0	0	0				
+map	MapData/TitleMap.mps	2	新タイトル用イベント	0	1	1	ended	19	0	3	1	1	0		menu1	p0:-	130 Teleport: MapData/Map003.mps at (60, 34) target -1 options 0x1 x1; 270 Party: 1 argument(s) recorded only x1
+map	MapData/SampleMapA.mps	0	ニューゲーム処理	0	1	1	running	180	12	4	12	3	0	被染成茜色的天空，无尽延申的影子， 归山鸟儿的啼叫，行色匆匆的人群。 你想到了什…	该回去了啊	p0:1000000==0	160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+map	MapData/SampleMapA.mps	1	妹寝そべる	-	6	-	no_active_page	0	0	0	0	0	0			p0:2000014==0&2000023==-2&2000176==0 p1:2000014==0&2000023==-1&2000176==0 p2:2000014==0&2000023==0&2000176==0 p3:2000014==0&2000023==2&2000176==0 p4:2000070==1 p5:2000238==1	
+map	MapData/SampleMapA.mps	2	妹ソファー	-	6	-	no_active_page	0	0	0	0	0	0			p0:2000014==1&2000023==-2&2000176==0 p1:2000014==1&2000023==-1&2000176==0 p2:2000014==1&2000023==0&2000176==0 p3:2000014==1&2000023==2&2000176==0 p4:2000070==1 p5:2000238==1	
+map	MapData/SampleMapA.mps	3	妹座る	2	6	0	ended	86	4	6	17	0	0	怎么了，哥哥。	开始交流 	p0:2000014==2&2000023==-2&2000176==0 p1:2000014==2&2000023==-1&2000176==0 p2:2000014==2&2000023==0&2000176==0 p3:2000014==2&2000023==2&2000176==0 p4:2000070==1 p5:2000238==1	160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x4; 270 Party: 1 argument(s) recorded only x1
+map	MapData/SampleMapA.mps	4	妹体育座り	-	6	-	no_active_page	0	0	0	0	0	0			p0:2000014==3&2000023==-2&2000176==0 p1:2000014==3&2000023==-1&2000176==0 p2:2000014==3&2000023==0&2000176==0 p3:2000014==3&2000023==2&2000176==0 p4:2000070==1 p5:2000238==1	
+map	MapData/SampleMapA.mps	5	セーブ	0	1	0	running	180	0	0	24	0	0			p0:2000176==0&2000238==0	160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+map	MapData/SampleMapA.mps	6	セーブアイコン	0	1	2	ended	1	0	0	0	0	0			p0:2000003==1	
+map	MapData/SampleMapA.mps	7	アイテムリスト	0	1	0	ended	3	0	0	26	0	0			p0:2000176==0	
+map	MapData/SampleMapA.mps	8	アイテムリストを消す処理	0	1	2	ended	1	0	0	0	0	0			p0:2000015==0	
+map	MapData/SampleMapA.mps	9	日中メニュー	-	2	-	no_active_page	0	0	0	0	0	0			p0:2000032==1&2000176==0 p1:2000097==1	
+map	MapData/SampleMapA.mps	10	ステータス	-	1	-	no_active_page	0	0	0	0	0	0			p0:2000015==99	
+map	MapData/SampleMapA.mps	11	ステータスを消す処理	0	1	2	ended	1	0	0	0	0	0			p0:2000016==0	
+map	MapData/SampleMapA.mps	12	就寝妹	-	1	-	no_active_page	0	0	0	0	0	0			p0:2000014==5&2000100==0&2000176==0	
+map	MapData/SampleMapA.mps	13	就寝兄	-	1	-	no_active_page	0	0	0	0	0	0			p0:2000014==5&2000100==0&2000176==0	
+map	MapData/SampleMapA.mps	14	マウス追従	-	1	-	no_active_page	0	0	0	0	0	0			p0:2000120==1	
+map	MapData/SampleMapA.mps	15	コマンドリスト表示	-	9	-	no_active_page	0	0	0	0	0	0			p0:2000100==1 p1:2000100==2 p2:2000100==3 p3:2000100==4 p4:2000100==5 p5:2000100==6&2000100==7 p6:2000100==8 p7:2000100==9&2000100==10 p8:2000100==11&2000100==12	
+map	MapData/SampleMapA.mps	16	コマンド選択判定	-	1	-	no_active_page	0	0	0	0	0	0			p0:2000100==1	
+map	MapData/SampleMapA.mps	17	コマンド実行	-	7	-	no_active_page	0	0	0	0	0	0			p0:2000100==1&2000125==0 p1:2000125==2&2000125==1&2000069==0 p2:2000125==3&2000125==1&2000069==0 p3:2000125==5&2000069==0 p4:2000125==6 p5:2000125==1 p6:2000125==4&2000125==1&2000069==0	
+map	MapData/SampleMapA.mps	18	カーソル切り替え	-	1	-	no_active_page	0	0	0	0	0	0			p0:2000100==1	
+map	MapData/SampleMapA.mps	19	当たり判定描画	-	1	-	no_active_page	0	0	0	0	0	0			p0:2000100==1	
+map	MapData/SampleMapA.mps	20	例外処理監視	-	1	-	no_active_page	0	0	0	0	0	0			p0:2000100==1	
+map	MapData/SampleMapA.mps	21	終了仮	-	1	-	no_active_page	0	0	0	0	0	0			p0:2000100==1&2000125==1	
+map	MapData/SampleMapA.mps	22	ポーズ変更1	-	1	-	no_active_page	0	0	0	0	0	0			p0:2000100==1&2000069==0	
+map	MapData/SampleMapA.mps	23	深夜表情自動変更	-	1	-	no_active_page	0	0	0	0	0	0			p0:2000100==1	
+map	MapData/SampleMapA.mps	24	動作確認	-	1	-	no_active_page	0	0	0	0	0	0			p0:1000000==99	
+map	MapData/SampleMapA.mps	25	妹座るバスタオル	-	7	-	no_active_page	0	0	0	0	0	0			p0:2000014==6&2000023==-2&2000176==0 p1:2000014==6&2000023==-1&2000176==0 p2:2000014==6&2000023==0&2000176==0 p3:2000014==6&2000023==1&2000176==0 p4:2000014==6&2000023==2&2000176==0 p5:2000070==1 p6:2000238==1	
+map	MapData/SampleMapA.mps	26	アイテムクリック監視	-	1	-	no_active_page	0	0	0	0	0	0			p0:2000100==1	
+map	MapData/SampleMapA.mps	27	お風呂えっち	-	1	-	no_active_page	0	0	0	0	0	0			p0:2000158==1	
+map	MapData/SampleMapA.mps	28	ポーズ変更2	-	1	-	no_active_page	0	0	0	0	0	0			p0:2000100==1&2000101==1&2000069==0&2000018==5	
+map	MapData/SampleMapA.mps	29	背後位顔表示処理	-	1	-	no_active_page	0	0	0	0	0	0			p0:2000100==1	
+map	MapData/SampleMapA.mps	30	スタッツ	0	1	0	running	180	0	0	41	1	0			p0:2000100==0&2000238==0	160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x1
+map	MapData/SampleMapA.mps	31	パンツ詳細	-	1	-	no_active_page	0	0	0	0	0	0			p0:2000176==1	
+map	MapData/SampleMapA.mps	32	データアイコン表示	0	1	2	ended	1	0	0	0	0	0			p0:-	
+map	MapData/SampleMapA.mps	34	トレマ調整処理	0	2	1	ended	1	0	0	0	0	0			p0:1000000==0 p1:1000000==1	
+map	MapData/SampleMapA.mps	35	アルバム起動判定	0	2	2	ended	2	0	0	0	0	0			p0:2000100==0&2000176==0 p1:2000247==1	
+map	MapData/Map003.mps	0	画像消去	0	1	1	ended	1	0	0	0	0	0			p0:2000000==1	
+map	MapData/Map003.mps	1	ニューゲーム処理	0	1	1	ended	159	1	0	1	1	0	被染成茜色的天空，无尽延申的影子， 归山鸟儿的啼叫，行色匆匆的人群。 你想到了什…		p0:-	130 Teleport: MapData/SampleMapA.mps at (62, 38) target -1 options 0x1 x1; 160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 201 SetMoveRoute: 2 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x3
+map	MapData/Map024.mps	0	画像消去	0	1	1	ended	1	0	0	0	0	0			p0:2000000==1	
+map	MapData/Map031.mps	0	ロード時の自動処理	0	1	1	ended	110	0	0	6	0	0			p0:-	130 Teleport: cannot read E:/Study/github program/Imouto Life/work/Data\: 系统找不到指定的路径。 (os error 3) x1; 160 InstallTransition: kind -1 flags 0x1000a (10 frame(s), no mask) x1; 201 SetMoveRoute: 1 command(s) not applied (no map layer yet) x1; 201 SetMoveRoute: 2 command(s) not applied (no map layer yet) x1; 270 Party: 1 argument(s) recorded only x2; 290 Effect: kind 3 for 0 frame(s) (7 args) has no live picture in its range (no-op) x2

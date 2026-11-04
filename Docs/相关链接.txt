@@ -1,0 +1,293 @@
+已整理出一批可以直接用于机制研究的资料。目前最有价值的是 Gamerch 日文攻略 Wiki、AyauGaming 的数值型攻略，以及两篇 YouTube 实况/介绍视频。
+
+以下按用途和证据价值排列。链接均指向资料原页，不是搜索结果页。
+
+## 1. 日文攻略 Wiki（优先阅读）
+
+
+
+首选
+
+&#x20;1\. Gamerch：妹！せいかつ～モノクローム～ チャート
+
+
+
+[妹！せいかつ～モノクローム～ チャート](https://gamerch.com/biim/318371?utm_source=chatgpt.com)
+
+站点：biim兄貴攻略wiki / Gamerch · 最后更新：2026-06-14
+
+这是目前找到的最接近完整机制资料库的一份。
+
+目录包含：
+
+| 页面章节      | 内容        |
+| --------- | --------- |
+| 大切なこと     | 重要机制与操作说明 |
+| アイテム      | 道具价格和效果   |
+| 先駆者様      | 前人攻略记录    |
+| 基本攻略      | 日常流程和状态变化 |
+| アップデート    | 更新后开放的活动  |
+| バッドエンド    | 坏结局触发流程   |
+| パンツコンプリート | 收集完成条件    |
+| パンツ全20枚   | 收集物完整列表   |
+
+特别值得提取的是：
+
+- 行动力和夜间行动条件。
+- 信赖、兴趣、感度、心情四种状态。
+- 150、200、250 等解锁门槛。
+- 道具购买价格与效果。
+- 100日相关结局。
+- 周末活动的逐步开放条件。
+
+出处：Wiki 页面第43行开始，主要攻略内容在第85～675行。
+
+[image](https://www.google.com/s2/favicons?domain=https://gamerch.com\&sz=32)
+
+Gamerch
+
+
+
+2\. AyauGaming：妹!せいかつ ～モノクローム～ 攻略
+
+[〖攻略〗妹!せいかつ ～モノクローム～〖レビュー・感想〗](https://ayaugaming.com/rj258445?utm_source=chatgpt.com)
+
+站点：あやうゲーミング · 初始发布日期：2021-06-08 · 页面更新：2026-04-01
+
+高价值数值资料
+
+这篇对你们的 Rust 重实现尤其有用。作者明确写明：
+
+`Ver2.04更新分対応`
+
+内容包括：
+
+- 主角生成及初始属性。
+- 信赖、性兴趣、心情。
+- 每种行动的成功、大成功、失败效果。
+- 行动力、金钱和时间消耗。
+- 日常活动条件。
+- 结局及事件条件。
+- 深夜操作和状态变化。
+
+它有大量结构化数值表。例如行动消耗、属性增加量、事件门槛等。
+
+[image](https://www.google.com/s2/favicons?domain=https://ayaugaming.com\&sz=32)
+
+あやうゲーミング+3
+
+
+
+注意：攻略针对 2.04，而你们此前提到的目标版本是 2.03。不能直接认定两者数值一致。
+
+3\. 同人游戏攻略レビュー大辞典
+
+[妹!せいかつ ～モノクローム～ 攻略・感想レビュー](https://www.doureview.com/blog-entry-236.html?utm_source=chatgpt.com)
+
+发布日期：2019-08-23 · 页面更新：2025-01-19
+
+比单纯游戏评价更有用，目录包含：
+
+- 主角职业和名称的效果。
+- 高效率攻略方式。
+- 各种行动的效果表。
+- 结局及发生条件。
+- 事件条件。
+- 各类数据。
+- 季节活动。
+
+尤其是第174～269行，有信赖、兴趣的增长方式、行动消耗、周末活动、结局等内容。
+
+[image](https://www.google.com/s2/favicons?domain=https://www.doureview.com\&sz=32)
+
+同人ゲーム攻略レビュー大辞典+2
+
+
+
+## 2. 论坛与玩家实测记录
+
+4\. PTT：关于妹妹主动邀请事件的讨论
+
+[〖請神〗妹！せいかつモノクローム～如何逆推？](https://www.pttweb.cc/bbs/H-GAME/M.1620109249.A.106?utm_source=chatgpt.com)
+
+PTT H-GAME · 2021-05-04
+
+这是一篇具体的条件求助帖。
+
+有玩家讨论：
+
+- 已经满足较高信赖和兴趣之后仍未触发事件。
+- 周末时间条件。
+- 前置事件和行为记录。
+- Ver2.0 存档的触发情况。
+
+适合收集边界条件和反例。不过回复属于玩家经验，不能直接视为作者确认的机制。
+
+[image](https://www.google.com/s2/favicons?domain=https://www.pttweb.cc\&sz=32)
+
+PTT網頁版
+
+
+
+## 3. YouTube 实况与游戏演示
+
+目前找到两条可以确认对应本作的视频。
+
+[妹!せいかつ ～モノクローム～ : 暇だからゲームでもするか](https://images.openai.com/static-rsc-4/RnxAPaGkBz7oNGy0B77jwXoGgcebbbUN6FzcRfVmy0vUdO1z8rnM3pXgd32Yjk21PxvnKJW6lrT9jEPIwIZRshKiI6HUNPqkG0YadtEtQNPtTw7cSEoHvVN9UfwOaxylLd5ekYSHBCQnaWN9ytRqgdTreHm-qjRlOJhhFN1GEeA?purpose=inline)
+
+5\. 同時斬の大人な紳士向けゲームチャンネル
+
+[同人ゲーム紹介その６，妹せいかつ・モノクローム ＃６](https://www.youtube.com/watch?v=EyY1avY3nnc\&utm_source=chatgpt.com)
+
+2021-04-26 · 日文 · 7,807 次观看（检索时记录）
+
+日文游戏介绍视频，可以作为画面、作品内容的观察材料。它不是已确认的完整通关系列。
+
+[妹！せいかつ～モノクローム～ チャート Imouto! Life\~Monochrome\~ - biim兄貴攻略wiki | Gamerch](https://images.openai.com/static-rsc-4/TUeqkZsaSlZTXD1iJG4ckjkfrEigJ0zvk-qYYlMuGNEo3XGey7vBBMqv6S1ZjEtBZxpVHtLsOAx1zwKC2csmawxOazR9ATjQn8hsLpr20asky6NIjFwrqZZlnwPbAJl9mRQjoO5-xzbDYoMI2skmucZzgDr5prgYhmO-16ZaqHA?purpose=inline)
+
+6\. Game Harem
+
+[Imouto!Life \~Monochrome\~ Ver.1.0.6 (Android + Indonesia)](https://www.youtube.com/watch?v=BlgLncjgsb0\&utm_source=chatgpt.com)
+
+2025-01-01 · 印尼语 · Android
+
+提供实际运行画面，但版本是 1.0.6，属于移动端材料，不能直接作为 2.03 PC 操作证据。
+
+[image](https://www.google.com/s2/favicons?domain=https://www.youtube.com\&sz=32)
+
+YouTube+1
+
+目前还没有找到能够确认是本作完整逐日通关的日文实况系列，也没有可靠的逐段视频时间戳。
+
+## 4. 中文汉化与发布帖
+
+这里需要区分官方语言版本、个人翻译、第三方打包和全彩 MOD。
+
+7\. 老王论坛：个人汉化及全彩整合版
+
+[妹妹同居生活：黑白色 Ver2.0.3 全彩精修步兵版](https://laowang.vip/thread-2485705-1-1.html?utm_source=chatgpt.com)
+
+帖子日期：2026-01-27
+
+帖子自述信息：
+
+| 项目   | 帖子记录     |
+| ---- | -------- |
+| 汉化者  | 遗忘美好的未来  |
+| 汉化方式 | 个人汉化     |
+| 游戏版本 | 2.0.3    |
+| 额外内容 | 海外全彩 MOD |
+| 发布形式 | 第三方整合包   |
+
+这是目前找到的明确署名中文个人汉化线索。
+
+注意：帖子并没有提供足以核实所有文件修改的完整补丁说明，不能由此确认汉化者修改了哪些原始数据文件。
+
+[image](https://www.google.com/s2/favicons?domain=https://laowang.vip\&sz=32)
+
+laowang.vip
+
+
+
+8\. 天遊二次元：PC + APK 中文版条目
+
+[妹同居黑白1！妹生活～单色～ V2.0.3](https://www.tiangal.com/meitongjuheibai1?utm_source=chatgpt.com)
+
+发布日期：2024-05-15
+
+页面提供：
+
+- 2019-08-22 首发日期。
+- 2021-08-11 汉化日期。
+- V2.0.3 版本信息。
+- SHA256 信息。
+- PC 与 APK 相关说明。
+
+但是有一个重要问题：页面明确标注了「彩色版」和「魔改」，汉化小组一栏又没有明确署名。因此这不是可靠的原版纯汉化补丁说明。
+
+[image](https://www.google.com/s2/favicons?domain=https://www.tiangal.com\&sz=32)
+
+tiangal.com+1
+
+
+
+另一个繁体站点版本：
+
+[妹同居黑白1！妹生活～單色～](https://jp.tiangal.com/zh-hk/meitongju1?utm_source=chatgpt.com)
+
+9\. PTT 中文汉化版本目录
+
+[中文漢化列表](https://webptt.com/m.aspx?n=bbs%2FH-GAME%2FM.1312479368.A.F14.html\&utm_source=chatgpt.com)
+
+这份玩家维护目录有两条值得注意的记录：
+
+- `妹!せいかつ ～モノクローム～ 官方簡中`
+- `妹!せいかつ ～モノクローム～ 官方繁中`
+
+出处在页面第2242和2280行。它是社区记录，不是 DLsite 官方语言声明；但可以作为追查官方中文版发行记录的线索。
+
+[image](https://www.google.com/s2/favicons?domain=https://webptt.com\&sz=32)
+
+WEB批踢踢。2011.08.05+1
+
+
+
+## 5. 作者官方 CI-en 与官方网站
+
+一手来源
+
+10\. いぬすく CI-en 作者主页
+
+[https://ci-en.dlsite.com/creator/64](https://ci-en.dlsite.com/creator/64?utm_source=chatgpt.com)
+
+这是作者官方 CI-en 主页。
+
+11\. CI-en：《妹！せいかつ～ファンタジー～ 攻略情報》
+
+[https://ci-en.dlsite.com/creator/64/article/600362](https://ci-en.dlsite.com/creator/64/article/600362?utm_source=chatgpt.com)
+
+注意，这是续作《ファンタジー》的作者攻略，不是《モノクローム》的攻略。可用于研究作者公开机制说明的写法，但不要把其中的数值直接套到本作。
+
+[image](https://www.google.com/s2/favicons?domain=https://b.hatena.ne.jp\&sz=32)
+
+Ci-en（シエン）
+
+
+
+12\. 作者官方网站
+
+[いぬすく Official Website](https://inusuku.dojin.com/?utm_source=chatgpt.com)
+
+主页能够确认本作与续作均属于作者作品，并提供官方 CI-en、X 和销售站点入口。
+
+[image](https://www.google.com/s2/favicons?domain=https://inusuku.dojin.com\&sz=32)
+
+inusuku.dojin.com
+
+
+
+13\. 本作官方介绍页
+
+[妹!せいかつ ～モノクローム～ 官方作品介绍](https://masukuinu.sakura.ne.jp/imouto/mono_01/index.html?utm_source=chatgpt.com)
+
+主要可作为游戏功能、UI、发行信息的官方参照。
+
+14\. 作者 X
+
+[https://x.com/inusuku](https://x.com/inusuku?utm_source=chatgpt.com)
+
+## 6. 对重实现最值得收藏的资料组合
+
+我建议将下面五份设为本项目的基础参考资料：
+
+| 优先级 | 资料                                                                                        | 最适合的用途        |
+| --- | ----------------------------------------------------------------------------------------- | ------------- |
+| 1   | [Gamerch Wiki](https://gamerch.com/biim/318371?utm_source=chatgpt.com)                    | 事件流程、UI、道具、状态 |
+| 2   | [AyauGaming](https://ayaugaming.com/rj258445?utm_source=chatgpt.com)                      | 数值、条件、行动效果    |
+| 3   | [Doureview](https://www.doureview.com/blog-entry-236.html?utm_source=chatgpt.com)         | 结局、行动和系统交叉核对  |
+| 4   | [PTT 玩家讨论](https://www.pttweb.cc/bbs/H-GAME/M.1620109249.A.106?utm_source=chatgpt.com)    | 边界条件、特殊事件     |
+| 5   | [官方作品介绍](https://masukuinu.sakura.ne.jp/imouto/mono_01/index.html?utm_source=chatgpt.com) | 作者原始描述、功能名称   |
+
+目前资料缺口： 我没有找到能够明确对应原版《モノクローム》的作者 CI-en 独立攻略文章，也没有找到公开的 WOLF RPG 数据结构解析文章或可核对原文件差异的完整中文补丁说明。
+
+对于你们的数据级重实现，下一步最值得做的是将 Gamerch、AyauGaming 和 Doureview 三份攻略中的每一个数值整理成一张交叉验证表：相同数值标记为高可信候选，不同数值标记版本差异，只有单一来源支持的值保留来源标签。这样就能避免把攻略作者的错误直接写进 Rust 引擎。

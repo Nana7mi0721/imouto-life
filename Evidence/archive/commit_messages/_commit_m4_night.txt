@@ -1,0 +1,8 @@
+M4: night menu screenshot and symbol font fallback
+
+- capture --load-save accepts --event via save_event; Entry::Save starts the
+  requested common event after restoring the map runtime (CE245 night menu).
+- renderer/text support explicit fallback faces; msyhbd.ttc lacks U+25B6 so
+  Segoe UI Symbol (seguisym.ttf) is loaded into the same fontdb. Night menu
+  text now reports 0 substituted glyphs.
+- docs update M4_PARITY/M4_HUD/HANDOFF for the capture command and fallback.

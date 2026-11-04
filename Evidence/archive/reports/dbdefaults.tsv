@@ -1,0 +1,1494 @@
+# engine defaults
+screen.w	1024
+screen.h	576
+coordinate_scale.x	32
+coordinate_scale.y	24
+window.skin	SystemFile/WindowBase.png
+message_window.x	64
+message_window.y	408
+message_window.w	960
+message_window.h	168
+
+# tables: container, type, type_name, rows, fields
+Sys	0	マップ設定	50	8
+Sys	1	BGMリスト	16	4
+Sys	2	BGSリスト	6	4
+Sys	3	SEリスト	20	4
+Sys	4	文字列変数名	10	0
+Sys	5	システム文字列	55	0
+Sys	6	システム変数名	135	0
+Sys	7	位置設定リスト	10	3
+Sys	8	キャラクター画像	300	1
+Sys	9	ｷｬﾗ影ｸﾞﾗﾌｨｯｸ名	6	1
+Sys	10	ウィンドウ画像	3	2
+Sys	11	ﾄﾗﾝｼﾞｼｮﾝﾀｲﾌﾟ	1	1
+Sys	12	文字色	30	3
+Sys	13	遠景画像	80	4
+Sys	14	通常変数名	302	0
+Sys	15	予備変数1	4	0
+Sys	16	予備変数2	7	0
+Sys	17	予備変数3	4	0
+Sys	18	予備変数4	1	0
+Sys	19	予備変数5	1	0
+Sys	20	予備変数6	1	0
+Sys	21	予備変数7	6	0
+Sys	22	予備変数8	1	0
+Sys	23	予備変数9	10	0
+Sys	24	顔グラフィック名	12	1
+Sys	25		1	1
+Sys	26		1	1
+Sys	27		1	1
+Data	0	技能	44	37
+Data	1	┗ アニメーション	34	15
+Data	2	アイテム	25	21
+Data	3	武器	40	35
+Data	4	防具	40	40
+Data	5	┗装備タイプ	25	1
+Data	6	戦闘コマンド	19	4
+Data	7	属性名の設定	10	1
+Data	8	状態設定	24	46
+Data	9	敵ｷｬﾗ個体ﾃﾞｰﾀ	42	26
+Data	10	┣ 敵行動AI	40	48
+Data	11	┣ 属性耐性	42	100
+Data	12	┗ 状態耐性	40	100
+Data	13	敵グループ	41	12
+Data	14	------------------------	1	0
+Data	15	用語設定	1	32
+Data	16	画像/音声設定	1	21
+Data	17	システム設定	1	35
+Data	18	ドロップアイテムデータ	30	18
+Data	19	アニメーション設定	30	1
+Data	20	◇吹き出しアイコン	11	4
+Data	21	EXスキル	40	4
+Data	22	吹き出し会話	10	20
+Data	23	サポートキャラ	10	4
+Data	24	立ち絵設定用	10	5
+Data	25	ランダム肩書	21	20
+Data	26	メッセージウィンドウ種類	9	35
+Data	27		1	1
+Data	28		1	1
+Data	29		1	1
+Data	30	アニメ設定	100	1
+Data	31	統計テキスト	4	4
+Data	32		1	1
+Data	33		1	1
+Data	34		1	1
+Data	35		1	1
+Data	36		1	1
+Data	37		1	1
+Data	38		1	1
+Data	39		1	1
+CData	0	主人公ステータス	17	60
+CData	1	┣ 技能習得Lv	16	100
+CData	2	┣ 主人公行動AI	22	48
+CData	3	┣ 属性耐性	40	100
+CData	4	┣ 状態耐性	16	100
+CData	5	┗ 状態リスト	16	100
+CData	6	パーティー情報	1	7
+CData	7	┣所持アイテム個数	10	1
+CData	8	┣所持武器個数	10	1
+CData	9	┗所持防具個数	1	1
+CData	10	×┏ 戦闘一時ステータス[基]	18	78
+CData	11	×┣ 属性耐性計算結果	11	100
+CData	12	×┣ 状態耐性計算結果	11	100
+CData	13	×┣ 状態リスト	11	100
+CData	14	×┣ コマンド処理ﾘｽﾄ	100	4
+CData	15	×┗ お宝リスト	1	60
+CData	16	× お店一時処理用	15	14
+CData	17	×主人公一時DB	20	21
+CData	18	基本ｼｽﾃﾑ用変数	100	2
+CData	19	万能ｳｨﾝﾄﾞｳ一時DB	200	11
+CData	20	×ドロップアイテムリスト	1	6
+CData	21		1	0
+CData	22		1	1
+CData	23		1	1
+CData	24		1	1
+CData	25	追加キーコンフィグ設定	1	9
+CData	26	新設キー	4	18
+CData	27	カスタム選択肢	1	6
+CData	28		1	1
+CData	29		1	1
+
+# cells: container, type, row, row_name, col, field, value
+Sys	0	0	タイトル	0	マップファイル名	MapData/TitleMap.mps
+Sys	0	0	タイトル	1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	0	タイトル	2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	0	タイトル	3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	0	タイトル	4	遠景番号	-1
+Sys	0	1	自宅1	0	マップファイル名	MapData/SampleMapA.mps
+Sys	0	1	自宅1	1	BGM番号(ﾘｽﾄ読込)	-2
+Sys	0	1	自宅1	2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	1	自宅1	3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	1	自宅1	4	遠景番号	0
+Sys	0	2		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	2		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	2		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	2		4	遠景番号	-2
+Sys	0	3	ニューゲーム処理	0	マップファイル名	MapData/Map003.mps
+Sys	0	3	ニューゲーム処理	1	BGM番号(ﾘｽﾄ読込)	-2
+Sys	0	3	ニューゲーム処理	2	BGS番号(ﾘｽﾄ読込)	-2
+Sys	0	3	ニューゲーム処理	3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	3	ニューゲーム処理	4	遠景番号	-1
+Sys	0	4		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	4		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	4		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	4		4	遠景番号	-2
+Sys	0	5		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	5		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	5		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	5		4	遠景番号	-2
+Sys	0	6		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	6		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	6		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	6		4	遠景番号	-2
+Sys	0	7		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	7		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	7		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	7		4	遠景番号	-2
+Sys	0	8		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	8		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	8		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	8		4	遠景番号	-2
+Sys	0	9		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	9		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	9		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	9		4	遠景番号	-2
+Sys	0	10		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	10		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	10		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	10		4	遠景番号	-2
+Sys	0	11		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	11		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	11		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	11		4	遠景番号	-2
+Sys	0	12		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	12		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	12		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	12		4	遠景番号	-2
+Sys	0	13		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	13		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	13		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	13		4	遠景番号	-2
+Sys	0	14		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	14		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	14		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	14		4	遠景番号	-2
+Sys	0	15		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	15		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	15		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	15		4	遠景番号	-2
+Sys	0	16		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	16		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	16		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	16		4	遠景番号	-2
+Sys	0	17		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	17		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	17		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	17		4	遠景番号	-2
+Sys	0	18		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	18		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	18		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	18		4	遠景番号	-2
+Sys	0	19		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	19		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	19		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	19		4	遠景番号	-2
+Sys	0	20		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	20		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	20		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	20		4	遠景番号	-2
+Sys	0	21		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	21		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	21		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	21		4	遠景番号	-2
+Sys	0	22		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	22		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	22		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	22		4	遠景番号	-2
+Sys	0	23		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	23		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	23		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	23		4	遠景番号	-2
+Sys	0	24	ロード処理	0	マップファイル名	MapData/Map024.mps
+Sys	0	24	ロード処理	1	BGM番号(ﾘｽﾄ読込)	-2
+Sys	0	24	ロード処理	2	BGS番号(ﾘｽﾄ読込)	-2
+Sys	0	24	ロード処理	3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	24	ロード処理	4	遠景番号	-2
+Sys	0	25		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	25		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	25		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	25		4	遠景番号	-2
+Sys	0	26		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	26		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	26		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	26		4	遠景番号	-2
+Sys	0	27		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	27		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	27		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	27		4	遠景番号	-2
+Sys	0	28		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	28		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	28		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	28		4	遠景番号	-2
+Sys	0	29		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	29		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	29		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	29		4	遠景番号	-2
+Sys	0	30		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	30		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	30		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	30		4	遠景番号	-2
+Sys	0	31	セーブ	0	マップファイル名	MapData/Map031.mps
+Sys	0	31	セーブ	1	BGM番号(ﾘｽﾄ読込)	-2
+Sys	0	31	セーブ	2	BGS番号(ﾘｽﾄ読込)	-2
+Sys	0	31	セーブ	3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	31	セーブ	4	遠景番号	-2
+Sys	0	32		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	32		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	32		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	32		4	遠景番号	-2
+Sys	0	33		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	33		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	33		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	33		4	遠景番号	-2
+Sys	0	34		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	34		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	34		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	34		4	遠景番号	-2
+Sys	0	35		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	35		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	35		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	35		4	遠景番号	-2
+Sys	0	36		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	36		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	36		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	36		4	遠景番号	-2
+Sys	0	37		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	37		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	37		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	37		4	遠景番号	-2
+Sys	0	38		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	38		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	38		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	38		4	遠景番号	-2
+Sys	0	39		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	39		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	39		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	39		4	遠景番号	-2
+Sys	0	40		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	40		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	40		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	40		4	遠景番号	-2
+Sys	0	41		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	41		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	41		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	41		4	遠景番号	-2
+Sys	0	42		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	42		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	42		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	42		4	遠景番号	-2
+Sys	0	43		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	43		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	43		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	43		4	遠景番号	-2
+Sys	0	44		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	44		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	44		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	44		4	遠景番号	-2
+Sys	0	45		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	45		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	45		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	45		4	遠景番号	-2
+Sys	0	46		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	46		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	46		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	46		4	遠景番号	-2
+Sys	0	47		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	47		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	47		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	47		4	遠景番号	-2
+Sys	0	48		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	48		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	48		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	48		4	遠景番号	-2
+Sys	0	49		1	BGM番号(ﾘｽﾄ読込)	-1
+Sys	0	49		2	BGS番号(ﾘｽﾄ読込)	-1
+Sys	0	49		3	ﾙｰﾌﾟ:1横2縦3両方	0
+Sys	0	49		4	遠景番号	-2
+Sys	1	0	タウン	1	再生音量[%] 標準100	80
+Sys	1	0	タウン	2	再生周波数[%]	100
+Sys	1	0	タウン	3	ループ開始位置(ms)/ｷｰ±	0
+Sys	1	1	スタッフロール	1	再生音量[%] 標準100	100
+Sys	1	1	スタッフロール	2	再生周波数[%]	100
+Sys	1	1	スタッフロール	3	ループ開始位置(ms)/ｷｰ±	0
+Sys	1	2	タイトル曲	1	再生音量[%] 標準100	80
+Sys	1	2	タイトル曲	2	再生周波数[%]	100
+Sys	1	2	タイトル曲	3	ループ開始位置(ms)/ｷｰ±	0
+Sys	1	3	戦闘BGM	1	再生音量[%] 標準100	110
+Sys	1	3	戦闘BGM	2	再生周波数[%]	100
+Sys	1	3	戦闘BGM	3	ループ開始位置(ms)/ｷｰ±	0
+Sys	1	4	ボスBGM	1	再生音量[%] 標準100	88
+Sys	1	4	ボスBGM	2	再生周波数[%]	100
+Sys	1	4	ボスBGM	3	ループ開始位置(ms)/ｷｰ±	0
+Sys	1	5	浜	0	ファイル名	BGM/kana.mp3
+Sys	1	5	浜	1	再生音量[%] 標準100	75
+Sys	1	5	浜	2	再生周波数[%]	0
+Sys	1	5	浜	3	ループ開始位置(ms)/ｷｰ±	0
+Sys	1	6		1	再生音量[%] 標準100	0
+Sys	1	6		2	再生周波数[%]	0
+Sys	1	6		3	ループ開始位置(ms)/ｷｰ±	0
+Sys	1	7		1	再生音量[%] 標準100	0
+Sys	1	7		2	再生周波数[%]	0
+Sys	1	7		3	ループ開始位置(ms)/ｷｰ±	0
+Sys	1	8		1	再生音量[%] 標準100	0
+Sys	1	8		2	再生周波数[%]	0
+Sys	1	8		3	ループ開始位置(ms)/ｷｰ±	0
+Sys	1	9		1	再生音量[%] 標準100	0
+Sys	1	9		2	再生周波数[%]	0
+Sys	1	9		3	ループ開始位置(ms)/ｷｰ±	0
+Sys	1	10		1	再生音量[%] 標準100	0
+Sys	1	10		2	再生周波数[%]	0
+Sys	1	10		3	ループ開始位置(ms)/ｷｰ±	0
+Sys	1	11		1	再生音量[%] 標準100	0
+Sys	1	11		2	再生周波数[%]	0
+Sys	1	11		3	ループ開始位置(ms)/ｷｰ±	0
+Sys	1	12		1	再生音量[%] 標準100	0
+Sys	1	12		2	再生周波数[%]	0
+Sys	1	12		3	ループ開始位置(ms)/ｷｰ±	0
+Sys	1	13		1	再生音量[%] 標準100	0
+Sys	1	13		2	再生周波数[%]	0
+Sys	1	13		3	ループ開始位置(ms)/ｷｰ±	0
+Sys	1	14		1	再生音量[%] 標準100	0
+Sys	1	14		2	再生周波数[%]	0
+Sys	1	14		3	ループ開始位置(ms)/ｷｰ±	0
+Sys	1	15		1	再生音量[%] 標準100	0
+Sys	1	15		2	再生周波数[%]	0
+Sys	1	15		3	ループ開始位置(ms)/ｷｰ±	0
+Sys	2	0	小川	0	ファイル名	SE/stream.ogg
+Sys	2	0	小川	1	再生音量[%]	70
+Sys	2	0	小川	2	再生周波数[%]	0
+Sys	2	0	小川	3	ループ開始位置(ms)	0
+Sys	2	1	波	0	ファイル名	BGM/wave1.mp3
+Sys	2	1	波	1	再生音量[%]	50
+Sys	2	1	波	2	再生周波数[%]	0
+Sys	2	1	波	3	ループ開始位置(ms)	0
+Sys	2	2		1	再生音量[%]	0
+Sys	2	2		2	再生周波数[%]	0
+Sys	2	2		3	ループ開始位置(ms)	0
+Sys	2	3		1	再生音量[%]	0
+Sys	2	3		2	再生周波数[%]	0
+Sys	2	3		3	ループ開始位置(ms)	0
+Sys	2	4		1	再生音量[%]	0
+Sys	2	4		2	再生周波数[%]	0
+Sys	2	4		3	ループ開始位置(ms)	0
+Sys	2	5		1	再生音量[%]	0
+Sys	2	5		2	再生周波数[%]	0
+Sys	2	5		3	ループ開始位置(ms)	0
+Sys	3	0	[ｼｽﾃﾑ]決定音	0	ファイル名	SystemFile/[SE]Enter.ogg
+Sys	3	0	[ｼｽﾃﾑ]決定音	1	再生音量[%]	90
+Sys	3	0	[ｼｽﾃﾑ]決定音	2	再生周波数[%]	100
+Sys	3	0	[ｼｽﾃﾑ]決定音	3	ﾒﾓﾘ解放モード	0
+Sys	3	1	[ｼｽﾃﾑ]カーソル移動	0	ファイル名	SystemFile/[SE]Cursor.ogg
+Sys	3	1	[ｼｽﾃﾑ]カーソル移動	1	再生音量[%]	50
+Sys	3	1	[ｼｽﾃﾑ]カーソル移動	2	再生周波数[%]	120
+Sys	3	1	[ｼｽﾃﾑ]カーソル移動	3	ﾒﾓﾘ解放モード	0
+Sys	3	2	[ｼｽﾃﾑ]キャンセル音	0	ファイル名	SystemFile/[SE]Cancel.ogg
+Sys	3	2	[ｼｽﾃﾑ]キャンセル音	1	再生音量[%]	80
+Sys	3	2	[ｼｽﾃﾑ]キャンセル音	2	再生周波数[%]	100
+Sys	3	2	[ｼｽﾃﾑ]キャンセル音	3	ﾒﾓﾘ解放モード	0
+Sys	3	3	[ｼｽﾃﾑ]回復音	0	ファイル名	SE/Healing.wav
+Sys	3	3	[ｼｽﾃﾑ]回復音	1	再生音量[%]	30
+Sys	3	3	[ｼｽﾃﾑ]回復音	2	再生周波数[%]	150
+Sys	3	3	[ｼｽﾃﾑ]回復音	3	ﾒﾓﾘ解放モード	0
+Sys	3	4	[ｼｽﾃﾑ]ダメージ音	0	ファイル名	SE/Damage.wav
+Sys	3	4	[ｼｽﾃﾑ]ダメージ音	1	再生音量[%]	40
+Sys	3	4	[ｼｽﾃﾑ]ダメージ音	2	再生周波数[%]	100
+Sys	3	4	[ｼｽﾃﾑ]ダメージ音	3	ﾒﾓﾘ解放モード	0
+Sys	3	5	[ｼｽﾃﾑ]戦闘不能音	0	ファイル名	SE/Knockdown.wav
+Sys	3	5	[ｼｽﾃﾑ]戦闘不能音	1	再生音量[%]	60
+Sys	3	5	[ｼｽﾃﾑ]戦闘不能音	2	再生周波数[%]	50
+Sys	3	5	[ｼｽﾃﾑ]戦闘不能音	3	ﾒﾓﾘ解放モード	0
+Sys	3	6	[ｼｽﾃﾑ]ダメージ音	0	ファイル名	SE/Damage.wav
+Sys	3	6	[ｼｽﾃﾑ]ダメージ音	1	再生音量[%]	40
+Sys	3	6	[ｼｽﾃﾑ]ダメージ音	2	再生周波数[%]	140
+Sys	3	6	[ｼｽﾃﾑ]ダメージ音	3	ﾒﾓﾘ解放モード	0
+Sys	3	7	[ｼｽﾃﾑ]ｱｲﾃﾑ入手音	0	ファイル名	SE/ItemGet.wav
+Sys	3	7	[ｼｽﾃﾑ]ｱｲﾃﾑ入手音	1	再生音量[%]	50
+Sys	3	7	[ｼｽﾃﾑ]ｱｲﾃﾑ入手音	2	再生周波数[%]	0
+Sys	3	7	[ｼｽﾃﾑ]ｱｲﾃﾑ入手音	3	ﾒﾓﾘ解放モード	0
+Sys	3	8	[ｼｽﾃﾑ]敵出現	0	ファイル名	SE/Encount.wav
+Sys	3	8	[ｼｽﾃﾑ]敵出現	1	再生音量[%]	60
+Sys	3	8	[ｼｽﾃﾑ]敵出現	2	再生周波数[%]	0
+Sys	3	8	[ｼｽﾃﾑ]敵出現	3	ﾒﾓﾘ解放モード	0
+Sys	3	9	[ｻﾞ･ﾏｯﾁﾒｲｶｧｽﾞ2nd]斬撃	0	ファイル名	SE/tm2_slash003.wav
+Sys	3	9	[ｻﾞ･ﾏｯﾁﾒｲｶｧｽﾞ2nd]斬撃	1	再生音量[%]	90
+Sys	3	9	[ｻﾞ･ﾏｯﾁﾒｲｶｧｽﾞ2nd]斬撃	2	再生周波数[%]	100
+Sys	3	9	[ｻﾞ･ﾏｯﾁﾒｲｶｧｽﾞ2nd]斬撃	3	ﾒﾓﾘ解放モード	0
+Sys	3	10	コンボイ1	0	ファイル名	SE/コンボイ1.wav
+Sys	3	10	コンボイ1	1	再生音量[%]	120
+Sys	3	10	コンボイ1	2	再生周波数[%]	0
+Sys	3	10	コンボイ1	3	ﾒﾓﾘ解放モード	0
+Sys	3	11	コンボイ2	0	ファイル名	SE/コンボイ2.wav
+Sys	3	11	コンボイ2	1	再生音量[%]	120
+Sys	3	11	コンボイ2	2	再生周波数[%]	0
+Sys	3	11	コンボイ2	3	ﾒﾓﾘ解放モード	0
+Sys	3	12	コンボイ3	0	ファイル名	SE/コンボイ3.wav
+Sys	3	12	コンボイ3	1	再生音量[%]	100
+Sys	3	12	コンボイ3	2	再生周波数[%]	0
+Sys	3	12	コンボイ3	3	ﾒﾓﾘ解放モード	0
+Sys	3	13	跳ね	0	ファイル名	SE/（Action）跳ね.wav
+Sys	3	13	跳ね	1	再生音量[%]	80
+Sys	3	13	跳ね	2	再生周波数[%]	100
+Sys	3	13	跳ね	3	ﾒﾓﾘ解放モード	0
+Sys	3	14	tm2_bom002	0	ファイル名	SE/tm2_bom002.wav
+Sys	3	14	tm2_bom002	1	再生音量[%]	100
+Sys	3	14	tm2_bom002	2	再生周波数[%]	100
+Sys	3	14	tm2_bom002	3	ﾒﾓﾘ解放モード	0
+Sys	3	15	tm2_slash000	0	ファイル名	SE/tm2_slash000.wav
+Sys	3	15	tm2_slash000	1	再生音量[%]	100
+Sys	3	15	tm2_slash000	2	再生周波数[%]	100
+Sys	3	15	tm2_slash000	3	ﾒﾓﾘ解放モード	0
+Sys	3	16	kaizan-shoots08	0	ファイル名	SE/kaizan-shoots08.wav
+Sys	3	16	kaizan-shoots08	1	再生音量[%]	60
+Sys	3	16	kaizan-shoots08	2	再生周波数[%]	100
+Sys	3	16	kaizan-shoots08	3	ﾒﾓﾘ解放モード	0
+Sys	3	17	撃破A	0	ファイル名	SE/（Shooting）撃破A.wav
+Sys	3	17	撃破A	1	再生音量[%]	50
+Sys	3	17	撃破A	2	再生周波数[%]	100
+Sys	3	17	撃破A	3	ﾒﾓﾘ解放モード	0
+Sys	3	18	tm2_bom004	0	ファイル名	SE/tm2_bom004.wav
+Sys	3	18	tm2_bom004	1	再生音量[%]	70
+Sys	3	18	tm2_bom004	2	再生周波数[%]	100
+Sys	3	18	tm2_bom004	3	ﾒﾓﾘ解放モード	0
+Sys	3	19	とんずら	0	ファイル名	SE/とんずら.wav
+Sys	3	19	とんずら	1	再生音量[%]	80
+Sys	3	19	とんずら	2	再生周波数[%]	100
+Sys	3	19	とんずら	3	ﾒﾓﾘ解放モード	0
+Sys	4	0	一時文字列	0	name	一時文字列
+Sys	4	1	肩書	0	name	肩書
+Sys	4	2	アニメーション文字列	0	name	アニメーション文字列
+Sys	4	3	モンスターネーム	0	name	モンスターネーム
+Sys	4	9	お知らせ	0	name	お知らせ
+Sys	5	0	 -----	0	name	 -----
+Sys	5	1	決定ｷｰ名[ｷｰﾎﾞｰﾄﾞ]	0	name	決定ｷｰ名[ｷｰﾎﾞｰﾄﾞ]
+Sys	5	2	ｷｬﾝｾﾙｷｰ名[ｷｰﾎﾞｰﾄﾞ]	0	name	ｷｬﾝｾﾙｷｰ名[ｷｰﾎﾞｰﾄﾞ]
+Sys	5	3	ｻﾌﾞｷｰ名[ｷｰﾎﾞｰﾄﾞ]	0	name	ｻﾌﾞｷｰ名[ｷｰﾎﾞｰﾄﾞ]
+Sys	5	4	決定ｷｰ名[パッド]	0	name	決定ｷｰ名[パッド]
+Sys	5	5	ｷｬﾝｾﾙｷｰ名[パッド]	0	name	ｷｬﾝｾﾙｷｰ名[パッド]
+Sys	5	6	ｻﾌﾞｷｰ名[パッド]	0	name	ｻﾌﾞｷｰ名[パッド]
+Sys	5	7	 -----	0	name	 -----
+Sys	5	8	 -----	0	name	 -----
+Sys	5	9	 -----	0	name	 -----
+Sys	5	10	主人公 キャラ画像名	0	name	主人公 キャラ画像名
+Sys	5	11	仲間1 キャラ画像名	0	name	仲間1 キャラ画像名
+Sys	5	12	仲間2 キャラ画像名	0	name	仲間2 キャラ画像名
+Sys	5	13	仲間3 キャラ画像名	0	name	仲間3 キャラ画像名
+Sys	5	14	仲間4 キャラ画像名	0	name	仲間4 キャラ画像名
+Sys	5	15	仲間5 キャラ画像名	0	name	仲間5 キャラ画像名
+Sys	5	16	 -----	0	name	 -----
+Sys	5	17	 -----	0	name	 -----
+Sys	5	18	 -----	0	name	 -----
+Sys	5	19	 -----	0	name	 -----
+Sys	5	20	Proxy アドレス[例:aa.net]	0	name	Proxy アドレス[例:aa.net]
+Sys	5	21	Proxy ポート番号[例:80]	0	name	Proxy ポート番号[例:80]
+Sys	5	22	 -----	0	name	 -----
+Sys	5	23	 -----	0	name	 -----
+Sys	5	24	 -----	0	name	 -----
+Sys	5	25	[読]文章表示の内容	0	name	[読]文章表示の内容
+Sys	5	26	文章表示追加 先頭	0	name	文章表示追加 先頭
+Sys	5	27	文章表示追加 最後尾	0	name	文章表示追加 最後尾
+Sys	5	28	 -----	0	name	 -----
+Sys	5	29	 -----	0	name	 -----
+Sys	5	30	遠景の画像ﾌｧｲﾙ名	0	name	遠景の画像ﾌｧｲﾙ名
+Sys	5	31	フォグの画像ﾌｧｲﾙ名	0	name	フォグの画像ﾌｧｲﾙ名
+Sys	5	32	 -----	0	name	 -----
+Sys	5	33	[読]再生中BGMﾌｧｲﾙ名	0	name	[読]再生中BGMﾌｧｲﾙ名
+Sys	5	34	[読]再生中BGSﾌｧｲﾙ名	0	name	[読]再生中BGSﾌｧｲﾙ名
+Sys	5	35	 -----	0	name	 -----
+Sys	5	36	 -----	0	name	 -----
+Sys	5	37	 -----	0	name	 -----
+Sys	5	38	 -----	0	name	 -----
+Sys	5	39	 -----	0	name	 -----
+Sys	5	40	[読]選択肢1の内容	0	name	[読]選択肢1の内容
+Sys	5	41	[読]選択肢2の内容	0	name	[読]選択肢2の内容
+Sys	5	42	[読]選択肢3の内容	0	name	[読]選択肢3の内容
+Sys	5	43	[読]選択肢4の内容	0	name	[読]選択肢4の内容
+Sys	5	44	[読]選択肢5の内容	0	name	[読]選択肢5の内容
+Sys	5	45	[読]選択肢6の内容	0	name	[読]選択肢6の内容
+Sys	5	46	[読]選択肢7の内容	0	name	[読]選択肢7の内容
+Sys	5	47	[読]選択肢8の内容	0	name	[読]選択肢8の内容
+Sys	5	48	[読]選択肢9の内容	0	name	[読]選択肢9の内容
+Sys	5	49	[読]選択肢10の内容	0	name	[読]選択肢10の内容
+Sys	5	50	 -----	0	name	 -----
+Sys	5	51	 -----	0	name	 -----
+Sys	5	52	[読]起動データフォルダ	0	name	[読]起動データフォルダ
+Sys	5	53	 -----	0	name	 -----
+Sys	5	54	 -----	0	name	 -----
+Sys	6	0	顔ｸﾞﾗﾌｨｯｸ番号	0	name	顔ｸﾞﾗﾌｨｯｸ番号
+Sys	6	1	ﾒｯｾｰｼﾞｳｨﾝﾄﾞｳ X座標	0	name	ﾒｯｾｰｼﾞｳｨﾝﾄﾞｳ X座標
+Sys	6	2	ﾒｯｾｰｼﾞｳｨﾝﾄﾞｳ Y座標	0	name	ﾒｯｾｰｼﾞｳｨﾝﾄﾞｳ Y座標
+Sys	6	3	選択肢ｳｨﾝﾄﾞｳ X座標	0	name	選択肢ｳｨﾝﾄﾞｳ X座標
+Sys	6	4	選択肢ｳｨﾝﾄﾞｳ Y座標	0	name	選択肢ｳｨﾝﾄﾞｳ Y座標
+Sys	6	5	ﾎﾟｰｽﾞｶｰｿﾙX (-1=自動)	0	name	ﾎﾟｰｽﾞｶｰｿﾙX (-1=自動)
+Sys	6	6	ﾎﾟｰｽﾞｶｰｿﾙY (-1=自動)	0	name	ﾎﾟｰｽﾞｶｰｿﾙY (-1=自動)
+Sys	6	7	選択肢次回初期位置(0,1,2...)	0	name	選択肢次回初期位置(0,1,2...)
+Sys	6	8	基本フォントサイズ	0	name	基本フォントサイズ
+Sys	6	9	ﾒｯｾｰｼﾞ速度( X 文字/秒)	0	name	ﾒｯｾｰｼﾞ速度( X 文字/秒)
+Sys	6	10	ﾒｯｾｰｼﾞ表示ｳｪｲﾄ(X ﾌﾚｰﾑ)	0	name	ﾒｯｾｰｼﾞ表示ｳｪｲﾄ(X ﾌﾚｰﾑ)
+Sys	6	11	ﾋﾟｸﾁｬ文字速度( X 文字/秒)	0	name	ﾋﾟｸﾁｬ文字速度( X 文字/秒)
+Sys	6	12	ﾒｯｾｰｼﾞ表示中？(1=ON)	0	name	ﾒｯｾｰｼﾞ表示中？(1=ON)
+Sys	6	13	ｲﾍﾞﾝﾄ実行中？(1=ON)	0	name	ｲﾍﾞﾝﾄ実行中？(1=ON)
+Sys	6	14	選択肢ｳｨﾝﾄﾞｳ表示する?(1=ON)	0	name	選択肢ｳｨﾝﾄﾞｳ表示する?(1=ON)
+Sys	6	15	方向ｷｰﾘﾋﾟｰﾄ初ｳｪｲﾄ(ﾌﾚｰﾑ数指定)※[キーが押されるまで待つ]に適用	0	name	方向ｷｰﾘﾋﾟｰﾄ初ｳｪｲﾄ(ﾌﾚｰﾑ数指定)※[キーが押されるまで待つ]に適用
+Sys	6	16	方向ｷｰﾘﾋﾟｰﾄ次ｳｪｲﾄ(ﾌﾚｰﾑ数指定)※[キーが押されるまで待つ]に適用	0	name	方向ｷｰﾘﾋﾟｰﾄ次ｳｪｲﾄ(ﾌﾚｰﾑ数指定)※[キーが押されるまで待つ]に適用
+Sys	6	17	選択肢SE番号：決定(Sys3)	0	name	選択肢SE番号：決定(Sys3)
+Sys	6	18	選択肢SE番号：選択(Sys3)	0	name	選択肢SE番号：選択(Sys3)
+Sys	6	19	選択肢SE番号：ｷｬﾝｾﾙ(Sys3)	0	name	選択肢SE番号：ｷｬﾝｾﾙ(Sys3)
+Sys	6	20	選択肢ｶｰｿﾙ現位置(0,1,2..非選択時:-1)	0	name	選択肢ｶｰｿﾙ現位置(0,1,2..非選択時:-1)
+Sys	6	21	文字影付ける?(0=OFF,1以上=ON)	0	name	文字影付ける?(0=OFF,1以上=ON)
+Sys	6	22	選択肢ｶｰｿﾙ表示ﾓｰﾄﾞ?(0=通常,1=加算)	0	name	選択肢ｶｰｿﾙ表示ﾓｰﾄﾞ?(0=通常,1=加算)
+Sys	6	23	ルビフォントサイズ	0	name	ルビフォントサイズ
+Sys	6	24	[読]ｾｰﾌﾞﾃﾞｰﾀ読込判定(1=成功 0=失敗)	0	name	[読]ｾｰﾌﾞﾃﾞｰﾀ読込判定(1=成功 0=失敗)
+Sys	6	25	現在ｾｰﾌﾞﾃﾞｰﾀ番号(0～)	0	name	現在ｾｰﾌﾞﾃﾞｰﾀ番号(0～)
+Sys	6	26	 -----	0	name	 -----
+Sys	6	27	 -----	0	name	 -----
+Sys	6	28	[読]経過ﾌﾚｰﾑ数[1000万で一周]	0	name	[読]経過ﾌﾚｰﾑ数[1000万で一周]
+Sys	6	29	[読]プレイ時間（1秒単位）	0	name	[読]プレイ時間（1秒単位）
+Sys	6	30	[読]プレイ時間(ﾐﾘ秒単位)	0	name	[読]プレイ時間(ﾐﾘ秒単位)
+Sys	6	31	[読]内部FPS(毎秒変化）	0	name	[読]内部FPS(毎秒変化）
+Sys	6	32	[読]描画FPS(毎秒変化）	0	name	[読]描画FPS(毎秒変化）
+Sys	6	33	ﾌﾚｰﾑｽｷｯﾌﾟﾚﾍﾞﾙ(0～2)	0	name	ﾌﾚｰﾑｽｷｯﾌﾟﾚﾍﾞﾙ(0～2)
+Sys	6	34	 -----	0	name	 -----
+Sys	6	35	主人公移動中？(1=YES) ﾏｽの間にいるかどうか	0	name	主人公移動中？(1=YES) ﾏｽの間にいるかどうか
+Sys	6	36	主人公の影番号(Sys9)	0	name	主人公の影番号(Sys9)
+Sys	6	37	仲間の車間距離(1あたり1歩)	0	name	仲間の車間距離(1あたり1歩)
+Sys	6	38	 -----	0	name	 -----
+Sys	6	39	[読]ｷｰﾎﾞ入力状態 0=Enter -1=ｷｬﾝｾﾙ	0	name	[読]ｷｰﾎﾞ入力状態 0=Enter -1=ｷｬﾝｾﾙ
+Sys	6	40	ｷｰﾎﾞ入力文字列 X座標	0	name	ｷｰﾎﾞ入力文字列 X座標
+Sys	6	41	ｷｰﾎﾞ入力文字列 Y座標	0	name	ｷｰﾎﾞ入力文字列 Y座標
+Sys	6	42	ｷｰﾎﾞ入力文字ｱﾝﾁｴｲﾘｱｽ[0無/1有/+2でｴｯｼﾞ付]	0	name	ｷｰﾎﾞ入力文字ｱﾝﾁｴｲﾘｱｽ[0無/1有/+2でｴｯｼﾞ付]
+Sys	6	43	[読]ﾈｯﾄ/DL済ｻｲｽﾞ(byte)	0	name	[読]ﾈｯﾄ/DL済ｻｲｽﾞ(byte)
+Sys	6	44	[読]ﾈｯﾄ/DL予定ｻｲｽﾞ(byte)[不明なら-1]	0	name	[読]ﾈｯﾄ/DL予定ｻｲｽﾞ(byte)[不明なら-1]
+Sys	6	45	[読]ﾈｯﾄ/接続速度	0	name	[読]ﾈｯﾄ/接続速度
+Sys	6	46	[読]ﾈｯﾄ/接続時間(秒)	0	name	[読]ﾈｯﾄ/接続時間(秒)
+Sys	6	47	[読]ﾈｯﾄ/残り時間(秒)	0	name	[読]ﾈｯﾄ/残り時間(秒)
+Sys	6	48	[読]ﾈｯﾄ/状態 -1失敗 0通信中 1終了	0	name	[読]ﾈｯﾄ/状態 -1失敗 0通信中 1終了
+Sys	6	49	 -----	0	name	 -----
+Sys	6	50	 -----	0	name	 -----
+Sys	6	51	◆ 以下 ｷｰｺﾝﾌｨｸﾞ ◆	0	name	◆ 以下 ｷｰｺﾝﾌｨｸﾞ ◆
+Sys	6	52	決定ｷｰ(ｷｰﾎﾞｰﾄﾞ)	0	name	決定ｷｰ(ｷｰﾎﾞｰﾄﾞ)
+Sys	6	53	ｷｬﾝｾﾙｷｰ(ｷｰﾎﾞｰﾄﾞ)	0	name	ｷｬﾝｾﾙｷｰ(ｷｰﾎﾞｰﾄﾞ)
+Sys	6	54	ｻﾌﾞｷｰ（ｷｰﾎﾞｰﾄﾞ）	0	name	ｻﾌﾞｷｰ（ｷｰﾎﾞｰﾄﾞ）
+Sys	6	55	決定ｷｰ（ﾊﾟｯﾄﾞ）	0	name	決定ｷｰ（ﾊﾟｯﾄﾞ）
+Sys	6	56	ｷｬﾝｾﾙｷｰ（ﾊﾟｯﾄﾞ）	0	name	ｷｬﾝｾﾙｷｰ（ﾊﾟｯﾄﾞ）
+Sys	6	57	ｻﾌﾞｷｰ（ﾊﾟｯﾄﾞ）	0	name	ｻﾌﾞｷｰ（ﾊﾟｯﾄﾞ）
+Sys	6	58	◆ここまでｷｰｺﾝﾌｨｸﾞ◆	0	name	◆ここまでｷｰｺﾝﾌｨｸﾞ◆
+Sys	6	59	決定ｷｰﾘﾋﾟｰﾄする？(1=ON) ※[キーが押されるまで待つ]に適用	0	name	決定ｷｰﾘﾋﾟｰﾄする？(1=ON) ※[キーが押されるまで待つ]に適用
+Sys	6	60	ｷｬﾝｾﾙｷｰﾘﾋﾟｰﾄする？(1=ON) ※[キーが押されるまで待つ]に適用	0	name	ｷｬﾝｾﾙｷｰﾘﾋﾟｰﾄする？(1=ON) ※[キーが押されるまで待つ]に適用
+Sys	6	61	フォグ番号(Sys13)	0	name	フォグ番号(Sys13)
+Sys	6	62	フォグX速度	0	name	フォグX速度
+Sys	6	63	フォグY速度	0	name	フォグY速度
+Sys	6	64	ﾌｫｸﾞ描画ﾀｲﾌﾟ(0通常1加算2減算)	0	name	ﾌｫｸﾞ描画ﾀｲﾌﾟ(0通常1加算2減算)
+Sys	6	65	ﾌｫｸﾞ不透明度(0～255)	0	name	ﾌｫｸﾞ不透明度(0～255)
+Sys	6	66	遠景番号(Sys13)	0	name	遠景番号(Sys13)
+Sys	6	67	遠景X速度	0	name	遠景X速度
+Sys	6	68	遠景Y速度	0	name	遠景Y速度
+Sys	6	69	 -----	0	name	 -----
+Sys	6	70	 -----	0	name	 -----
+Sys	6	71	マウスＸ位置	0	name	マウスＸ位置
+Sys	6	72	マウスＹ位置	0	name	マウスＹ位置
+Sys	6	73	文･選択肢のﾏｳｽ入力(1なら受付)	0	name	文･選択肢のﾏｳｽ入力(1なら受付)
+Sys	6	74	ﾏｳｽﾎﾟｲﾝﾀ表示する?(1=ON)	0	name	ﾏｳｽﾎﾟｲﾝﾀ表示する?(1=ON)
+Sys	6	75	 -----	0	name	 -----
+Sys	6	76	 -----	0	name	 -----
+Sys	6	77	現在の[年]	0	name	現在の[年]
+Sys	6	78	現在の[月]	0	name	現在の[月]
+Sys	6	79	現在の[日]	0	name	現在の[日]
+Sys	6	80	現在の[時]	0	name	現在の[時]
+Sys	6	81	現在の[分]	0	name	現在の[分]
+Sys	6	82	現在の[秒]	0	name	現在の[秒]
+Sys	6	83	 -----	0	name	 -----
+Sys	6	84	画面ｻｲｽﾞ(0=320x240,1=640x480 2=800x600)	0	name	画面ｻｲｽﾞ(0=320x240,1=640x480 2=800x600)
+Sys	6	85	描画ﾓｰﾄﾞ(0=3Dﾓｰﾄﾞ,1=ｿﾌﾄｳｪｱ)	0	name	描画ﾓｰﾄﾞ(0=3Dﾓｰﾄﾞ,1=ｿﾌﾄｳｪｱ)
+Sys	6	86	 -----	0	name	 -----
+Sys	6	87	仲間1影番号(-1=主人公と同じ）	0	name	仲間1影番号(-1=主人公と同じ）
+Sys	6	88	仲間2影番号(-1=主人公と同じ）	0	name	仲間2影番号(-1=主人公と同じ）
+Sys	6	89	仲間3影番号(-1=主人公と同じ）	0	name	仲間3影番号(-1=主人公と同じ）
+Sys	6	90	仲間4影番号(-1=主人公と同じ）	0	name	仲間4影番号(-1=主人公と同じ）
+Sys	6	91	仲間5影番号(-1=主人公と同じ）	0	name	仲間5影番号(-1=主人公と同じ）
+Sys	6	92	 -----	0	name	 -----
+Sys	6	93	 -----	0	name	 -----
+Sys	6	94	 -----	0	name	 -----
+Sys	6	95	再生中BGM音量[%]	0	name	再生中BGM音量[%]
+Sys	6	96	再生中BGMテンポ/周波数[%]	0	name	再生中BGMテンポ/周波数[%]
+Sys	6	97	再生中BGS音量[%]	0	name	再生中BGS音量[%]
+Sys	6	98	再生中BGSテンポ/周波数[%]	0	name	再生中BGSテンポ/周波数[%]
+Sys	6	99	 -----	0	name	 -----
+Sys	6	100	BGM音量補正[%]	0	name	BGM音量補正[%]
+Sys	6	101	BGS音量補正[%]	0	name	BGS音量補正[%]
+Sys	6	102	SE音量補正[%]	0	name	SE音量補正[%]
+Sys	6	103	 -----	0	name	 -----
+Sys	6	104	Ｘスクロール値	0	name	Ｘスクロール値
+Sys	6	105	Ｙスクロール値	0	name	Ｙスクロール値
+Sys	6	106	 -----	0	name	 -----
+Sys	6	107	 -----	0	name	 -----
+Sys	6	108	[読]現ﾌﾚｰﾑのｺﾏﾝﾄﾞ処理数	0	name	[読]現ﾌﾚｰﾑのｺﾏﾝﾄﾞ処理数
+Sys	6	109	 -----	0	name	 -----
+Sys	6	110	現在の乱数のシード(種)	0	name	現在の乱数のシード(種)
+Sys	6	111	[読]画面アクティブ状態(1=アクティブ)	0	name	[読]画面アクティブ状態(1=アクティブ)
+Sys	6	112	[読]テストプレイ中？(1=YES)	0	name	[読]テストプレイ中？(1=YES)
+Sys	6	113	 -----	0	name	 -----
+Sys	6	114	 -----	0	name	 -----
+Sys	6	115	[Read]Game.exe version(x100)	0	name	[Read]Game.exe version(x100)
+Sys	6	116	[Read]Screen size X	0	name	[Read]Screen size X
+Sys	6	117	[Read]Screen size Y	0	name	[Read]Screen size Y
+Sys	6	118	[Read]Tile size	0	name	[Read]Tile size
+Sys	6	119	 -----	0	name	 -----
+Sys	6	120	[Read]Reset History 0=no/1=F12/2=Command	0	name	[Read]Reset History 0=no/1=F12/2=Command
+Sys	6	121	 -----	0	name	 -----
+Sys	6	122	 -----	0	name	 -----
+Sys	6	123	 -----	0	name	 -----
+Sys	6	124	 -----	0	name	 -----
+Sys	6	125	 -----	0	name	 -----
+Sys	6	126	 -----	0	name	 -----
+Sys	6	127	 -----	0	name	 -----
+Sys	6	128	 -----	0	name	 -----
+Sys	6	129	 -----	0	name	 -----
+Sys	6	130	 -----	0	name	 -----
+Sys	6	131	 -----	0	name	 -----
+Sys	6	132	 -----	0	name	 -----
+Sys	6	133	 -----	0	name	 -----
+Sys	6	134	 -----	0	name	 -----
+Sys	7	0	初期位置	0	マップID	0
+Sys	7	0	初期位置	1	X座標(マップ位置)	-1
+Sys	7	0	初期位置	2	Y座標(マップ位置)	0
+Sys	7	1		0	マップID	0
+Sys	7	1		1	X座標(マップ位置)	0
+Sys	7	1		2	Y座標(マップ位置)	0
+Sys	7	2		0	マップID	0
+Sys	7	2		1	X座標(マップ位置)	0
+Sys	7	2		2	Y座標(マップ位置)	0
+Sys	7	3		0	マップID	0
+Sys	7	3		1	X座標(マップ位置)	0
+Sys	7	3		2	Y座標(マップ位置)	0
+Sys	7	4		0	マップID	0
+Sys	7	4		1	X座標(マップ位置)	0
+Sys	7	4		2	Y座標(マップ位置)	0
+Sys	7	5		0	マップID	0
+Sys	7	5		1	X座標(マップ位置)	0
+Sys	7	5		2	Y座標(マップ位置)	0
+Sys	7	6		0	マップID	0
+Sys	7	6		1	X座標(マップ位置)	0
+Sys	7	6		2	Y座標(マップ位置)	0
+Sys	7	7		0	マップID	0
+Sys	7	7		1	X座標(マップ位置)	0
+Sys	7	7		2	Y座標(マップ位置)	0
+Sys	7	8		0	マップID	0
+Sys	7	8		1	X座標(マップ位置)	0
+Sys	7	8		2	Y座標(マップ位置)	0
+Sys	7	9		0	マップID	0
+Sys	7	9		1	X座標(マップ位置)	0
+Sys	7	9		2	Y座標(マップ位置)	0
+Sys	8	2	キリマンジャロ走る	0	読込ファイル名	CharaChip/kiri2TX.png
+Sys	8	3	キリマンジャロ疲れる	0	読込ファイル名	CharaChip/kiri3TX.png
+Sys	8	4	ちびキャラ	0	読込ファイル名	CharaChip/chibi_kiri.png
+Sys	8	5	攻撃1	0	読込ファイル名	CharaChip/kiri_attack01.png
+Sys	8	6	攻撃2	0	読込ファイル名	CharaChip/kiri_attack02.png
+Sys	8	7	攻撃3	0	読込ファイル名	CharaChip/kiri_attack03.png
+Sys	8	8		0	読込ファイル名	CharaChip/slime1.png
+Sys	8	9	触手攻撃前	0	読込ファイル名	CharaChip/plant_tentacle.png
+Sys	8	10	カーソル1	0	読込ファイル名	CharaChip/cursor.png
+Sys	8	11	剣主人公右	0	読込ファイル名	CharaChip/hero1_r_TX.png
+Sys	8	12	剣主人公左	0	読込ファイル名	CharaChip/hero1_l_TX.png
+Sys	8	13	剣主攻撃1R	0	読込ファイル名	CharaChip/atk1_r.png
+Sys	8	14	剣主攻撃2R	0	読込ファイル名	CharaChip/atk2_r.png
+Sys	8	15	剣主攻撃3R	0	読込ファイル名	CharaChip/atk3_r.png
+Sys	8	16	剣主攻撃4R	0	読込ファイル名	CharaChip/atk4_r.png
+Sys	8	17	剣主攻撃5R	0	読込ファイル名	CharaChip/atk5_r.png
+Sys	8	18	剣主攻撃6R	0	読込ファイル名	CharaChip/atk6_r.png
+Sys	8	19	剣主攻撃7R	0	読込ファイル名	CharaChip/atk7_r.png
+Sys	8	20	剣主攻撃8R	0	読込ファイル名	CharaChip/atk8_r.png
+Sys	8	21	剣主攻撃9R	0	読込ファイル名	CharaChip/atk9_r.png
+Sys	8	22	剣主攻撃10R	0	読込ファイル名	CharaChip/atk10_r.png
+Sys	8	23	剣主攻撃11R	0	読込ファイル名	CharaChip/atk11_r.png
+Sys	8	24	剣主ダウンR	0	読込ファイル名	CharaChip/dwn1_r_TX.png
+Sys	8	25	剣主小ダウン1	0	読込ファイル名	CharaChip/dwn2_r.png
+Sys	8	26	剣主小ダウン2	0	読込ファイル名	CharaChip/dwn3_r.png
+Sys	8	27	剣主小ダウン3	0	読込ファイル名	CharaChip/dwn4_r.png
+Sys	8	29	ゴーレム	0	読込ファイル名	CharaChip/golem.png
+Sys	8	30	ゴーレム攻撃1	0	読込ファイル名	CharaChip/golem_atk1.png
+Sys	8	31	ゴーレム攻撃2	0	読込ファイル名	CharaChip/golem_atk2.png
+Sys	8	32	リコ事後	0	読込ファイル名	CharaChip/riko_h1.png
+Sys	8	33	リコ	0	読込ファイル名	CharaChip/riko_r_TX.png
+Sys	8	34	リコ逆光1	0	読込ファイル名	CharaChip/riko2.png
+Sys	8	35	リコ逆光2	0	読込ファイル名	CharaChip/riko2_r_TX.png
+Sys	8	40	触る	0	読込ファイル名	CharaChip/hand1.png
+Sys	8	41	つまむ	0	読込ファイル名	CharaChip/hand2.png
+Sys	8	42	見る	0	読込ファイル名	CharaChip/look.png
+Sys	8	43	話す	0	読込ファイル名	CharaChip/talk.png
+Sys	8	44	キノコ	0	読込ファイル名	CharaChip/mushroom.png
+Sys	8	45	ネーレウス1	0	読込ファイル名	CharaChip/Nereis001.png
+Sys	8	46	ネーレウス2	0	読込ファイル名	CharaChip/Nereis002.png
+Sys	8	47	逆光1	0	読込ファイル名	CharaChip/hero3_r_TX.png
+Sys	8	48	逆光2	0	読込ファイル名	CharaChip/hero2_r_TX.png
+Sys	8	50	剣主攻撃12R	0	読込ファイル名	CharaChip/atk10_r.png
+Sys	8	51	剣主攻撃13R	0	読込ファイル名	CharaChip/atk13_r.png
+Sys	8	52	剣主攻撃14R	0	読込ファイル名	CharaChip/atk14_r.png
+Sys	8	53	剣主攻撃15R	0	読込ファイル名	CharaChip/atk15_r.png
+Sys	8	54	剣主攻撃16R	0	読込ファイル名	CharaChip/atk16_r.png
+Sys	8	55	剣主攻撃17R	0	読込ファイル名	CharaChip/atk17_r.png
+Sys	8	56	剣主攻撃18R	0	読込ファイル名	CharaChip/atk18_r.png
+Sys	8	57	剣主攻撃19R	0	読込ファイル名	CharaChip/atk19_r.png
+Sys	8	58	剣主攻撃20R	0	読込ファイル名	CharaChip/atk20_r.png
+Sys	8	59	剣主攻撃21R	0	読込ファイル名	CharaChip/atk21_r.png
+Sys	8	60	剣主攻撃22R	0	読込ファイル名	CharaChip/atk22_r.png
+Sys	8	61	剣主攻撃23R	0	読込ファイル名	CharaChip/atk9_r.png
+Sys	8	70	剣主攻撃1L	0	読込ファイル名	CharaChip/atk1_l.png
+Sys	8	71	剣主攻撃2L	0	読込ファイル名	CharaChip/atk2_l.png
+Sys	8	72	剣主攻撃3L	0	読込ファイル名	CharaChip/atk3_l.png
+Sys	8	73	剣主攻撃4L	0	読込ファイル名	CharaChip/atk4_l.png
+Sys	8	74	剣主攻撃5L	0	読込ファイル名	CharaChip/atk5_l.png
+Sys	8	75	剣主攻撃6L	0	読込ファイル名	CharaChip/atk6_l.png
+Sys	8	76	剣主攻撃7L	0	読込ファイル名	CharaChip/atk7_l.png
+Sys	8	77	剣主攻撃8L	0	読込ファイル名	CharaChip/atk8_l.png
+Sys	8	78	剣主攻撃9L	0	読込ファイル名	CharaChip/atk9_l.png
+Sys	8	79	剣主攻撃10L	0	読込ファイル名	CharaChip/atk10_l.png
+Sys	8	80	剣主攻撃11L	0	読込ファイル名	CharaChip/atk11_l.png
+Sys	8	81	剣主攻撃12L	0	読込ファイル名	CharaChip/atk12_l.png
+Sys	8	82	剣主攻撃13L	0	読込ファイル名	CharaChip/atk13_l.png
+Sys	8	83	剣主攻撃14L	0	読込ファイル名	CharaChip/atk14_l.png
+Sys	8	84	剣主攻撃15L	0	読込ファイル名	CharaChip/atk15_l.png
+Sys	8	85	剣主攻撃16L	0	読込ファイル名	CharaChip/atk16_l.png
+Sys	8	86	剣主攻撃17L	0	読込ファイル名	CharaChip/atk17_l.png
+Sys	8	87	剣主攻撃18L	0	読込ファイル名	CharaChip/atk18_l.png
+Sys	8	88	剣主攻撃19L	0	読込ファイル名	CharaChip/atk19_l.png
+Sys	8	89	剣主攻撃20L	0	読込ファイル名	CharaChip/atk20_l.png
+Sys	8	90	剣主攻撃21L	0	読込ファイル名	CharaChip/atk21_l.png
+Sys	8	91	剣主攻撃22L	0	読込ファイル名	CharaChip/atk22_l.png
+Sys	8	92	剣主攻撃23L	0	読込ファイル名	CharaChip/atk9_l.png
+Sys	8	100	短剣主人公右	0	読込ファイル名	CharaChip/hero_dagger_r_TX.png
+Sys	8	101	短剣主人公左	0	読込ファイル名	CharaChip/hero_dagger_l_TX.png
+Sys	8	102	短剣攻撃1R	0	読込ファイル名	CharaChip/d_atk1_r.png
+Sys	8	103	短剣攻撃2R	0	読込ファイル名	CharaChip/d_atk2_r.png
+Sys	8	104	短剣攻撃3R	0	読込ファイル名	CharaChip/d_atk3_r.png
+Sys	8	105	短剣攻撃4R	0	読込ファイル名	CharaChip/d_atk4_r.png
+Sys	8	106	短剣攻撃5R	0	読込ファイル名	CharaChip/d_atk5_r.png
+Sys	8	107	短剣攻撃6R	0	読込ファイル名	CharaChip/d_atk6_r.png
+Sys	8	108	短剣攻撃7R	0	読込ファイル名	CharaChip/d_atk14_r.png
+Sys	8	109	短剣攻撃8R	0	読込ファイル名	CharaChip/d_atk8_r.png
+Sys	8	110	短剣攻撃9R	0	読込ファイル名	CharaChip/d_atk9_r.png
+Sys	8	111	短剣攻撃10R	0	読込ファイル名	CharaChip/d_atk10_r.png
+Sys	8	112	短剣攻撃11R	0	読込ファイル名	CharaChip/d_atk11_r.png
+Sys	8	113	短剣攻撃12R	0	読込ファイル名	CharaChip/d_atk12_r.png
+Sys	8	114	短剣攻撃13R	0	読込ファイル名	CharaChip/d_atk13_r.png
+Sys	8	115	短剣攻撃14R	0	読込ファイル名	CharaChip/d_atk14_r.png
+Sys	8	116	短剣攻撃15R	0	読込ファイル名	CharaChip/d_atk15_r.png
+Sys	8	117	短剣攻撃16R	0	読込ファイル名	CharaChip/d_atk16_r.png
+Sys	8	118	短剣攻撃17R	0	読込ファイル名	CharaChip/d_atk17_r.png
+Sys	8	119	短剣攻撃18R	0	読込ファイル名	CharaChip/d_atk18_r.png
+Sys	8	120	短剣攻撃19R	0	読込ファイル名	CharaChip/d_atk19_r.png
+Sys	8	121	短剣攻撃20R	0	読込ファイル名	CharaChip/d_atk20_r.png
+Sys	8	122	短剣攻撃21R	0	読込ファイル名	CharaChip/d_atk23_r.png
+Sys	8	123	短剣攻撃22R	0	読込ファイル名	CharaChip/d_atk22_r.png
+Sys	8	124	短剣攻撃23R	0	読込ファイル名	CharaChip/d_atk23_r.png
+Sys	8	130	短剣攻撃1L	0	読込ファイル名	CharaChip/d_atk1_l.png
+Sys	8	131	短剣攻撃2L	0	読込ファイル名	CharaChip/d_atk2_l.png
+Sys	8	132	短剣攻撃3L	0	読込ファイル名	CharaChip/d_atk3_l.png
+Sys	8	133	短剣攻撃4L	0	読込ファイル名	CharaChip/d_atk4_l.png
+Sys	8	134	短剣攻撃5L	0	読込ファイル名	CharaChip/d_atk5_l.png
+Sys	8	135	短剣攻撃6L	0	読込ファイル名	CharaChip/d_atk6_l.png
+Sys	8	136	短剣攻撃7L	0	読込ファイル名	CharaChip/d_atk7_l.png
+Sys	8	137	短剣攻撃8L	0	読込ファイル名	CharaChip/d_atk8_l.png
+Sys	8	138	短剣攻撃9L	0	読込ファイル名	CharaChip/d_atk9_l.png
+Sys	8	139	短剣攻撃10L	0	読込ファイル名	CharaChip/d_atk10_l.png
+Sys	8	140	短剣攻撃11L	0	読込ファイル名	CharaChip/d_atk11_l.png
+Sys	8	141	短剣攻撃12L	0	読込ファイル名	CharaChip/d_atk12_l.png
+Sys	8	142	短剣攻撃13L	0	読込ファイル名	CharaChip/d_atk13_l.png
+Sys	8	143	短剣攻撃14L	0	読込ファイル名	CharaChip/d_atk14_l.png
+Sys	8	144	短剣攻撃15L	0	読込ファイル名	CharaChip/d_atk15_l.png
+Sys	8	145	短剣攻撃16L	0	読込ファイル名	CharaChip/d_atk16_l.png
+Sys	8	146	短剣攻撃17L	0	読込ファイル名	CharaChip/d_atk17_l.png
+Sys	8	147	短剣攻撃18L	0	読込ファイル名	CharaChip/d_atk18_l.png
+Sys	8	148	短剣攻撃19L	0	読込ファイル名	CharaChip/d_atk19_l.png
+Sys	8	149	短剣攻撃20L	0	読込ファイル名	CharaChip/d_atk20_l.png
+Sys	8	150	短剣攻撃21L	0	読込ファイル名	CharaChip/d_atk21_l.png
+Sys	8	151	短剣攻撃22L	0	読込ファイル名	CharaChip/d_atk22_l.png
+Sys	8	152	短剣攻撃23L	0	読込ファイル名	CharaChip/d_atk23_l.png
+Sys	8	200	キメラL1	0	読込ファイル名	CharaChip/chimera01_atk1r.png
+Sys	8	201	キメラL2	0	読込ファイル名	CharaChip/chimera01_atk2r.png
+Sys	8	202	キメラL3	0	読込ファイル名	CharaChip/chimera01_atk3r.png
+Sys	8	203	キメラL4	0	読込ファイル名	CharaChip/chimera01_atk4r.png
+Sys	8	204	キメラL5	0	読込ファイル名	CharaChip/chimera01_atk5r.png
+Sys	8	205	キメラL6	0	読込ファイル名	CharaChip/chimera01_atk6r.png
+Sys	8	206	キメラL7	0	読込ファイル名	CharaChip/chimera01_atk7r.png
+Sys	8	207	キメラL8	0	読込ファイル名	CharaChip/chimera01_atk8r.png
+Sys	8	208	キメラR1	0	読込ファイル名	CharaChip/chimera01_atk1.png
+Sys	8	209	キメラR2	0	読込ファイル名	CharaChip/chimera01_atk2.png
+Sys	8	210	キメラR3	0	読込ファイル名	CharaChip/chimera01_atk3.png
+Sys	8	211	キメラR4	0	読込ファイル名	CharaChip/chimera01_atk4.png
+Sys	8	212	キメラR5	0	読込ファイル名	CharaChip/chimera01_atk5.png
+Sys	8	213	キメラR6	0	読込ファイル名	CharaChip/chimera01_atk6.png
+Sys	8	214	キメラR7	0	読込ファイル名	CharaChip/chimera01_atk7.png
+Sys	8	215	キメラR8	0	読込ファイル名	CharaChip/chimera01_atk8.png
+Sys	8	216	キメラ	0	読込ファイル名	CharaChip/chimera01.png
+Sys	8	217	キメラ2	0	読込ファイル名	CharaChip/chimera01_mgc1.png
+Sys	9	0	人間・通常サイズ影	0	読込ファイル名	SystemFile/shadow64TX.png
+Sys	9	2		0	読込ファイル名	SystemFile/shadow64TX.png
+Sys	10	0	○入力待ちﾎﾟｰｽﾞ画像	1	縦分割数(一部のみ)	0
+Sys	10	1	×選択肢ｳｨﾝﾄﾞｳ画像	0	画像ファイル名	SystemFile/WindowBase.png
+Sys	10	1	×選択肢ｳｨﾝﾄﾞｳ画像	1	縦分割数(一部のみ)	0
+Sys	10	2	○選択肢カーソル指定	0	画像ファイル名	SystemFile/CursorBase.png
+Sys	10	2	○選択肢カーソル指定	1	縦分割数(一部のみ)	1
+Sys	11	0	横フェード	0	ﾌｧｲﾙ名(ﾓﾉｸﾛ)	SystemFile/[Transition]Fade.png
+Sys	12	0	デフォルト色	0	赤(0-255)	255
+Sys	12	0	デフォルト色	1	緑(0-255)	255
+Sys	12	0	デフォルト色	2	青(0-255)	255
+Sys	12	1	青色	0	赤(0-255)	130
+Sys	12	1	青色	1	緑(0-255)	130
+Sys	12	1	青色	2	青(0-255)	210
+Sys	12	2	赤色	0	赤(0-255)	210
+Sys	12	2	赤色	1	緑(0-255)	130
+Sys	12	2	赤色	2	青(0-255)	130
+Sys	12	3	緑色	0	赤(0-255)	130
+Sys	12	3	緑色	1	緑(0-255)	230
+Sys	12	3	緑色	2	青(0-255)	130
+Sys	12	4	茶色	0	赤(0-255)	90
+Sys	12	4	茶色	1	緑(0-255)	40
+Sys	12	4	茶色	2	青(0-255)	0
+Sys	12	5	赤色濃	0	赤(0-255)	160
+Sys	12	5	赤色濃	1	緑(0-255)	80
+Sys	12	5	赤色濃	2	青(0-255)	80
+Sys	12	6	オレンジ色	0	赤(0-255)	255
+Sys	12	6	オレンジ色	1	緑(0-255)	140
+Sys	12	6	オレンジ色	2	青(0-255)	0
+Sys	12	7	黄色	0	赤(0-255)	255
+Sys	12	7	黄色	1	緑(0-255)	200
+Sys	12	7	黄色	2	青(0-255)	0
+Sys	12	8	ピンク	0	赤(0-255)	255
+Sys	12	8	ピンク	1	緑(0-255)	100
+Sys	12	8	ピンク	2	青(0-255)	100
+Sys	12	9	くろ	0	赤(0-255)	0
+Sys	12	9	くろ	1	緑(0-255)	0
+Sys	12	9	くろ	2	青(0-255)	0
+Sys	12	10	[Sys]入力文字色	0	赤(0-255)	255
+Sys	12	10	[Sys]入力文字色	1	緑(0-255)	255
+Sys	12	10	[Sys]入力文字色	2	青(0-255)	255
+Sys	12	11	[Sys]変換中背景	0	赤(0-255)	170
+Sys	12	11	[Sys]変換中背景	1	緑(0-255)	170
+Sys	12	11	[Sys]変換中背景	2	青(0-255)	200
+Sys	12	12	[Sys]入力下線	0	赤(0-255)	255
+Sys	12	12	[Sys]入力下線	1	緑(0-255)	100
+Sys	12	12	[Sys]入力下線	2	青(0-255)	100
+Sys	12	13	[Sys]ルビ用文字色	0	赤(0-255)	255
+Sys	12	13	[Sys]ルビ用文字色	1	緑(0-255)	255
+Sys	12	13	[Sys]ルビ用文字色	2	青(0-255)	255
+Sys	12	14		0	赤(0-255)	0
+Sys	12	14		1	緑(0-255)	0
+Sys	12	14		2	青(0-255)	0
+Sys	12	15		0	赤(0-255)	0
+Sys	12	15		1	緑(0-255)	0
+Sys	12	15		2	青(0-255)	0
+Sys	12	16		0	赤(0-255)	0
+Sys	12	16		1	緑(0-255)	0
+Sys	12	16		2	青(0-255)	0
+Sys	12	17		0	赤(0-255)	0
+Sys	12	17		1	緑(0-255)	0
+Sys	12	17		2	青(0-255)	0
+Sys	12	18		0	赤(0-255)	0
+Sys	12	18		1	緑(0-255)	0
+Sys	12	18		2	青(0-255)	0
+Sys	12	19		0	赤(0-255)	0
+Sys	12	19		1	緑(0-255)	0
+Sys	12	19		2	青(0-255)	0
+Sys	12	20		0	赤(0-255)	0
+Sys	12	20		1	緑(0-255)	0
+Sys	12	20		2	青(0-255)	0
+Sys	12	21		0	赤(0-255)	0
+Sys	12	21		1	緑(0-255)	0
+Sys	12	21		2	青(0-255)	0
+Sys	12	22		0	赤(0-255)	0
+Sys	12	22		1	緑(0-255)	0
+Sys	12	22		2	青(0-255)	0
+Sys	12	23		0	赤(0-255)	0
+Sys	12	23		1	緑(0-255)	0
+Sys	12	23		2	青(0-255)	0
+Sys	12	24		0	赤(0-255)	0
+Sys	12	24		1	緑(0-255)	0
+Sys	12	24		2	青(0-255)	0
+Sys	12	25		0	赤(0-255)	0
+Sys	12	25		1	緑(0-255)	0
+Sys	12	25		2	青(0-255)	0
+Sys	12	26		0	赤(0-255)	0
+Sys	12	26		1	緑(0-255)	0
+Sys	12	26		2	青(0-255)	0
+Sys	12	27		0	赤(0-255)	0
+Sys	12	27		1	緑(0-255)	0
+Sys	12	27		2	青(0-255)	0
+Sys	12	28		0	赤(0-255)	0
+Sys	12	28		1	緑(0-255)	0
+Sys	12	28		2	青(0-255)	0
+Sys	12	29		0	赤(0-255)	0
+Sys	12	29		1	緑(0-255)	0
+Sys	12	29		2	青(0-255)	0
+Sys	13	0	自宅	0	画像ファイル名	cg/bg_001_01.jpg
+Sys	13	0	自宅	1	X移動速度	0
+Sys	13	0	自宅	2	Y移動速度	0
+Sys	13	0	自宅	3	マップと位置連動する？	1
+Sys	13	1	草原	0	画像ファイル名	Picture/bg_forest02.jpg
+Sys	13	1	草原	1	X移動速度	0
+Sys	13	1	草原	2	Y移動速度	0
+Sys	13	1	草原	3	マップと位置連動する？	1
+Sys	13	2	草原2	0	画像ファイル名	Picture/bg_forest03.jpg
+Sys	13	2	草原2	1	X移動速度	0
+Sys	13	2	草原2	2	Y移動速度	0
+Sys	13	2	草原2	3	マップと位置連動する？	1
+Sys	13	3	森の入口	0	画像ファイル名	Picture/forest_entrance01.png
+Sys	13	3	森の入口	1	X移動速度	0
+Sys	13	3	森の入口	2	Y移動速度	0
+Sys	13	3	森の入口	3	マップと位置連動する？	1
+Sys	13	4	森2	0	画像ファイル名	Picture/bg_forest04.jpg
+Sys	13	4	森2	1	X移動速度	0
+Sys	13	4	森2	2	Y移動速度	0
+Sys	13	4	森2	3	マップと位置連動する？	1
+Sys	13	5	森3	0	画像ファイル名	Picture/bg_forest05.jpg
+Sys	13	5	森3	1	X移動速度	0
+Sys	13	5	森3	2	Y移動速度	0
+Sys	13	5	森3	3	マップと位置連動する？	1
+Sys	13	6	森4	0	画像ファイル名	Picture/bg_forest06.jpg
+Sys	13	6	森4	1	X移動速度	0
+Sys	13	6	森4	2	Y移動速度	0
+Sys	13	6	森4	3	マップと位置連動する？	1
+Sys	13	7	森の泉	0	画像ファイル名	Picture/bg_forest07.jpg
+Sys	13	7	森の泉	1	X移動速度	0
+Sys	13	7	森の泉	2	Y移動速度	0
+Sys	13	7	森の泉	3	マップと位置連動する？	1
+Sys	13	8	森5	0	画像ファイル名	Picture/bg_forest08.jpg
+Sys	13	8	森5	1	X移動速度	0
+Sys	13	8	森5	2	Y移動速度	0
+Sys	13	8	森5	3	マップと位置連動する？	1
+Sys	13	9	森6	0	画像ファイル名	Picture/bg_forest09.jpg
+Sys	13	9	森6	1	X移動速度	0
+Sys	13	9	森6	2	Y移動速度	0
+Sys	13	9	森6	3	マップと位置連動する？	1
+Sys	13	10	森7	0	画像ファイル名	Picture/bg_forest10.jpg
+Sys	13	10	森7	1	X移動速度	0
+Sys	13	10	森7	2	Y移動速度	0
+Sys	13	10	森7	3	マップと位置連動する？	1
+Sys	13	11	森奥1	0	画像ファイル名	Picture/bg_forest11.jpg
+Sys	13	11	森奥1	1	X移動速度	0
+Sys	13	11	森奥1	2	Y移動速度	0
+Sys	13	11	森奥1	3	マップと位置連動する？	1
+Sys	13	12	森奥2	0	画像ファイル名	Picture/bg_forest12.jpg
+Sys	13	12	森奥2	1	X移動速度	0
+Sys	13	12	森奥2	2	Y移動速度	0
+Sys	13	12	森奥2	3	マップと位置連動する？	1
+Sys	13	13	森奥3	0	画像ファイル名	Picture/bg_forest13.jpg
+Sys	13	13	森奥3	1	X移動速度	0
+Sys	13	13	森奥3	2	Y移動速度	0
+Sys	13	13	森奥3	3	マップと位置連動する？	1
+Sys	13	14	森奥4	0	画像ファイル名	Picture/bg_forest14.jpg
+Sys	13	14	森奥4	1	X移動速度	0
+Sys	13	14	森奥4	2	Y移動速度	0
+Sys	13	14	森奥4	3	マップと位置連動する？	1
+Sys	13	15	森奥5	0	画像ファイル名	Picture/bg_forest15.jpg
+Sys	13	15	森奥5	1	X移動速度	0
+Sys	13	15	森奥5	2	Y移動速度	0
+Sys	13	15	森奥5	3	マップと位置連動する？	1
+Sys	13	16	森奥6	0	画像ファイル名	Picture/bg_forest16.jpg
+Sys	13	16	森奥6	1	X移動速度	0
+Sys	13	16	森奥6	2	Y移動速度	0
+Sys	13	16	森奥6	3	マップと位置連動する？	1
+Sys	13	17	森奥7	0	画像ファイル名	Picture/bg_forest17.jpg
+Sys	13	17	森奥7	1	X移動速度	0
+Sys	13	17	森奥7	2	Y移動速度	0
+Sys	13	17	森奥7	3	マップと位置連動する？	1
+Sys	13	18	森奥8	0	画像ファイル名	Picture/bg_forest18.jpg
+Sys	13	18	森奥8	1	X移動速度	0
+Sys	13	18	森奥8	2	Y移動速度	0
+Sys	13	18	森奥8	3	マップと位置連動する？	1
+Sys	13	19	森奥9	0	画像ファイル名	Picture/bg_forest19.jpg
+Sys	13	19	森奥9	1	X移動速度	0
+Sys	13	19	森奥9	2	Y移動速度	0
+Sys	13	19	森奥9	3	マップと位置連動する？	1
+Sys	13	20	ワールドマップ	0	画像ファイル名	Picture/worldmap.jpg
+Sys	13	20	ワールドマップ	1	X移動速度	0
+Sys	13	20	ワールドマップ	2	Y移動速度	0
+Sys	13	20	ワールドマップ	3	マップと位置連動する？	1
+Sys	13	21	最果ての開拓村	0	画像ファイル名	Picture/bg_village01.jpg
+Sys	13	21	最果ての開拓村	1	X移動速度	0
+Sys	13	21	最果ての開拓村	2	Y移動速度	0
+Sys	13	21	最果ての開拓村	3	マップと位置連動する？	1
+Sys	13	22	タイトル	0	画像ファイル名	Picture/bg_prolog02.jpg
+Sys	13	22	タイトル	1	X移動速度	0
+Sys	13	22	タイトル	2	Y移動速度	0
+Sys	13	22	タイトル	3	マップと位置連動する？	1
+Sys	13	23	遺跡	0	画像ファイル名	Picture/bg_map2.jpg
+Sys	13	23	遺跡	1	X移動速度	0
+Sys	13	23	遺跡	2	Y移動速度	0
+Sys	13	23	遺跡	3	マップと位置連動する？	1
+Sys	13	24	遺跡入口	0	画像ファイル名	Picture/bg_map3.jpg
+Sys	13	24	遺跡入口	1	X移動速度	0
+Sys	13	24	遺跡入口	2	Y移動速度	0
+Sys	13	24	遺跡入口	3	マップと位置連動する？	1
+Sys	13	25	遺跡奥	0	画像ファイル名	Picture/bg_map1.png
+Sys	13	25	遺跡奥	1	X移動速度	0
+Sys	13	25	遺跡奥	2	Y移動速度	0
+Sys	13	25	遺跡奥	3	マップと位置連動する？	1
+Sys	13	26	ワールドマップ2	0	画像ファイル名	Picture/worldmap01.jpg
+Sys	13	26	ワールドマップ2	1	X移動速度	0
+Sys	13	26	ワールドマップ2	2	Y移動速度	0
+Sys	13	26	ワールドマップ2	3	マップと位置連動する？	1
+Sys	13	27	孤島の拠点	0	画像ファイル名	Picture/bg_map4.jpg
+Sys	13	27	孤島の拠点	1	X移動速度	0
+Sys	13	27	孤島の拠点	2	Y移動速度	0
+Sys	13	27	孤島の拠点	3	マップと位置連動する？	1
+Sys	13	28	汎用草原	0	画像ファイル名	Picture/bg_battle01.jpg
+Sys	13	28	汎用草原	1	X移動速度	0
+Sys	13	28	汎用草原	2	Y移動速度	0
+Sys	13	28	汎用草原	3	マップと位置連動する？	1
+Sys	13	29	船室	0	画像ファイル名	Picture/bg_map6.jpg
+Sys	13	29	船室	1	X移動速度	0
+Sys	13	29	船室	2	Y移動速度	0
+Sys	13	29	船室	3	マップと位置連動する？	1
+Sys	13	30	甲板	0	画像ファイル名	Picture/bg_map5.jpg
+Sys	13	30	甲板	1	X移動速度	0
+Sys	13	30	甲板	2	Y移動速度	0
+Sys	13	30	甲板	3	マップと位置連動する？	1
+Sys	13	31	白浜1	0	画像ファイル名	Picture/bg_map7.jpg
+Sys	13	31	白浜1	1	X移動速度	0
+Sys	13	31	白浜1	2	Y移動速度	0
+Sys	13	31	白浜1	3	マップと位置連動する？	1
+Sys	13	32	白浜2	0	画像ファイル名	Picture/bg_map8.jpg
+Sys	13	32	白浜2	1	X移動速度	0
+Sys	13	32	白浜2	2	Y移動速度	0
+Sys	13	32	白浜2	3	マップと位置連動する？	1
+Sys	13	33	白浜3	0	画像ファイル名	Picture/bg_map9.jpg
+Sys	13	33	白浜3	1	X移動速度	0
+Sys	13	33	白浜3	2	Y移動速度	0
+Sys	13	33	白浜3	3	マップと位置連動する？	1
+Sys	13	34	汎用砂浜	0	画像ファイル名	Picture/bg_battle02.jpg
+Sys	13	34	汎用砂浜	1	X移動速度	0
+Sys	13	34	汎用砂浜	2	Y移動速度	0
+Sys	13	34	汎用砂浜	3	マップと位置連動する？	1
+Sys	13	35	汎用洞窟	0	画像ファイル名	Picture/bg_battle03.jpg
+Sys	13	35	汎用洞窟	1	X移動速度	0
+Sys	13	35	汎用洞窟	2	Y移動速度	0
+Sys	13	35	汎用洞窟	3	マップと位置連動する？	1
+Sys	13	36	海蝕洞	0	画像ファイル名	Picture/bg_dungeon1.jpg
+Sys	13	36	海蝕洞	1	X移動速度	0
+Sys	13	36	海蝕洞	2	Y移動速度	0
+Sys	13	36	海蝕洞	3	マップと位置連動する？	1
+Sys	13	37	海蝕洞	0	画像ファイル名	Picture/bg_battle04.jpg
+Sys	13	37	海蝕洞	1	X移動速度	0
+Sys	13	37	海蝕洞	2	Y移動速度	0
+Sys	13	37	海蝕洞	3	マップと位置連動する？	1
+Sys	13	38	海岸	0	画像ファイル名	Picture/bg_map10.jpg
+Sys	13	38	海岸	1	X移動速度	0
+Sys	13	38	海岸	2	Y移動速度	0
+Sys	13	38	海岸	3	マップと位置連動する？	1
+Sys	13	39	珊瑚の海岸1	0	画像ファイル名	Picture/bg_map11.jpg
+Sys	13	39	珊瑚の海岸1	1	X移動速度	0
+Sys	13	39	珊瑚の海岸1	2	Y移動速度	0
+Sys	13	39	珊瑚の海岸1	3	マップと位置連動する？	1
+Sys	13	40	珊瑚の海岸2	0	画像ファイル名	Picture/bg_map12.jpg
+Sys	13	40	珊瑚の海岸2	1	X移動速度	0
+Sys	13	40	珊瑚の海岸2	2	Y移動速度	0
+Sys	13	40	珊瑚の海岸2	3	マップと位置連動する？	1
+Sys	13	41	珊瑚の海岸3	0	画像ファイル名	Picture/bg_map13.jpg
+Sys	13	41	珊瑚の海岸3	1	X移動速度	0
+Sys	13	41	珊瑚の海岸3	2	Y移動速度	0
+Sys	13	41	珊瑚の海岸3	3	マップと位置連動する？	1
+Sys	13	42	の浜	0	画像ファイル名	Picture/bg_map14.jpg
+Sys	13	42	の浜	1	X移動速度	0
+Sys	13	42	の浜	2	Y移動速度	0
+Sys	13	42	の浜	3	マップと位置連動する？	1
+Sys	13	43	ダンジョン汎用遠景	0	画像ファイル名	Picture/d_bg.jpg
+Sys	13	43	ダンジョン汎用遠景	1	X移動速度	0
+Sys	13	43	ダンジョン汎用遠景	2	Y移動速度	0
+Sys	13	43	ダンジョン汎用遠景	3	マップと位置連動する？	1
+Sys	13	44	狩り1	0	画像ファイル名	Picture/hant_map01.jpg
+Sys	13	44	狩り1	1	X移動速度	0
+Sys	13	44	狩り1	2	Y移動速度	0
+Sys	13	44	狩り1	3	マップと位置連動する？	1
+Sys	13	45	空中庭園1	0	画像ファイル名	Picture/bg_map30.jpg
+Sys	13	45	空中庭園1	1	X移動速度	0
+Sys	13	45	空中庭園1	2	Y移動速度	0
+Sys	13	45	空中庭園1	3	マップと位置連動する？	1
+Sys	13	46	船上1	0	画像ファイル名	Picture/bg_map15.jpg
+Sys	13	46	船上1	1	X移動速度	0
+Sys	13	46	船上1	2	Y移動速度	0
+Sys	13	46	船上1	3	マップと位置連動する？	1
+Sys	13	47		1	X移動速度	0
+Sys	13	47		2	Y移動速度	0
+Sys	13	47		3	マップと位置連動する？	1
+Sys	13	48		1	X移動速度	0
+Sys	13	48		2	Y移動速度	0
+Sys	13	48		3	マップと位置連動する？	1
+Sys	13	49		1	X移動速度	0
+Sys	13	49		2	Y移動速度	0
+Sys	13	49		3	マップと位置連動する？	1
+Sys	13	50		1	X移動速度	0
+Sys	13	50		2	Y移動速度	0
+Sys	13	50		3	マップと位置連動する？	1
+Sys	13	51		1	X移動速度	0
+Sys	13	51		2	Y移動速度	0
+Sys	13	51		3	マップと位置連動する？	1
+Sys	13	52		1	X移動速度	0
+Sys	13	52		2	Y移動速度	0
+Sys	13	52		3	マップと位置連動する？	1
+Sys	13	53		1	X移動速度	0
+Sys	13	53		2	Y移動速度	0
+Sys	13	53		3	マップと位置連動する？	1
+Sys	13	54		1	X移動速度	0
+Sys	13	54		2	Y移動速度	0
+Sys	13	54		3	マップと位置連動する？	1
+Sys	13	55		1	X移動速度	0
+Sys	13	55		2	Y移動速度	0
+Sys	13	55		3	マップと位置連動する？	1
+Sys	13	56		1	X移動速度	0
+Sys	13	56		2	Y移動速度	0
+Sys	13	56		3	マップと位置連動する？	1
+Sys	13	57		1	X移動速度	0
+Sys	13	57		2	Y移動速度	0
+Sys	13	57		3	マップと位置連動する？	1
+Sys	13	58		1	X移動速度	0
+Sys	13	58		2	Y移動速度	0
+Sys	13	58		3	マップと位置連動する？	1
+Sys	13	59		1	X移動速度	0
+Sys	13	59		2	Y移動速度	0
+Sys	13	59		3	マップと位置連動する？	1
+Sys	13	60		1	X移動速度	0
+Sys	13	60		2	Y移動速度	0
+Sys	13	60		3	マップと位置連動する？	1
+Sys	13	61		1	X移動速度	0
+Sys	13	61		2	Y移動速度	0
+Sys	13	61		3	マップと位置連動する？	1
+Sys	13	62		1	X移動速度	0
+Sys	13	62		2	Y移動速度	0
+Sys	13	62		3	マップと位置連動する？	1
+Sys	13	63		1	X移動速度	0
+Sys	13	63		2	Y移動速度	0
+Sys	13	63		3	マップと位置連動する？	1
+Sys	13	64		1	X移動速度	0
+Sys	13	64		2	Y移動速度	0
+Sys	13	64		3	マップと位置連動する？	1
+Sys	13	65		1	X移動速度	0
+Sys	13	65		2	Y移動速度	0
+Sys	13	65		3	マップと位置連動する？	1
+Sys	13	66		1	X移動速度	0
+Sys	13	66		2	Y移動速度	0
+Sys	13	66		3	マップと位置連動する？	1
+Sys	13	67		1	X移動速度	0
+Sys	13	67		2	Y移動速度	0
+Sys	13	67		3	マップと位置連動する？	1
+Sys	13	68		1	X移動速度	0
+Sys	13	68		2	Y移動速度	0
+Sys	13	68		3	マップと位置連動する？	1
+Sys	13	69		1	X移動速度	0
+Sys	13	69		2	Y移動速度	0
+Sys	13	69		3	マップと位置連動する？	1
+Sys	13	70		0	画像ファイル名	Picture/testmap.jpg
+Sys	13	70		1	X移動速度	0
+Sys	13	70		2	Y移動速度	0
+Sys	13	70		3	マップと位置連動する？	1
+Sys	13	71		1	X移動速度	0
+Sys	13	71		2	Y移動速度	0
+Sys	13	71		3	マップと位置連動する？	1
+Sys	13	72		1	X移動速度	0
+Sys	13	72		2	Y移動速度	0
+Sys	13	72		3	マップと位置連動する？	1
+Sys	13	73		1	X移動速度	0
+Sys	13	73		2	Y移動速度	0
+Sys	13	73		3	マップと位置連動する？	1
+Sys	13	74		1	X移動速度	0
+Sys	13	74		2	Y移動速度	0
+Sys	13	74		3	マップと位置連動する？	1
+Sys	13	75		1	X移動速度	0
+Sys	13	75		2	Y移動速度	0
+Sys	13	75		3	マップと位置連動する？	1
+Sys	13	76		1	X移動速度	0
+Sys	13	76		2	Y移動速度	0
+Sys	13	76		3	マップと位置連動する？	1
+Sys	13	77		1	X移動速度	0
+Sys	13	77		2	Y移動速度	0
+Sys	13	77		3	マップと位置連動する？	1
+Sys	13	78		1	X移動速度	0
+Sys	13	78		2	Y移動速度	0
+Sys	13	78		3	マップと位置連動する？	1
+Sys	13	79		1	X移動速度	0
+Sys	13	79		2	Y移動速度	0
+Sys	13	79		3	マップと位置連動する？	1
+Sys	14	0	初期変数	0	name	初期変数
+Sys	14	1	マウス操作	0	name	マウス操作
+Sys	14	2	立ち絵の瞬き動作	0	name	立ち絵の瞬き動作
+Sys	14	3	ステータス表示	0	name	ステータス表示
+Sys	14	4	時	0	name	時
+Sys	14	5	分	0	name	分
+Sys	14	6	曜日	0	name	曜日
+Sys	14	7	所持金	0	name	所持金
+Sys	14	8	就寝時間	0	name	就寝時間
+Sys	14	9	散歩回数	0	name	散歩回数
+Sys	14	10	学生	0	name	学生
+Sys	14	11	フリーター	0	name	フリーター
+Sys	14	12	社会人	0	name	社会人
+Sys	14	13	ダメ人間	0	name	ダメ人間
+Sys	14	14	妹位置	0	name	妹位置
+Sys	14	15	ネットショップ表示	0	name	ネットショップ表示
+Sys	14	16	ステータス表示	0	name	ステータス表示
+Sys	14	17	買い物に行く	0	name	買い物に行く
+Sys	14	18	睡眠深さ	0	name	睡眠深さ
+Sys	14	19	最大睡眠深さ	0	name	最大睡眠深さ
+Sys	14	20	妹信頼度	0	name	妹信頼度
+Sys	14	21	妹性興味	0	name	妹性興味
+Sys	14	22	妹感度	0	name	妹感度
+Sys	14	23	妹機嫌	0	name	妹機嫌
+Sys	14	24	妹快感	0	name	妹快感
+Sys	14	25	妹不愉快	0	name	妹不愉快
+Sys	14	26	媚薬効果	0	name	媚薬効果
+Sys	14	27	一服	0	name	一服
+Sys	14	28	お風呂	0	name	お風呂
+Sys	14	29	買い物	0	name	買い物
+Sys	14	30	ギャルゲー	0	name	ギャルゲー
+Sys	14	31	スケベゲーム	0	name	スケベゲーム
+Sys	14	32	日中メニュー	0	name	日中メニュー
+Sys	14	33	カップ麺	0	name	カップ麺
+Sys	14	34	お弁当	0	name	お弁当
+Sys	14	35	お茶	0	name	お茶
+Sys	14	36	玉露	0	name	玉露
+Sys	14	37	コーヒー	0	name	コーヒー
+Sys	14	38	紅茶	0	name	紅茶
+Sys	14	39	精力剤	0	name	精力剤
+Sys	14	40	媚薬	0	name	媚薬
+Sys	14	41	ドスケベRPG	0	name	ドスケベRPG
+Sys	14	42	スタミナ消費	0	name	スタミナ消費
+Sys	14	43	シーツ掛け直し	0	name	シーツ掛け直し
+Sys	14	44	行きたくない	0	name	行きたくない
+Sys	14	45	挿入	0	name	挿入
+Sys	14	46	使用EXスキル	0	name	使用EXスキル
+Sys	14	47	EX使用OK？	0	name	EX使用OK？
+Sys	14	48	実行完了	0	name	実行完了
+Sys	14	49	EX発動	0	name	EX発動
+Sys	14	50	ダンベル	0	name	ダンベル
+Sys	14	51	トレーニングマシン	0	name	トレーニングマシン
+Sys	14	52	コンドーム	0	name	コンドーム
+Sys	14	53	ローター	0	name	ローター
+Sys	14	54	処理コマンド右	0	name	処理コマンド右
+Sys	14	55	処理コマンド左	0	name	処理コマンド左
+Sys	14	56	深夜終了	0	name	深夜終了
+Sys	14	57	文字エフェクト右	0	name	文字エフェクト右
+Sys	14	58	文字エフェクト左	0	name	文字エフェクト左
+Sys	14	59	嫌悪感割合値	0	name	嫌悪感割合値
+Sys	14	60	基礎行動力	0	name	基礎行動力
+Sys	14	61	ボーナス行動力	0	name	ボーナス行動力
+Sys	14	62	精力	0	name	精力
+Sys	14	63	嫌悪感最大値	0	name	嫌悪感最大値
+Sys	14	64	嫌悪感	0	name	嫌悪感
+Sys	14	65	テンション	0	name	テンション
+Sys	14	66	射精感	0	name	射精感
+Sys	14	67	選択場所	0	name	選択場所
+Sys	14	68	スタミナ200以下	0	name	スタミナ200以下
+Sys	14	69	射精	0	name	射精
+Sys	14	70	深夜パート	0	name	深夜パート
+Sys	14	71	サポート使用OK？	0	name	サポート使用OK？
+Sys	14	72	サポートチャージ量	0	name	サポートチャージ量
+Sys	14	73	サポート発動	0	name	サポート発動
+Sys	14	74	スタミナ量	0	name	スタミナ量
+Sys	14	75	スタミナMAX	0	name	スタミナMAX
+Sys	14	76	ダメージボーナス	0	name	ダメージボーナス
+Sys	14	77	安眠茶	0	name	安眠茶
+Sys	14	78	アフターピル	0	name	アフターピル
+Sys	14	79	安眠茶効果	0	name	安眠茶効果
+Sys	14	80	コンドーム購入	0	name	コンドーム購入
+Sys	14	81	ローター購入	0	name	ローター購入
+Sys	14	82	媚薬購入	0	name	媚薬購入
+Sys	14	83	ギャルゲ購入	0	name	ギャルゲ購入
+Sys	14	84	スケベゲー購入	0	name	スケベゲー購入
+Sys	14	85	ドスケベRPG購入	0	name	ドスケベRPG購入
+Sys	14	86	ダンベル購入	0	name	ダンベル購入
+Sys	14	87	トレーニングマシン購入	0	name	トレーニングマシン購入
+Sys	14	88	精力剤購入	0	name	精力剤購入
+Sys	14	89	枕購入	0	name	枕購入
+Sys	14	90	アクション	0	name	アクション
+Sys	14	91	カットイン右	0	name	カットイン右
+Sys	14	92	カットイン左	0	name	カットイン左
+Sys	14	93	安眠枕	0	name	安眠枕
+Sys	14	94	安眠茶購入	0	name	安眠茶購入
+Sys	14	95	アフターピル購入	0	name	アフターピル購入
+Sys	14	96	着床	0	name	着床
+Sys	14	97	休日メニュー	0	name	休日メニュー
+Sys	14	98	お風呂上り	0	name	お風呂上り
+Sys	14	99	経過日数	0	name	経過日数
+Sys	14	100	深夜1	0	name	深夜1
+Sys	14	101	深夜1ポーズ	0	name	深夜1ポーズ
+Sys	14	102	深夜1アニメ動作	0	name	深夜1アニメ動作
+Sys	14	103	シーツ	0	name	シーツ
+Sys	14	104	キャミソール	0	name	キャミソール
+Sys	14	105	短パン	0	name	短パン
+Sys	14	106	パンツ	0	name	パンツ
+Sys	14	107	吐息	0	name	吐息
+Sys	14	108	汗	0	name	汗
+Sys	14	109	濡れる	0	name	濡れる
+Sys	14	110	乳首	0	name	乳首
+Sys	14	111	広げる	0	name	広げる
+Sys	14	112	めくる	0	name	めくる
+Sys	14	113	手マン	0	name	手マン
+Sys	14	114	ぶっかけ	0	name	ぶっかけ
+Sys	14	115	拡大率X	0	name	拡大率X
+Sys	14	116	コンドーム	0	name	コンドーム
+Sys	14	117	ティッシュ	0	name	ティッシュ
+Sys	14	118	ベット濡れる	0	name	ベット濡れる
+Sys	14	119	就寝兄	0	name	就寝兄
+Sys	14	120	マウス追従	0	name	マウス追従
+Sys	14	121	表示アイコン	0	name	表示アイコン
+Sys	14	122	中出し	0	name	中出し
+Sys	14	123	ずらし挿入	0	name	ずらし挿入
+Sys	14	124	ゴム装着	0	name	ゴム装着
+Sys	14	125	例外処理	0	name	例外処理
+Sys	14	126	時間警告	0	name	時間警告
+Sys	14	127	妊娠	0	name	妊娠
+Sys	14	128	絶頂経験	0	name	絶頂経験
+Sys	14	129	妹欲求不満度	0	name	妹欲求不満度
+Sys	14	130	継続	0	name	継続
+Sys	14	131	気まずい	0	name	気まずい
+Sys	14	132	覚醒バレ	0	name	覚醒バレ
+Sys	14	133	睡眠ボーナス	0	name	睡眠ボーナス
+Sys	14	134	違和感	0	name	違和感
+Sys	14	135	からっぽおねだり	0	name	からっぽおねだり
+Sys	14	136	時間停止	0	name	時間停止
+Sys	14	137	超テンション	0	name	超テンション
+Sys	14	138	リビングに居る	0	name	リビングに居る
+Sys	14	139	挿入経験	0	name	挿入経験
+Sys	14	140	えっちに誘う	0	name	えっちに誘う
+Sys	14	141	海に行った	0	name	海に行った
+Sys	14	142	家でゲーム	0	name	家でゲーム
+Sys	14	143	電マ	0	name	電マ
+Sys	14	144	バイブ	0	name	バイブ
+Sys	14	145	アナルバイブ	0	name	アナルバイブ
+Sys	14	146	ローター使用	0	name	ローター使用
+Sys	14	147	電マ使用	0	name	電マ使用
+Sys	14	148	バイブ使用	0	name	バイブ使用
+Sys	14	149	アナルバイブ使用	0	name	アナルバイブ使用
+Sys	14	150	アナル開発度	0	name	アナル開発度
+Sys	14	151	アイテム使用	0	name	アイテム使用
+Sys	14	152	顔射	0	name	顔射
+Sys	14	153	カットイン顔の挙動	0	name	カットイン顔の挙動
+Sys	14	154	警戒度	0	name	警戒度
+Sys	14	155	お風呂タイマー1	0	name	お風呂タイマー1
+Sys	14	156	オナニー進行度	0	name	オナニー進行度
+Sys	14	157	見せつけオナニー	0	name	見せつけオナニー
+Sys	14	158	お風呂えっち	0	name	お風呂えっち
+Sys	14	159	お風呂で射精	0	name	お風呂で射精
+Sys	14	160	お風呂タイマー2	0	name	お風呂タイマー2
+Sys	14	161	風呂射精選択肢	0	name	風呂射精選択肢
+Sys	14	162	アナル経験	0	name	アナル経験
+Sys	14	163	はじめから	0	name	はじめから
+Sys	14	164	指入れアナル	0	name	指入れアナル
+Sys	14	165	アナル挿入中	0	name	アナル挿入中
+Sys	14	166	背後位ぶっかけ	0	name	背後位ぶっかけ
+Sys	14	167	動く	0	name	動く
+Sys	14	168	スタミナ食事	0	name	スタミナ食事
+Sys	14	169	深夜前絶頂	0	name	深夜前絶頂
+Sys	14	170	トイレタイマー	0	name	トイレタイマー
+Sys	14	171	おしっこ観察	0	name	おしっこ観察
+Sys	14	172	トイレ突入	0	name	トイレ突入
+Sys	14	173	トイレシーン	0	name	トイレシーン
+Sys	14	174	続きがしたい	0	name	続きがしたい
+Sys	14	175	立ち絵表示位置	0	name	立ち絵表示位置
+Sys	14	176	スタッツ表示中	0	name	スタッツ表示中
+Sys	14	177	フリー乱数	0	name	フリー乱数
+Sys	14	178	素股タイマー	0	name	素股タイマー
+Sys	14	179	素股シーン中	0	name	素股シーン中
+Sys	14	180	射精回数	0	name	射精回数
+Sys	14	181	パンツに射精	0	name	パンツに射精
+Sys	14	182	身体に射精	0	name	身体に射精
+Sys	14	183	顔に射精	0	name	顔に射精
+Sys	14	184	くちに射精	0	name	くちに射精
+Sys	14	185	まんこに射精	0	name	まんこに射精
+Sys	14	186	アナルに射精	0	name	アナルに射精
+Sys	14	187	イカせた回数	0	name	イカせた回数
+Sys	14	188	一晩絶頂回数	0	name	一晩絶頂回数
+Sys	14	189	総射精量	0	name	総射精量
+Sys	14	190	オナニー経験	0	name	オナニー経験
+Sys	14	191	時間切れ回数	0	name	時間切れ回数
+Sys	14	192	起こした回数	0	name	起こした回数
+Sys	14	193	おねだりされた回数	0	name	おねだりされた回数
+Sys	14	194	お風呂覗き回数	0	name	お風呂覗き回数
+Sys	14	195	トイレ覗き回数	0	name	トイレ覗き回数
+Sys	14	196	二人で入浴回数	0	name	二人で入浴回数
+Sys	14	197	集めたパンツ枚数	0	name	集めたパンツ枚数
+Sys	14	198	一晩最高値	0	name	一晩最高値
+Sys	14	199	クリア	0	name	クリア
+Sys	14	200	妊娠エンド	0	name	妊娠エンド
+Sys	14	201	100日到達	0	name	100日到達
+Sys	14	202	パンツコンプリート	0	name	パンツコンプリート
+Sys	14	203	エンディング	0	name	エンディング
+Sys	14	204	お知らせ	0	name	お知らせ
+Sys	14	205	処女	0	name	処女
+Sys	14	206	深夜パートで起きた	0	name	深夜パートで起きた
+Sys	14	207	アナル中だし	0	name	アナル中だし
+Sys	14	208	中だしをした	0	name	中だしをした
+Sys	14	209	安全日	0	name	安全日
+Sys	14	210	パンツ1	0	name	パンツ1
+Sys	14	211	パンツ2	0	name	パンツ2
+Sys	14	212	パンツ3	0	name	パンツ3
+Sys	14	213	パンツ4	0	name	パンツ4
+Sys	14	214	パンツ5	0	name	パンツ5
+Sys	14	215	パンツ6	0	name	パンツ6
+Sys	14	216	パンツ7	0	name	パンツ7
+Sys	14	217	パンツ8	0	name	パンツ8
+Sys	14	218	パンツ9	0	name	パンツ9
+Sys	14	219	パンツ10	0	name	パンツ10
+Sys	14	220	パンツ11	0	name	パンツ11
+Sys	14	221	パンツ12	0	name	パンツ12
+Sys	14	222	パンツ13	0	name	パンツ13
+Sys	14	223	パンツ14	0	name	パンツ14
+Sys	14	224	パンツ15	0	name	パンツ15
+Sys	14	225	パンツ16	0	name	パンツ16
+Sys	14	226	パンツ17	0	name	パンツ17
+Sys	14	227	パンツ18	0	name	パンツ18
+Sys	14	228	パンツ19	0	name	パンツ19
+Sys	14	229	パンツ20	0	name	パンツ20
+Sys	14	230	祭りに行った	0	name	祭りに行った
+Sys	14	231	旅行に行った	0	name	旅行に行った
+Sys	14	232	クリスマスイベント	0	name	クリスマスイベント
+Sys	14	233	クリスマスフラグ消失	0	name	クリスマスフラグ消失
+Sys	14	234	正月	0	name	正月
+Sys	14	235	バレンタインイベント	0	name	バレンタインイベント
+Sys	14	236	バレンタインイベントフラグ	0	name	バレンタインイベントフラグ
+Sys	14	237	アルバムアイコン表示	0	name	アルバムアイコン表示
+Sys	14	238	アルバム表示中	0	name	アルバム表示中
+Sys	14	239	プールに行ったことがある	0	name	プールに行ったことがある
+Sys	14	240	買い物に行ったことがある	0	name	買い物に行ったことがある
+Sys	14	241	海に行ったことがある	0	name	海に行ったことがある
+Sys	14	242	お祭りに行ったことがある	0	name	お祭りに行ったことがある
+Sys	14	243	旅行に行ったことがある	0	name	旅行に行ったことがある
+Sys	14	244	クリスマス開放	0	name	クリスマス開放
+Sys	14	245	正月開放	0	name	正月開放
+Sys	14	246	バレンタイン開放	0	name	バレンタイン開放
+Sys	14	247	アルバム回想実行中	0	name	アルバム回想実行中
+Sys	14	248	クレジット中	0	name	クレジット中
+Sys	14	249	お花見に行ったことがある	0	name	お花見に行ったことがある
+Sys	14	250	お花見に行った	0	name	お花見に行った
+Sys	14	260	コマンド実行中	0	name	コマンド実行中
+Sys	14	299	サークルロゴ	0	name	サークルロゴ
+Sys	16	0	ジャンプ高度	0	name	ジャンプ高度
+Sys	16	1	ジャンプ最高度	0	name	ジャンプ最高度
+Sys	16	2	ダッシュ方向	0	name	ダッシュ方向
+Sys	16	3	攻撃判定	0	name	攻撃判定
+Sys	16	4	効果音再生フラグ	0	name	効果音再生フラグ
+Sys	16	5	使用武器	0	name	使用武器
+Sys	16	6	無敵時間	0	name	無敵時間
+Sys	18	0	 	0	name	 
+Sys	21	0	画面中心X	0	name	画面中心X
+Sys	21	1	画面中心Y	0	name	画面中心Y
+Sys	21	2	画面ハーフサイズｆW	0	name	画面ハーフサイズｆW
+Sys	21	3	画面ハーフサイズｆH	0	name	画面ハーフサイズｆH
+Sys	21	4	座標倍率	0	name	座標倍率
+Sys	21	5	0.5マスサイズ	0	name	0.5マスサイズ
+Sys	23	2	マウスカーソルモード	0	name	マウスカーソルモード
+Sys	24	2	妹（制服）	0	顔画像ファイル	Picture/face01.png
+Sys	24	3	妹（部屋義）	0	顔画像ファイル	Picture/face02.png
+Sys	24	4	テスト	0	顔画像ファイル	Picture/face_normal.png
+Sys	24	5	リコ	0	顔画像ファイル	Picture/face_riko.png
+Sys	24	6	ネーレイス	0	顔画像ファイル	Picture/face_nereis.png
+assets --db: 98 table(s), 1381 cell(s)

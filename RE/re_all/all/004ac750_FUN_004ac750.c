@@ -1,0 +1,241 @@
+
+undefined4 FUN_004ac750(char param_1,char param_2)
+
+{
+  char cVar1;
+  int iVar2;
+  int *piVar3;
+  uint extraout_ECX;
+  undefined4 extraout_EDX;
+  undefined4 extraout_EDX_00;
+  undefined8 uVar4;
+  undefined1 *puVar5;
+  undefined1 auStack_dd0 [8];
+  undefined4 uStack_dc8;
+  undefined4 uStack_dc4;
+  undefined4 uStack_dc0;
+  undefined4 uStack_dbc;
+  uint uStack_db8;
+  undefined4 local_db4;
+  undefined4 local_db0;
+  undefined4 local_dac;
+  undefined4 local_da8;
+  undefined4 local_da4;
+  undefined4 local_da0;
+  undefined4 local_d9c;
+  undefined4 local_d98;
+  undefined4 local_d94;
+  undefined4 local_d90;
+  undefined4 local_d8c;
+  undefined1 *local_d84;
+  CMiniDockFrameWnd local_d10 [3324];
+  int local_14;
+  void *local_10;
+  undefined1 *puStack_c;
+  undefined4 local_8;
+  
+  local_8 = 0xffffffff;
+  puStack_c = &LAB_007aff47;
+  local_10 = ExceptionList;
+  if (param_1 == '\0') {
+    uStack_db8 = 0x4ac78b;
+    ExceptionList = &local_10;
+    FUN_00447960();
+    uStack_db8 = 0;
+    uStack_dbc = 0x4ac79e;
+    FUN_00472b10();
+    uStack_db8 = extraout_ECX & 0xffffff00;
+    uStack_dbc = 0x4ac7ad;
+    FUN_00448570();
+    uStack_db8 = 0x4ac7be;
+    FUN_004adb50();
+    uStack_db8 = 0;
+    uStack_dbc = 0x4ac7d1;
+    FUN_0043cef0();
+    uStack_db8 = 0x4ac7e2;
+    FUN_004445b0();
+    uStack_db8 = 0;
+    uStack_dbc = 0x4ac7f5;
+    FUN_004b0b80();
+    uStack_db8 = 0x4ac806;
+    FUN_004acea0();
+    uStack_db8 = 0x4ac817;
+    FUN_004acc30();
+  }
+  else {
+    ExceptionList = &local_10;
+    if (param_2 == '\0') {
+      uStack_db8 = 0;
+      uStack_dbc = 0;
+      uStack_dc0 = 0xffffffff;
+      uStack_dc4 = 0;
+      uStack_dc8 = 0x4ac836;
+      ExceptionList = &local_10;
+      FUN_0047a5d0();
+      uStack_db8 = 0;
+      uStack_dbc = 0;
+      uStack_dc0 = 0xffffffff;
+      uStack_dc4 = 1;
+      uStack_dc8 = 0x4ac848;
+      FUN_0047a5d0();
+    }
+    uStack_db8 = 0x4ac84d;
+    FUN_00423060();
+    uStack_db8 = 0;
+    uStack_dbc = 0x4ac854;
+    FUN_005157a0();
+    uStack_db8 = 0x4ac861;
+    FUN_00476150();
+    DAT_00a140a9 = 1;
+    uStack_db8 = 0x4ac872;
+    FUN_00447960();
+    uStack_db8 = 0x4ac87c;
+    FUN_00475c70();
+    uStack_db8 = 0x4ac886;
+    FUN_00475570();
+    uStack_db8 = 0x4ac891;
+    uStack_db8 = FUN_00471bd0();
+    local_8 = 0;
+    uStack_dbc = 0x4ac8bb;
+    local_d90 = uStack_db8;
+    local_d8c = uStack_db8;
+    FUN_00472eb0();
+    local_8 = 0xffffffff;
+    uStack_db8 = 0x4ac8cd;
+    FUN_004a6aa0();
+    uStack_db8 = 0x4ac8d8;
+    uStack_db8 = FUN_00436790();
+    local_8 = 1;
+    uStack_dbc = 0x4ac902;
+    local_d98 = uStack_db8;
+    local_d94 = uStack_db8;
+    FUN_004ab5b0();
+    local_8 = 0xffffffff;
+    uStack_db8 = 0x4ac914;
+    FUN_004a68c0();
+    uStack_db8 = 0x4ac91f;
+    uStack_db8 = FUN_004441f0();
+    local_8 = 2;
+    uStack_dbc = 0x4ac949;
+    local_da0 = uStack_db8;
+    local_d9c = uStack_db8;
+    FUN_004736a0();
+    local_8 = 0xffffffff;
+    uStack_db8 = 0x4ac95b;
+    CMiniDockFrameWnd::~CMiniDockFrameWnd(local_d10);
+    uStack_db8 = 1;
+    uStack_dbc = 0x4ac967;
+    FUN_00472b10();
+    uStack_db8 = 0x4ac972;
+    uStack_db8 = FUN_004718a0();
+    local_8 = 3;
+    uStack_dbc = 0x4ac99c;
+    local_da8 = uStack_db8;
+    local_da4 = uStack_db8;
+    FUN_00472740();
+    local_8 = 0xffffffff;
+    uStack_db8 = 0x4ac9ae;
+    FUN_00484b30();
+    if (DAT_00a117a8 != 0) {
+      uStack_db8 = 0x4ac9c5;
+      FUN_004ccc40();
+      uStack_db8 = 0x4ac9cf;
+      FUN_004ccc40();
+      uStack_db8 = 0x4ac9da;
+      uStack_db8 = FUN_00471820();
+      local_8 = 4;
+      uStack_dbc = 0x4aca04;
+      local_db0 = uStack_db8;
+      local_dac = uStack_db8;
+      FUN_00473710();
+      local_8 = 0xffffffff;
+      uStack_db8 = 0x4aca16;
+      FUN_0047a000();
+      local_d84 = auStack_dd0;
+      local_db4 = basic_string<>("BasicData/CommonEvent.dat");
+      FUN_0047ecc0();
+      FUN_004ccc40();
+      local_14 = 0;
+      while (iVar2 = FUN_004cfab0(), local_14 < iVar2) {
+        puVar5 = &DAT_007d0621;
+        iVar2 = FUN_004cfb40(local_14);
+        cVar1 = operator!=<>(iVar2 + 4,puVar5);
+        if (cVar1 != '\0') {
+          iVar2 = FUN_004cfb40(local_14);
+          piVar3 = (int *)FUN_004cc680(iVar2 + 4);
+          *piVar3 = local_14;
+        }
+        local_14 = local_14 + 1;
+      }
+      FUN_00436d00();
+    }
+    uStack_db8 = DAT_00a18a8c;
+    uStack_dbc = 0x4acac4;
+    FUN_0042f720();
+    if (param_2 == '\0') {
+      uStack_db8 = DAT_00a18a34;
+      uStack_dbc = 0;
+      uStack_dc0 = 0x4acae6;
+      FUN_0047c760();
+      uStack_db8 = DAT_00a18a38;
+      uStack_dbc = 1;
+      uStack_dc0 = 0x4acaf8;
+      FUN_0047c760();
+      uStack_db8 = 0x4acb02;
+      FUN_004b0b40();
+      uStack_db8 = 0;
+      uStack_dbc = 0x4acb17;
+      FUN_004822d0();
+      uStack_db8 = 0x4acb21;
+      FUN_00484bb0();
+      uStack_db8 = CONCAT31((int3)((uint)extraout_EDX_00 >> 8),param_1);
+      uStack_dbc = 0x4acb2f;
+      FUN_00448570();
+      uStack_db8 = 0x4acb39;
+      FUN_004adb50();
+      uStack_db8 = 1;
+      uStack_dbc = 0x4acb45;
+      FUN_0043cef0();
+      DAT_00a16440 = &DAT_00a18178;
+      uStack_db8 = 0x4acb59;
+      FUN_004445b0();
+      uStack_db8 = 1;
+      uStack_dbc = 0x4acb65;
+      FUN_004b0b80();
+      uStack_db8 = 0x4acb6f;
+      FUN_004acea0();
+      DAT_00a1809c = 1;
+      uStack_db8 = 0;
+      uStack_dbc = 0x4acb82;
+      uVar4 = FUN_004cd7c0();
+      *(undefined1 *)uVar4 = DAT_00a18ab4;
+      uStack_db8 = CONCAT31((int3)((ulonglong)uVar4 >> 0x28),DAT_00a18afc);
+      uStack_dbc = DAT_00a18af8;
+      uStack_dc0 = DAT_00a18af4;
+      uStack_dc4 = 0x4acba8;
+      FUN_00476220();
+    }
+    else {
+      uStack_db8 = CONCAT31((int3)((uint)extraout_EDX >> 8),param_1);
+      uStack_dbc = 0x4acbb9;
+      FUN_00448570();
+      uStack_db8 = 0x4acbca;
+      FUN_004adb50();
+      uStack_db8 = 0;
+      uStack_dbc = 0x4acbdd;
+      FUN_0043cef0();
+      uStack_db8 = 0x4acbee;
+      FUN_004445b0();
+      uStack_db8 = 0;
+      uStack_dbc = 0x4acc01;
+      FUN_004b0b80();
+      uStack_db8 = 0x4acc12;
+      FUN_004acea0();
+    }
+    uStack_db8 = 0x4acc1c;
+    FUN_004acc30();
+  }
+  ExceptionList = local_10;
+  return 1;
+}
+

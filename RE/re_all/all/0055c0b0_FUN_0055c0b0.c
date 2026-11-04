@@ -1,0 +1,23 @@
+
+undefined4 FUN_0055c0b0(undefined4 param_1,uint param_2)
+
+{
+  int *piVar1;
+  int iVar2;
+  undefined4 uVar3;
+  
+  iVar2 = FUN_0057e0e0();
+  if (iVar2 == 0) {
+    return 0xffffffff;
+  }
+  if ((((DAT_00cc4db0 == 0) || ((int)param_2 < 0)) || ((param_2 & 0x7c000000) != DAT_00cc4dd8)) ||
+     (((DAT_00cc4de0 <= (int)(param_2 & 0xffff) ||
+       (piVar1 = *(int **)(DAT_00cc4db4 + (param_2 & 0xffff) * 4), piVar1 == (int *)0x0)) ||
+      ((*piVar1 * 0x10000 != (param_2 & 0x3ff0000) || (piVar1[4] != 0)))))) {
+    return 0xffffffff;
+  }
+  iVar2 = FUN_0055bbc0(param_1,param_2);
+  uVar3 = FUN_00550e90(iVar2 * (uint)*(ushort *)(piVar1 + 0x480));
+  return uVar3;
+}
+

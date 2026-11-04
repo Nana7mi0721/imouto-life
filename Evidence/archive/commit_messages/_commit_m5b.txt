@@ -1,0 +1,7 @@
+M5-B: runtime debug overlay (F3)
+
+Add a text-only debug overlay to the interactive player: frame/fps/instruction
+and render counters, pointer and key state, the last action event, and an
+optional--debug-var watch list that accepts flat or magic slots. F3 toggles
+it; --debug starts it visible. The overlay shares the game glyph pass and
+font fallback, so it needs no new GUI dependency. Capture output stays pure.

@@ -1,0 +1,352 @@
+events in work/Data\BasicData/CommonEvent.dat
+   0     55 slot(s)     43 real    9 op(s)  ○アイテム増減
+   1     55 slot(s)     43 real    9 op(s)  ○武器増減
+   2     55 slot(s)     43 real    9 op(s)  ○防具増減
+   3     18 slot(s)     14 real    8 op(s)  ○お金の増減
+   4    158 slot(s)    134 real   13 op(s)  ○回復・ダメージ処理
+   5    104 slot(s)     88 real   12 op(s)  ○メンバーの増減
+   6      5 slot(s)      4 real    2 op(s)  ○主人公情報の変更
+   7      7 slot(s)      6 real    2 op(s)  ○能力値増減
+   8      3 slot(s)      2 real    2 op(s)  ○特殊技能増減
+   9    156 slot(s)    127 real   11 op(s)  ○状態異常変化
+  10     13 slot(s)     10 real    5 op(s)  ○経験値・Lv増減
+  11     22 slot(s)     19 real    6 op(s)  ○装備武器の変更
+  12     22 slot(s)     19 real    6 op(s)  ○装備防具の変更
+  13      7 slot(s)      6 real    2 op(s)  ○戦闘コマンドの変更
+  14     40 slot(s)     32 real    8 op(s)  ○各種メニュー呼出
+  15      2 slot(s)      1 real    1 op(s)  ○セーブ許可・禁止設定
+  16      1 slot(s)      0 real    0 op(s)  ---------------------------------
+  17      3 slot(s)      2 real    2 op(s)  ▲アイテム所持数取得
+  18      3 slot(s)      2 real    2 op(s)  ▲武器所持数取得
+  19      3 slot(s)      2 real    2 op(s)  ▲防具所持数取得
+  20      3 slot(s)      2 real    2 op(s)  ▲所持金取得
+  21     35 slot(s)     27 real    6 op(s)  ▲装備取得
+  22     25 slot(s)     20 real   10 op(s)  ▲メンバー情報取得[数値]
+  23      2 slot(s)      1 real    1 op(s)  ▲メンバー情報取得[文字列]
+  24     38 slot(s)     31 real   10 op(s)  ▲状態異常の取得
+  25     35 slot(s)     29 real   12 op(s)  ▲特殊技能の有無取得
+  26     74 slot(s)     62 real    7 op(s)  ▲戦闘コマンド有無の判定
+  27      1 slot(s)      0 real    0 op(s)  ---------------------------------
+  28      2 slot(s)      1 real    1 op(s)  ◆バトルの発生
+  29     33 slot(s)     27 real    8 op(s)  ◆[戦闘用]敵キャラの追加
+  30     14 slot(s)     11 real    7 op(s)  ◆[戦闘用]メッセージ表示
+  31    159 slot(s)    133 real   13 op(s)  ◆[戦闘用]ダメージ処理
+  32      1 slot(s)      0 real    0 op(s)  ---------------------------------
+  33      3 slot(s)      2 real    2 op(s)  【1】 お店 初期化
+  34     31 slot(s)     24 real    6 op(s)  【2】 お店 商品の追加
+  35      2 slot(s)      1 real    1 op(s)  【3】 お店処理 実行
+  36    242 slot(s)    208 real   13 op(s)  ◆立ち絵表示コモン
+  37     57 slot(s)     48 real   12 op(s)  ◇ランダムエンカウント処理 
+  38      1 slot(s)      0 real    0 op(s)  ---------------------------------
+  39      1 slot(s)      0 real    0 op(s)  ---------------------------------
+  40      1 slot(s)      0 real    0 op(s)  ---------------------------------
+  41      1 slot(s)      0 real    0 op(s)  
+  42     49 slot(s)     43 real   12 op(s)  オリジナルタイトル画面Ａ
+  43     56 slot(s)     46 real    9 op(s)  ┗オリジナルタイトル画面Ｂ
+  44      1 slot(s)      0 real    0 op(s)  ■■■■■■■■■■■■
+  45      1 slot(s)      0 real    0 op(s)  ■以下､変更･呼出不可■■
+  46      1 slot(s)      0 real    0 op(s)  ■----------------- ■■
+  47      1 slot(s)      0 real    0 op(s)  ■■【共通・内部処理】 ■■
+  48    218 slot(s)    199 real   15 op(s)  X[共]基本ｼｽﾃﾑ自動初期化
+  49    119 slot(s)     93 real    9 op(s)  X[共]システムSE再生
+  50     40 slot(s)     36 real    8 op(s)  X[共]アイテム増減
+  51     40 slot(s)     36 real    8 op(s)  X[共]武器増減
+  52     41 slot(s)     37 real    8 op(s)  X[共]防具増減
+  53     10 slot(s)      9 real    2 op(s)  X[共]所持金増減
+  54     28 slot(s)     25 real    7 op(s)  X[共]ｱｲﾃﾑ所持数取得
+  55     28 slot(s)     25 real    7 op(s)  X[共]武器所持数取得
+  56     28 slot(s)     25 real    7 op(s)  X[共]防具所持数取得
+  57      7 slot(s)      6 real    2 op(s)  X[共]所持金取得
+  58     76 slot(s)     64 real   10 op(s)  X[共]技能の習得・消去
+  59     48 slot(s)     40 real   10 op(s)  X[共]ウェイト(キー押しで中断)
+  60     28 slot(s)     23 real   10 op(s)  X[共]ウェイト2(キー押しで加速)
+  61     20 slot(s)     17 real    6 op(s)  X[共]キー押し加速ｳｪｲﾄ計算
+  62     28 slot(s)     25 real    5 op(s)  ■■【共通・画面処理】■■
+  63    230 slot(s)    211 real   17 op(s)  X[共]メッセージウィンドウ
+  64    865 slot(s)    766 real   18 op(s)  X[嫟]枩擻敞菽蕹昤夋張棟
+  65    243 slot(s)    214 real   14 op(s)  X[嫟]枩擻敞菽蕹慖戰幚峴
+  66     27 slot(s)     25 real    7 op(s)  X[嫟]枩擻敞菽蕹愢柧棑曄峏
+  67     42 slot(s)     38 real    7 op(s)  X[共]全体エフェクト実行
+  68      1 slot(s)      0 real    0 op(s)  ■■■■■■■■■■■■■
+  69      1 slot(s)      0 real    0 op(s)  ■■【移動時・内部処理】■■
+  70    686 slot(s)    582 real   21 op(s)  X[移]パラメータ増減
+  71     71 slot(s)     59 real    6 op(s)  X[移]パラメータ取得
+  72     30 slot(s)     25 real    6 op(s)  X[移]パラメータ変更(文字列)
+  73     28 slot(s)     23 real    5 op(s)  X[移]パラメータ取得(文字列)
+  74    206 slot(s)    184 real   14 op(s)  X[移]レベルアップ処理
+  75    339 slot(s)    291 real   16 op(s)  X[移]状態付与/消去
+  76    104 slot(s)     92 real    9 op(s)  X[移]状態更新
+  77    160 slot(s)    133 real    9 op(s)  X[移]戦闘コマンド変更
+  78     36 slot(s)     27 real    6 op(s)  X[移]戦闘コマンド取得
+  79     98 slot(s)     85 real   13 op(s)  X[移]パーティー情報計算
+  80     36 slot(s)     32 real   12 op(s)  X[移]パーティー画像再設定
+  81      1 slot(s)      0 real    0 op(s)  ■■【お店関連処理】■■
+  82      7 slot(s)      6 real    2 op(s)  X[移]お店商品初期化
+  83     64 slot(s)     59 real    6 op(s)  X[移]お店商品追加
+  84    257 slot(s)    215 real   17 op(s)  X[移]お店実行
+  85    523 slot(s)    483 real   16 op(s)  X[移]┣ お店　描画
+  86    303 slot(s)    261 real   17 op(s)  X[移]┗ お店内部情報更新
+  87     11 slot(s)      9 real    5 op(s)  ■■【メニュー画面処理】■■
+  88    308 slot(s)    286 real   15 op(s)  X[移]メニュー描画
+  89    122 slot(s)    106 real   10 op(s)  X┗[移]メニューコマンド算出
+  90    545 slot(s)    502 real   15 op(s)  X[移]キャラクター欄描画
+  91     66 slot(s)     63 real    8 op(s)  X[堏]番赘腊棑_嵗昗嶼弌
+  92     43 slot(s)     35 real    9 op(s)  X[移]キャラ欄_全員描画
+  93    752 slot(s)    684 real   16 op(s)  X[移]装備画面描画
+  94    589 slot(s)    532 real   17 op(s)  X[移]セーブ・ロード画面描画
+  95    750 slot(s)    682 real   14 op(s)  X[移]システム画面描画
+  96    163 slot(s)    147 real   14 op(s)  X[移]ﾀﾞﾒｰｼﾞ・回復ﾎﾟｯﾌﾟｱｯﾌﾟ
+  97     46 slot(s)     42 real    8 op(s)  X[移]指定ｷｬﾗHP/SP回復表示
+  98     34 slot(s)     32 real    8 op(s)  X[移]指定ｷｬﾗ状態付与表示
+  99    131 slot(s)    119 real   14 op(s)  X[移]残りアイテム数表示
+ 100    116 slot(s)    107 real   15 op(s)  X[移]ミニウィンドウ表示
+ 101     95 slot(s)     89 real   11 op(s)  X[移]メニュー時文章表示
+ 102    283 slot(s)    268 real   14 op(s)  X[移]上部ステータス描画
+ 103      1 slot(s)      0 real    0 op(s)  ■■【メニュー内部処理】■■
+ 104     29 slot(s)     22 real    6 op(s)  X[移]選択位置主人公ID設定
+ 105     30 slot(s)     23 real    6 op(s)  X[移]選択位置主人公ID取得
+ 106     47 slot(s)     35 real    9 op(s)  X[移]選択箇所装備コード取得
+ 107     47 slot(s)     35 real    9 op(s)  X[移]選択箇所装備コード設定
+ 108    118 slot(s)    100 real   13 op(s)  X[堏]番赘腊棑_慖戰幚峴
+ 109    403 slot(s)    343 real   20 op(s)  X[移]装備欄_選択実行
+ 110    212 slot(s)    184 real    9 op(s)  X[堏]辈醚堦棗嶼弌
+ 111    131 slot(s)    113 real   10 op(s)  X[移]技能一覧算出
+ 112    214 slot(s)    182 real   13 op(s)  X[移]装備一覧算出
+ 113     86 slot(s)     73 real    9 op(s)  X[移]装備装着・解除
+ 114    106 slot(s)     91 real    9 op(s)  X[堏]憰旛蔬滓袄嵎暘嶼弌
+ 115     30 slot(s)     24 real    6 op(s)  X[移]キーリピート設定
+ 116     25 slot(s)     21 real    7 op(s)  X[移]記憶キー位置取得
+ 117     18 slot(s)     15 real    5 op(s)  X[移]記憶キー位置設定
+ 118    284 slot(s)    244 real   22 op(s)  X[移]ｱｲﾃﾑ使用効果処理
+ 119    394 slot(s)    338 real   22 op(s)  X[移]技能使用効果処理
+ 120    130 slot(s)    108 real   11 op(s)  X[移]ｱｲﾃﾑ使用_消費処理
+ 121     70 slot(s)     61 real   10 op(s)  X[移]技能使用_消費処理
+ 122     44 slot(s)     42 real    7 op(s)  X[移]一時ｽﾃ計算<初期化>
+ 123    109 slot(s)     95 real   10 op(s)  X[移]一時ｽﾃ計算<装備補正>
+ 124     52 slot(s)     48 real   10 op(s)  X[移]一時ｽﾃ計算<状態補正>
+ 125      1 slot(s)      0 real    0 op(s)  ■■【メニュー実行処理】■■
+ 126    127 slot(s)    109 real   15 op(s)  X[移]歩行時_並列キー処理
+ 127    206 slot(s)    177 real   19 op(s)  X[移]メニュー起動
+ 128     72 slot(s)     66 real   13 op(s)  X┣[移]アイテム欄実行
+ 129    109 slot(s)     99 real   13 op(s)  X┣[移]技能欄実行
+ 130     71 slot(s)     64 real   13 op(s)  X┣[移]装備欄実行
+ 131    173 slot(s)    151 real   17 op(s)  X┣[移]セーブ欄実行
+ 132    573 slot(s)    475 real   19 op(s)  X┗[移]システム欄実行
+ 133      1 slot(s)      0 real    0 op(s)  ■■■■■■■■■■■■■
+ 134      1 slot(s)      0 real    0 op(s)  ■■【戦闘用・内部処理】■■
+ 135     79 slot(s)     67 real    8 op(s)  X[戦]パラメータ増減
+ 136     66 slot(s)     55 real    7 op(s)  X[戦]パラメータ取得
+ 137    327 slot(s)    276 real   17 op(s)  X[戦]状態付与/消去
+ 138     25 slot(s)     21 real    8 op(s)  X[愴]劘忬懺曄壔爷景嫁
+ 139    220 slot(s)    187 real   11 op(s)  X[戦]状態更新
+ 140      7 slot(s)      6 real    2 op(s)  X[戦]戦闘変数初期化
+ 141     13 slot(s)     11 real    8 op(s)  X[戦]ｽﾛｯﾄから主人公ID取得
+ 142     37 slot(s)     33 real   10 op(s)  X[戦]指定主人公更新処理
+ 143    256 slot(s)    228 real   12 op(s)  X[戦]主人公DB→戦闘DBコピー
+ 144    117 slot(s)    110 real   10 op(s)  X[戦]敵DB→戦闘DBコピー
+ 145     47 slot(s)     35 real    9 op(s)  X[戦]選択箇所装備コード取得
+ 146     46 slot(s)     44 real    7 op(s)  X[戦]一時ｽﾃ計算<初期化>
+ 147    104 slot(s)     95 real   12 op(s)  X[戦]一時ｽﾃ計算<装備補正>
+ 148    214 slot(s)    195 real   13 op(s)  X[戦]一時ｽﾃ計算<状態補正>
+ 149     46 slot(s)     43 real    9 op(s)  X[戦]戦闘DB→主人公DBへ戻す
+ 150     52 slot(s)     40 real    8 op(s)  X[戦]戦闘コマンド取得
+ 151    109 slot(s)     87 real   12 op(s)  X[戦]戦闘コマンド設定
+ 152    110 slot(s)     96 real   10 op(s)  X[愴]愴摤合菽迗陾棊Z弌
+ 153    214 slot(s)    186 real    9 op(s)  X[愴]辈醚堦棗嶼弌
+ 154    128 slot(s)    111 real   10 op(s)  X[戦]技能一覧算出
+ 155     50 slot(s)     41 real    8 op(s)  X[戦]記憶キー位置取得
+ 156     43 slot(s)     35 real    6 op(s)  X[戦]記憶キー位置設定
+ 157    175 slot(s)    157 real    8 op(s)  X[戦]コマンド登録
+ 158    140 slot(s)    119 real   13 op(s)  X[愴]辈醚慖戰幚峴
+ 159    324 slot(s)    277 real   17 op(s)  X[戦]技能選択実行
+ 160    571 slot(s)    481 real   16 op(s)  X[戦]AI実行
+ 161    101 slot(s)     86 real   15 op(s)  X[戦]味方対象選択実行
+ 162    104 slot(s)     93 real   13 op(s)  X[戦]敵対象選択実行
+ 163    416 slot(s)    351 real   16 op(s)  X[戦]敵･味方行動対象算出
+ 164    237 slot(s)    196 real   14 op(s)  X[戦]行動実行結果算出
+ 165   1122 slot(s)    948 real   18 op(s)  X[戦]┗単体処理
+ 166    133 slot(s)    113 real   12 op(s)  X[戦]　　┗ｶｳﾝﾀｰ判定
+ 167    169 slot(s)    143 real   13 op(s)  X[愴]冻堇皫缻s寢壥嶼弌
+ 168    143 slot(s)    124 real   14 op(s)  X[戦]変身判定
+ 169     86 slot(s)     70 real    7 op(s)  X[戦]ｱｲﾃﾑ使用_消費処理
+ 170     32 slot(s)     28 real    8 op(s)  X[戦]技能使用_消費処理
+ 171    128 slot(s)    115 real   10 op(s)  X[戦]敵撃破処理
+ 172    124 slot(s)    111 real   11 op(s)  X[戦]敵/味方・勝敗判定
+ 173     12 slot(s)     10 real    6 op(s)  X[戦]┗ 残りターン数表示
+ 174    121 slot(s)    107 real    9 op(s)  X[戦]味方欄_座標算出
+ 175     79 slot(s)     70 real    8 op(s)  X[戦]敵キャラ_座標算出
+ 176     50 slot(s)     42 real    8 op(s)  X[戦]基本状態取得
+ 177      1 slot(s)      0 real    0 op(s)  ■■【戦闘用・画面処理】■■
+ 178    627 slot(s)    569 real   17 op(s)  X[戦]味方欄_単体描画
+ 179    420 slot(s)    378 real   20 op(s)  X[戦]敵キャラ_単体描画
+ 180     44 slot(s)     41 real    7 op(s)  X[戦]バックグラウンド描画
+ 181    205 slot(s)    185 real   14 op(s)  X[戦]ﾀﾞﾒｰｼﾞ・回復ﾎﾟｯﾌﾟｱｯﾌﾟ
+ 182    113 slot(s)    104 real   12 op(s)  X[戦]戦闘メッセージ表示
+ 183    128 slot(s)    115 real   15 op(s)  X[戦]技能エフェクト描画
+ 184     95 slot(s)     89 real   11 op(s)  X[戦]警告文章表示
+ 185    294 slot(s)    277 real   14 op(s)  X[戦]上部ステータス描画
+ 186    430 slot(s)    379 real   15 op(s)  X[戦]戦利品獲得画面
+ 187      1 slot(s)      0 real    0 op(s)  ■■【戦闘用・実行処理】■■
+ 188    262 slot(s)    230 real   20 op(s)  X◆戦闘処理
+ 189     23 slot(s)     22 real    3 op(s)  X┣◆戦闘初期化
+ 190     83 slot(s)     69 real   10 op(s)  X┣◆戦闘キャラ配置
+ 191    150 slot(s)    132 real   13 op(s)  X┣◆行動内容のセット
+ 192    256 slot(s)    232 real   18 op(s)  X┃┣◆味方コマンド選択
+ 193     48 slot(s)     41 real    9 op(s)  X┃┗◆敵・味方AI計算
+ 194     64 slot(s)     58 real   11 op(s)  X┣◆行動順の計算
+ 195     53 slot(s)     48 real   11 op(s)  X┣◆１ターンの処理を実行
+ 196    430 slot(s)    365 real   15 op(s)  X┃┣◆行動可能判定
+ 197    218 slot(s)    184 real   17 op(s)  X┃┗◆１行動ループ
+ 198     25 slot(s)     22 real    9 op(s)  X┣◆ターン終了処理
+ 199     20 slot(s)     18 real    6 op(s)  X┣◆主人公ＤＢ復元
+ 200    127 slot(s)    115 real   13 op(s)  X┣◆戦利品獲得処理
+ 201     88 slot(s)     77 real   11 op(s)  X┗◆戦闘終了処理
+ 202      1 slot(s)      0 real    0 op(s)  ■■■■■■■■■■■■■
+ 203      6 slot(s)      5 real    1 op(s)  ○[変更可]戦闘開始時処理
+ 204      6 slot(s)      5 real    1 op(s)  ○[変更可]1ﾀｰﾝ開始時処理
+ 205      6 slot(s)      5 real    1 op(s)  ○[変更可]1ﾀｰﾝ終了時処理
+ 206      6 slot(s)      5 real    1 op(s)  ○[変更可]戦闘終了後処理
+ 207      1 slot(s)      0 real    0 op(s)  ■■■■■■■■■■■■■
+ 208    237 slot(s)    236 real    3 op(s)  亂婎杮冀醚Ver2.20愢柧彂亃
+ 209      1 slot(s)      0 real    0 op(s)  ■■■■■■■■■■■■■
+ 210      1 slot(s)      0 real    0 op(s)  ■以下､自由に使用可■■
+ 211      1 slot(s)      0 real    0 op(s)  ■■■■■■■■■■■■■
+ 212    169 slot(s)    158 real   16 op(s)  フキダシ会話文表示
+ 213     61 slot(s)     48 real    9 op(s)  アイコン表示長い
+ 214    166 slot(s)    137 real    9 op(s)  応援会話リコ
+ 215      2 slot(s)      1 real    1 op(s)  経過日数表示
+ 216     16 slot(s)     12 real    5 op(s)  性興味監視
+ 217      1 slot(s)      0 real    0 op(s)  
+ 218      1 slot(s)      0 real    0 op(s)  
+ 219    784 slot(s)    623 real    7 op(s)  ■事後処理中断
+ 220    783 slot(s)    622 real    6 op(s)  ■事後処理
+ 221     61 slot(s)     48 real    9 op(s)  [北]ぴぽや感情・状態ｱｲｺﾝ表示
+ 222     22 slot(s)     19 real    7 op(s)  画面拡大
+ 223    666 slot(s)    533 real   12 op(s)  ウィンドウ処理
+ 224    262 slot(s)    212 real   15 op(s)  フィールド上処理
+ 225     30 slot(s)     24 real    7 op(s)  深夜1吐息A
+ 226     30 slot(s)     24 real    7 op(s)  深夜1吐息B
+ 227    392 slot(s)    308 real   11 op(s)  深夜1表示
+ 228    842 slot(s)    630 real    8 op(s)  深夜1衣服
+ 229     54 slot(s)     45 real    9 op(s)  深夜1アニメ
+ 230    157 slot(s)    141 real   11 op(s)  深夜1
+ 231    959 slot(s)    794 real    8 op(s)  文字エフェクトみぎ
+ 232   1285 slot(s)   1061 real   11 op(s)  文字エフェクトひだり
+ 233    385 slot(s)    308 real   10 op(s)  文字エフェクトセリフ
+ 234    385 slot(s)    309 real    9 op(s)  文字エフェクト挿入
+ 235    169 slot(s)    140 real    8 op(s)  文字エフェクト例外
+ 236      1 slot(s)      0 real    0 op(s)  
+ 237    112 slot(s)     94 real    8 op(s)  Hステータス
+ 238     78 slot(s)     59 real    7 op(s)  ステータス
+ 239     55 slot(s)     52 real    7 op(s)  アイテムリスト
+ 240    257 slot(s)    187 real    8 op(s)  立ち絵表示
+ 241     54 slot(s)     45 real    9 op(s)  ┗立ち絵瞬き
+ 242     44 slot(s)     33 real    8 op(s)  ステータス表示
+ 243     68 slot(s)     52 real    9 op(s)  時刻表示
+ 244     28 slot(s)     22 real    8 op(s)  行動力変動
+ 245   1016 slot(s)    877 real   22 op(s)  夜コマンド
+ 246    288 slot(s)    242 real   20 op(s)  ┣コミュニケーション
+ 247   1210 slot(s)   1034 real   15 op(s)  ┣ＴＶ視聴
+ 248    450 slot(s)    377 real   13 op(s)  ┣ゲーム
+ 249   3912 slot(s)   3397 real   25 op(s)  ┣お風呂
+ 250    594 slot(s)    474 real   14 op(s)  ┣ネットショップ
+ 251   1250 slot(s)   1056 real   22 op(s)  ┗就寝
+ 252     15 slot(s)     13 real    8 op(s)  日中処理学生
+ 253     13 slot(s)     11 real    7 op(s)  日中処理フリーター
+ 254     33 slot(s)     28 real    8 op(s)  日中処理社会人
+ 255     20 slot(s)     16 real   10 op(s)  日中処理ダメ人間
+ 256    977 slot(s)    808 real   19 op(s)  日中メニュー
+ 257    325 slot(s)    267 real   17 op(s)  帰宅メニュー
+ 258   1726 slot(s)   1484 real   21 op(s)  晩ごはん処理
+ 259   2670 slot(s)   2287 real   22 op(s)  休日メニュー
+ 260    441 slot(s)    370 real   12 op(s)  ┗休日ゲーム
+ 261     52 slot(s)     45 real    8 op(s)  ×◆座標変数初期化
+ 262     48 slot(s)     38 real    7 op(s)  ▲先頭空白削除
+ 263     57 slot(s)     42 real    8 op(s)  ▲文字列数値判定
+ 264     50 slot(s)     49 real    2 op(s)  ○◆メッセージウィンドウ[ｲﾝﾀﾌｪｰｽ]
+ 265     44 slot(s)     38 real   12 op(s)  ○┣[ﾒｯｾｰｼﾞ]ウィンドウの変更
+ 266     32 slot(s)     27 real    7 op(s)  仜劙[爷景嫁]昞帵埵抲偺曄峏
+ 267     48 slot(s)     41 real   13 op(s)  ○┣[ﾒｯｾｰｼﾞ]顔グラフィックの変更
+ 268    144 slot(s)    122 real   15 op(s)  仜劙[爷景嫁]柤慜棑偺曄峏
+ 269     90 slot(s)     86 real   11 op(s)  亊劙[爷景嫁]弶婜壔丒愝掕
+ 270   2744 slot(s)   2321 real   25 op(s)  亊劙[爷景嫁]昞帵張棟
+ 271    157 slot(s)    134 real   15 op(s)  ×┗[ﾒｯｾｰｼﾞ]オートスキップ
+ 272      1 slot(s)      0 real    0 op(s)  
+ 273    668 slot(s)    494 real   13 op(s)  お風呂タイマー2
+ 274   1993 slot(s)   1503 real   14 op(s)  お風呂タイマー1
+ 275    192 slot(s)    153 real    7 op(s)  カットイン呼び出しお風呂
+ 276    107 slot(s)     80 real    8 op(s)  カットイン顔表示
+ 277    237 slot(s)    173 real   12 op(s)  ┣警戒度メータ
+ 278     54 slot(s)     45 real    9 op(s)  ┗カットイン顔瞬き
+ 279     96 slot(s)     70 real   12 op(s)  実行バー表記
+ 280     27 slot(s)     20 real    6 op(s)  カットイン呼び出し
+ 281   1119 slot(s)    865 real   15 op(s)  カットインタイマー右
+ 282    690 slot(s)    540 real   14 op(s)  カットインタイマー左
+ 283    880 slot(s)    680 real    7 op(s)  カットイン呼び出し夜
+ 284    358 slot(s)    296 real   15 op(s)  射精
+ 285     82 slot(s)     65 real    7 op(s)  文字エフェクトローター
+ 286     46 slot(s)     37 real    7 op(s)  文字エフェクト電マ
+ 287     58 slot(s)     46 real    7 op(s)  文字エフェクトバイブ
+ 288     46 slot(s)     37 real    7 op(s)  文字エフェクトアナルバイブ
+ 289      1 slot(s)      0 real    0 op(s)  
+ 290    127 slot(s)     98 real    8 op(s)  コマンドカットイン
+ 291      1 slot(s)      0 real    0 op(s)  
+ 292      1 slot(s)      0 real    0 op(s)  
+ 293    107 slot(s)     88 real    7 op(s)  カットイン呼び出しトイレ
+ 294    666 slot(s)    509 real   12 op(s)  トイレタイマー1
+ 295    816 slot(s)    734 real   20 op(s)  トイレ処理
+ 296    263 slot(s)    201 real   11 op(s)  ■プレイ傾向
+ 297     36 slot(s)     35 real    5 op(s)  スタッフロール
+ 298    192 slot(s)    175 real   14 op(s)  素股処理
+ 299    378 slot(s)    280 real   11 op(s)  素股タイマー
+ 300     73 slot(s)     59 real    7 op(s)  カットイン呼び出し素股
+ 301    471 slot(s)    433 real   13 op(s)  アルバム表示
+ 302    249 slot(s)    218 real   14 op(s)  クレジット
+ 303    905 slot(s)    783 real   18 op(s)  アルバム画面呼び出し
+ 304      1 slot(s)      0 real    0 op(s)  
+ 305      1 slot(s)      0 real    0 op(s)  
+ 306      1 slot(s)      0 real    0 op(s)  
+ 307      1 slot(s)      0 real    0 op(s)  
+ 308      1 slot(s)      0 real    0 op(s)  
+ 309      1 slot(s)      0 real    0 op(s)  
+ 310      1 slot(s)      0 real    0 op(s)  
+ 311      1 slot(s)      0 real    0 op(s)  
+ 312      1 slot(s)      0 real    0 op(s)  
+ 313      1 slot(s)      0 real    0 op(s)  
+ 314      1 slot(s)      0 real    0 op(s)  
+ 315      1 slot(s)      0 real    0 op(s)  
+ 316      1 slot(s)      0 real    0 op(s)  
+ 317      1 slot(s)      0 real    0 op(s)  
+ 318      1 slot(s)      0 real    0 op(s)  
+ 319      1 slot(s)      0 real    0 op(s)  
+ 320      1 slot(s)      0 real    0 op(s)  
+ 321      1 slot(s)      0 real    0 op(s)  
+ 322      1 slot(s)      0 real    0 op(s)  
+ 323      1 slot(s)      0 real    0 op(s)  
+ 324      1 slot(s)      0 real    0 op(s)  
+ 325      1 slot(s)      0 real    0 op(s)  
+ 326      1 slot(s)      0 real    0 op(s)  
+ 327      1 slot(s)      0 real    0 op(s)  
+ 328      1 slot(s)      0 real    0 op(s)  
+ 329      1 slot(s)      0 real    0 op(s)  
+ 330      1 slot(s)      0 real    0 op(s)  
+ 331      1 slot(s)      0 real    0 op(s)  
+ 332      1 slot(s)      0 real    0 op(s)  
+ 333      1 slot(s)      0 real    0 op(s)  
+ 334      1 slot(s)      0 real    0 op(s)  
+ 335      1 slot(s)      0 real    0 op(s)  
+ 336      1 slot(s)      0 real    0 op(s)  
+ 337      1 slot(s)      0 real    0 op(s)  
+ 338      1 slot(s)      0 real    0 op(s)  
+ 339      1 slot(s)      0 real    0 op(s)  
+ 340      1 slot(s)      0 real    0 op(s)  
+ 341      1 slot(s)      0 real    0 op(s)  
+ 342      1 slot(s)      0 real    0 op(s)  
+ 343      1 slot(s)      0 real    0 op(s)  
+ 344      1 slot(s)      0 real    0 op(s)  
+ 345      1 slot(s)      0 real    0 op(s)  
+ 346      1 slot(s)      0 real    0 op(s)  
+ 347      1 slot(s)      0 real    0 op(s)  
+ 348      1 slot(s)      0 real    0 op(s)  
+ 349      1 slot(s)      0 real    0 op(s)  
+350 event(s) listed

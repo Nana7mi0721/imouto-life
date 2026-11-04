@@ -1,0 +1,30 @@
+M7: C-task static RE with Ghidra 12.2 - toolchain, decompilation map, 12-item findings
+
+Toolchain (installed under D:/Program per user policy, not in repo):
+- Ghidra 12.2 PUBLIC + Temurin JDK 25 (Ghidra 12.2 rejects JDK 21)
+- tools/re/ghidra/: DumpByAnchor/DumpAll Java scripts + run_ghidra.sh + README
+  (args passed via UTF-8 argsfile: cmd eats % and !; project name "ImoutoLife")
+- tools/env.sh: GHIDRA_INSTALL_DIR / GHIDRA_JAVA_HOME / JAVA21_HOME
+
+Docs:
+- docs/RE_GAME_EXE.md: toolchain pitfalls, import recipe (238 s, 10,589 funcs),
+  function map, formulas read from the decompiler, link to reports
+- docs/re/: RUNTIME_CONSTANTS.md, TEXT_METRICS.md, LAYOUT_METRICS.md, TRANSITION.md
+- docs/ENGINE_BEHAVIOR.md 3.2: 12-item status table + suggested (not applied) fixes
+- docs/HANDOFF_M0.md: progress entry
+
+Key findings (A-level unless noted):
+- coordinate_scale = integer idiv (Sys116/32, Sys117/24); message.rs float division diverges
+- default_origin trunc(rateY/10) confirmed (CE63: Sys2 = 17*rateY; Sys2 += rateY/10)
+- line pitch = max_font*scale + trunc(spacing*min(base_font,32)/32)*scale (this game: +3, not +6)
+- typewriter = water level + (60/fps*speed)/30 per frame => speed/2 chars/s; no preroll
+- no kinsoku (zero punctuation constants across 4,375 functions)
+- choice panel: opacity/inset 26 px, anchor from object fields, no off-screen fallback
+- transition = one-way cross-dissolve, linear t, no easing; mask is a single-axis
+  linear gradient (peak 250/251); tint before fade, two separate composites
+- frame limiter 16.6 ms (~60 fps, software, no vsync); window client = data screen
+  1024x576 x1.0 centered; Game.ini has no size keys
+
+Tests: cargo test -q --workspace -- the only failure is wolf-save
+every_save_parses_with_the_measured_shape, caused by an external save file being
+changed (386,830 vs 366,146 bytes); unrelated to this change.

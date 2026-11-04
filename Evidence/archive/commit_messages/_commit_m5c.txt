@@ -1,0 +1,18 @@
+M5-C: play statistics and milestone overlay
+
+Add a read-only PlayStats snapshot and a conservative local milestone list
+built from the same authoritative variables CE296 uses (days/trust/interest/
+sensitivity/mood/alert/interactions and the completion flags). Render it with
+F2 in the play window (--stats to start visible), stacked under the F3 debug
+overlay when both are open. No new save data and no external dependency.
+
+- crates/wolf-game/src/achievements.rs: PlayStats::from_vars, Milestone,
+  milestones(); 3 unit tests.
+- wolf-game/src/game.rs: Game::play_stats and Game::milestones.
+- wolf-cli/src/play.rs: stats_lines, F2 toggle, overlay row stacking; test.
+- wolf-cli/src/main.rs: --stats and help text.
+- docs: M5_BEYOND M5-C section, README status, HANDOFF progress block.
+
+Validation: cargo fmt --all --check; cargo test -q --workspace (88 binaries,
+0 failed); WOLF_DATA_ROOT=work/Data cargo test -q --workspace (88 binaries,
+0 failed); verify PASS 64 / 1 SKIP.

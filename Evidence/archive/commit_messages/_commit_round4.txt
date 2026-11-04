@@ -1,0 +1,9 @@
+M4: text layout cache, night interaction e2e, SE stop semantics
+
+- wolf-game: cache text picture quads by fingerprint/transform/font generation;
+  fix PictureVars fallback to read bank-local slots; add m4_text_cache tests.
+- wolf-game: add m4_night_gaps e2e tests for aversion/sensitivity gates and the
+  night-event hotspot choice path.
+- wolf-vm/wolf-audio: document and test opcode 140 SE stop-all semantics; add
+  mixer contract tests; remove the outdated single-SE limitation note.
+- docs: record M4 perf cache design and final M4 verification matrix.

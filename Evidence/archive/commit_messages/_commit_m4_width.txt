@@ -1,0 +1,6 @@
+M4: reuse text layout widths in text quads
+
+Run::width now carries the advance computed while laying out each chunk,
+so Game::text_quads no longer measures every run a second time. Visual
+output is byte-identical on the night-menu capture; B text_quads improves
+about 11% in a stable re-run. Adds a unit test pinning width to measure.

@@ -1,0 +1,8 @@
+M4: honour op150 relative picture coordinates (status panel)
+
+- wolf-vm: PictureCmd gains relative, decoded from op150 head bit 0x10000
+- wolf-game: Draw/Set/Move offset from the current picture position when set
+- capture --map ... --event N starts a map event after skipping autorun pages
+- status panel screenshot now lands at x=0 with labels beside the panel
+- update old 305 expectations in m3_hud_buttons/m3_map_click, add CE238 test
+- docs: M4_HUD/M4_PARITY/HANDOFF progress

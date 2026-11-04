@@ -1,0 +1,4 @@
+style: cargo fmt --all
+
+Whitespace-only rustfmt pass over the workspace before the M4 settings-screen
+commit; no behaviour changes.

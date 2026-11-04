@@ -1,0 +1,264 @@
+{
+ "source_images": {
+  "89EF6522": {
+   "size": [
+    1532,
+    862
+   ],
+   "scale": 1.4961,
+   "content": "室内场景，底部 3 行消息窗 + 顶部 4 选项选择面板"
+  },
+  "EE3763D0": {
+   "size": [
+    1537,
+    865
+   ],
+   "scale": 1.501,
+   "content": "状态面板 + 5 选项行动菜单"
+  }
+ },
+ "native_scale": {
+  "89EF6522": 1.4961,
+  "EE3763D0": 1.501
+ },
+ "font": {
+  "advance_screen": 30.1,
+  "advance_native": 20.12,
+  "advance_native_EE": 20.08,
+  "font_px_est": 20,
+  "evidence": "89EF 消息第3行 7 字 ink 跨度 211px→30.14px/字；选择面板第3行 7 个字形起点 655,684,714,744,775,805,835→30.0px/字"
+ },
+ "message_window_89EF6522": {
+  "bbox_probe": {
+   "x0": 360,
+   "x1": 1220,
+   "y0": 735,
+   "y1": 845,
+   "threshold": 170,
+   "bg": 25
+  },
+  "ink_bands": [
+   [
+    741,
+    769
+   ],
+   [
+    776,
+    803
+   ],
+   [
+    810,
+    837
+   ]
+  ],
+  "subpixel_top": [
+   742.64,
+   777.44,
+   811.37
+  ],
+  "subpixel_bot": [
+   767.37,
+   801.9,
+   836.16
+  ],
+  "pitch_screen": {
+   "top_lsq": 34.364,
+   "centroid_lsq": 34.194,
+   "xcorr": 34.543,
+   "xcorr_alt": 34.572
+  },
+  "pitch_native": {
+   "top_lsq": 22.97,
+   "centroid_lsq": 22.86,
+   "xcorr": 23.09
+  },
+  "pitch_adopted_native": 23.0,
+  "ink_height_screen": [
+   24.72,
+   24.45,
+   24.79
+  ]
+ },
+ "choice_panel_89EF6522": {
+  "bbox_probe": {
+   "x0": 650,
+   "x1": 870,
+   "y0": 350,
+   "y1": 512,
+   "threshold": 185,
+   "bg": 60
+  },
+  "rows": 4,
+  "row_ink_bands": [
+   [
+    359,
+    386
+   ],
+   [
+    400,
+    426
+   ],
+   [
+    440,
+    466
+   ],
+   [
+    480,
+    507
+   ]
+  ],
+  "row_subpixel_top": [
+   359.82,
+   400.76,
+   440.8,
+   482.02
+  ],
+  "row_ink_x": [
+   [
+    654,
+    802
+   ],
+   [
+    655,
+    801
+   ],
+   [
+    655,
+    861
+   ],
+   [
+    654,
+    798
+   ]
+  ],
+  "pitch_screen": {
+   "top_lsq": 40.665,
+   "centroid_lsq": 40.3
+  },
+  "pitch_native": {
+   "top_lsq": 27.18,
+   "centroid_lsq": 26.94
+  },
+  "border_brightline": {
+   "L": 641.95,
+   "R": 875.55,
+   "T": 345.95,
+   "B": 516.55
+  },
+  "W_screen": 233.6,
+  "H_screen": 170.6,
+  "W_native": 156.1,
+  "H_native": 114.0,
+  "widest_ink_screen": 207,
+  "widest_ink_native": 138.4,
+  "W_minus_T_native": 17.8,
+  "inset_borderline_to_first_ink_screen": 12.05,
+  "inset_borderline_to_first_ink_native": 8.05,
+  "bar": {
+   "top": 355.0,
+   "bot": 385.0,
+   "left": 651.0,
+   "right": 867.0,
+   "h_screen": 30.0,
+   "h_native": 20.05
+  }
+ },
+ "choice_panel_EE3763D0": {
+  "bbox_probe": {
+   "x0": 648,
+   "x1": 880,
+   "y0": 350,
+   "y1": 555,
+   "threshold": 185,
+   "bg": 59
+  },
+  "rows": 5,
+  "row_ink_bands": [
+   [
+    361,
+    388
+   ],
+   [
+    401,
+    428
+   ],
+   [
+    442,
+    469
+   ],
+   [
+    482,
+    509
+   ],
+   [
+    523,
+    550
+   ]
+  ],
+  "row_subpixel_top": [
+   362.43,
+   402.7,
+   443.64,
+   483.3,
+   523.82
+  ],
+  "row_ink_x": [
+   [
+    653,
+    771
+   ],
+   [
+    654,
+    711
+   ],
+   [
+    654,
+    710
+   ],
+   [
+    655,
+    770
+   ],
+   [
+    654,
+    861
+   ]
+  ],
+  "pitch_screen": {
+   "top_lsq": 40.338,
+   "centroid_lsq": 40.458
+  },
+  "pitch_native": {
+   "top_lsq": 26.87,
+   "centroid_lsq": 26.95
+  },
+  "border_brightline": {
+   "L": 641.0,
+   "R": 884.0,
+   "T": 348.0,
+   "B": 559.0
+  },
+  "W_screen": 243.0,
+  "H_screen": 211.0,
+  "W_native": 161.9,
+  "H_native": 140.6,
+  "widest_ink_screen": 208,
+  "widest_ink_native": 138.6,
+  "W_minus_T_native": 23.3,
+  "inset_borderline_to_first_ink_native": 7.99,
+  "bar": {
+   "top": 438.0,
+   "bot": 468.0,
+   "h_screen": 30.0,
+   "h_native": 19.99
+  }
+ },
+ "height_model": {
+  "formula": "H_native = (n-1)*pitch + 33.0",
+  "check": {
+   "89EF_n4": 81.2,
+   "EE_n5": 107.7
+  }
+ },
+ "verdict": "hypothesis A: DAT_0084b264 = 16 (line spacing extra = trunc(cfg*16/32) = 3 for text cfg=6, 7 for choice cfg=14)"
+}

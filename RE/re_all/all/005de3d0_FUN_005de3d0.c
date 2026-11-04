@@ -1,0 +1,27 @@
+
+undefined4 FUN_005de3d0(void)
+
+{
+  if (DAT_00f3a190 != 0) {
+    FUN_005d1f40(DAT_00f3a190);
+    DAT_00f3a190 = 0;
+  }
+  if (DAT_00f3a18c != 0) {
+    FUN_005d1f20(DAT_00f3a18c);
+    DAT_00f3a18c = 0;
+  }
+  if (DAT_00f3a188 != 0) {
+    FUN_005d1ee0(DAT_00f3a188);
+    DAT_00f3a188 = 0;
+  }
+  if (DAT_00f3a1a4 != 0) {
+    FUN_005d1f20(DAT_00f3a1a4);
+    DAT_00f3a1a4 = 0;
+  }
+  if (DAT_00f3a1a0 != 0) {
+    FUN_005d1ee0(DAT_00f3a1a0);
+    DAT_00f3a1a0 = 0;
+  }
+  return 0;
+}
+

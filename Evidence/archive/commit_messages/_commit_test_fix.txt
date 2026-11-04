@@ -1,0 +1,6 @@
+tests: isolate settings scratch dirs for parallel runs
+
+m3_settings_persist had two tests sharing target/test-scratch/m3_settings.
+Cargo runs them in parallel, so one test's remove_dir_all could delete the
+other's System.sav or make it read the wrong file. Give each case its own
+subdirectory; the test bodies are otherwise unchanged.

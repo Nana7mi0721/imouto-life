@@ -1,0 +1,1218 @@
+\\>X[戦]敵･味方行動対象算出：エラー\n　全体を対象とした技能の対象判定がおかしいです。\n　論理的なミスがあるか、改造によって\n　正常な処理が行われていない可能性があります。	\\>X[Battle] Enemy/Ally action target calculation: error\n The target check for an all-target skill is wrong.\n There may be a logic error, or a mod may be\n preventing normal processing.
+\\>X[戦]敵･味方行動対象算出：エラー\n　単体を対象とした技能の対象判定がおかしいです。\n　論理的なミスがあるか、改造によって\n　正常な処理が行われていない可能性があります。	\\>X[Battle] Enemy/Ally action target calculation: error\n The target check for a single-target skill is wrong.\n There may be a logic error, or a mod may be\n preventing normal processing.
+\\>「X[戦]上部ステータス描画」コモン　エラー\n 戦闘スロットが-1以下では使用できません。	\\>'X[Battle] Upper status draw' common　error\n The battle slot cannot be used at -1 or below.
+\\>「X[移]上部ステータス描画」コモン　エラー\n 主人公IDが-1以下では使用できません。	\\>'X[Move] Upper status draw' common　error\n The protagonist ID cannot be used at -1 or below.
+\\>「X[移]味方欄_座標算出」：エラー\n　０番未満は指定できません	\\>'X[Move] Ally column_ coord calc': error\n A value below 0 cannot be specified.
+\\>「X[移]敵キャラ_座標算出」：エラー\n10番未満は指定できません	\\>'X[Move] Enemy char_ coord calc': error\n A value below 10 cannot be specified.
+\\>「X[移]ｱｲﾃﾑ使用効果処理」エラー\n「-1」番以下のアイテムコードが指定されました。	\\>'X[Move] Item use effect processing' error\n An item code at or below '-1' was specified.
+\\>コモン159「X[戦]技能選択実行」：エラー\n　アイテムコードが1万未満です。	\\>Common 159 'X[Battle] Skill selection execution': error\n The item code is under 10,000.
+\\E<C>BADEND\n～再见了哥哥～	\\E<C>BADEND\n~Goodbye, big brother~
+\\E<C>BADEND\n～妹妹爆发～	\\E<C>BADEND\n~Sister's outburst~
+\\E<C>BADEND\n～熊头～	\\E<C>BADEND\n~Bear head~
+\\E<C>BADEND\n～着床～	\\E<C>BADEND\n~Implantation~
+\\E<C>HAPPYEND\n～之后也会继续妹生活～	\\E<C>HAPPYEND\n~Sister life continues after this~
+\\E<C>HAPPYEND\n～兄妹长久～	\\E<C>HAPPYEND\n~Siblings forever~
+\\E<C>HAPPY？END\n～啊啊内裤啊永远～	\\E<C>HAPPY?END\n~Ah, panties forever~
+\\EAXARA Lake City，是国内最高级的复合型商业设施。\n有数家专卖店和上流的商店交替排列着。	\\EAXARA Lake City is the finest mixed-use commercial complex in the country.\nSeveral specialty shops and upscale stores alternate along it.
+\\E\\f[24]哥哥这个笨蛋！真是的…太讨厌了！！！	\\E\\f[24]You idiot, big brother! Geez... I really hate this!!!
+\\E\\f[32]呼欸——————————————嗯！！！！！	\\E\\f[32]Hweeeee——————————n!!!!!
+\\E\\f[32]太差劲了！！！！！	\\E\\f[32]So lame!!!!!
+\\E\\f[32]笨蛋———————————————！！！！！	\\E\\f[32]Idiooot————————!!!
+\\E——刚刚察觉到的瞬间，世界被光所包裹了。	\\E——The moment I noticed it, the world was wrapped in light.
+\\E——就这样，世界毁灭了。	\\E——Just like that, the world ended.
+\\E……	\\E……
+\\E………	\\E………
+\\E…………	\\E…………
+\\E……………	\\E……………
+\\E………………	\\E………………
+\\E……………………	\\E……………………
+\\E…………………………………………	\\E…………………………………………
+\\E………………啊！	\\E………………Ah!
+\\E……………嘎吱…	\\E……………creak…
+\\E…………呼唔。	\\E…………hff.
+\\E…………哥哥，还没好啊？	\\E…………big brother, are you done yet?
+\\E…………唔！	\\E…………mm!
+\\E…………嗯……	\\E…………mmm…
+\\E…………嗯……咽。	\\E…………mm… gulp.
+\\E…………嗯…啾…	\\E…………mm… smack…
+\\E………呼欸…	\\E………hweh…
+\\E………哈啊…哈啊…	\\E………haa… haa…
+\\E………嗯…味道很下流呢…	\\E………mm… it tastes so dirty…
+\\E………嗯咕……啾…	\\E………mnn… smack…
+\\E……。	\\E……。
+\\E……不小心做了…	\\E……I did it by accident…
+\\E……不小心做了。	\\E……I did it by accident.
+\\E……不过为什么是死库水啊…？	\\E……But why a school swimsuit…?
+\\E……不，但是。	\\E……No, but.
+\\E……为了不暴露还是放回去吧。	\\E……Better put it back so it isn't found.
+\\E……呼——	\\E……whew—
+\\E……呼……遇到了很厉害的场面啊…	\\E……whew… I came across quite a scene…
+\\E……呼。	\\E……whew.
+\\E……呼呼…	\\E……hehe…
+\\E……呼欸……呼欸…………	\\E……hweh… hweh……
+\\E……咔嚓	\\E……click
+\\E……咳咳…咳咳！	\\E……cough… cough!
+\\E……咽口水。	\\E……swallow.
+\\E……咿啊…哎，怎么了…？	\\E……eek… hey, what's wrong…?
+\\E……哇阿…白白的东西…射了好多……呼呼…	\\E……wow… the white stuff… came out a lot…… hehe…
+\\E……哎呀…？\n不…什么事都没有哦。	\\E……oh…?\nNo… it's nothing.
+\\E……哎嘿嘿，在做下去的话会晕的呢。\n出去吧，哥哥。	\\E……hehehe, if we keep going I'll faint.\nLet's get out, big brother.
+\\E……哥、哥哥…	\\E……b-big brother…
+\\E……哥、哥哥………但是…	\\E……b-big brother……… but…
+\\E……哥哥…	\\E……big brother…
+\\E……哥哥…不行哦…？	\\E……big brother… not here, okay…?
+\\E……哥哥…要射了吗？	\\E……big brother… are you going to finish?
+\\E……哥哥的这里…\n在说…还想射出更多呢…	\\E……big brother, this place…\nis saying… it wants to let out more…
+\\E……哥哥，为我舔干净吧？	\\E……big brother, will you lick me clean?
+\\E……哥哥，住手。	\\E……big brother, stop.
+\\E……唔…那就这样结束。	\\E……mm… then let's end it here.
+\\E……啊……\n射出来了……哥哥的…热热的…	\\E……ah……\nit came out…… big brother's… warm…
+\\E……啊，哥哥………	\\E……ah, big brother………
+\\E……啊，好羞耻…	\\E……ah, so embarrassing…
+\\E……啊，情人节…是吗。	\\E……ah, Valentine's… is it.
+\\E……嗯——觉得做了坏事。	\\E……mmm—I feel like I did something bad.
+\\E……嗯…	\\E……mm…
+\\E……嗯………	\\E……mm………
+\\E……嗯……嗯嗯………	\\E……mm…… mmmm………
+\\E……嗯…嗯咕……\n舒服吗？哥哥。	\\E……mm… mnn…\nDoes it feel good? Big brother.
+\\E……嗯…多谢招待。	\\E……mm… thanks for the meal.
+\\E……嗯…（咽）……嗯……（咽下）…	\\E……mm… (gulp)…… mm…… (swallow)…
+\\E……嗯嗯！？	\\E……mmh!?
+\\E……嘿咻。	\\E……heave-ho.
+\\E……噗啊。\n哎嘿，喝下去了。	\\E……pwah.\nHehe, I swallowed it.
+\\E……在……自慰呢…	\\E……in… the middle of… taking care of myself…
+\\E……在被发现之前回房间吧。	\\E……Let's go back to my room before I'm found.
+\\E……在被发现之前逃走吧。	\\E……Let's run away before I'm found.
+\\E……在这之上的事还是收手吧…	\\E……Let's stop before going any further…
+\\E……好了，结束之后要怎么办呢？哥哥。	\\E……Okay, so what do we do after we're done? Big brother.
+\\E……好的，妹妹好像没有注意到呢……	\\E……Good, it seems my sister didn't notice……
+\\E……好，正在悄悄接近在……	\\E……Okay, I'm quietly getting closer and…
+\\E……好，那就进去吧！	\\E……Okay, let's go in!
+\\E……射了很多呢…	\\E……a lot came out…
+\\E……射的比平时还多…	\\E……more than usual came out…
+\\E……当然是锁着门的啊。	\\E……Of course the door was locked.
+\\E……忍很久了呢…抱歉啊。\n…我会…好好帮你喝下去的。	\\E……I held it in for a long time… sorry.\n…I'll… drink it all properly for you.
+\\E……总觉得躁动不安呢。	\\E……I somehow feel restless.
+\\E……暴露了。	\\E……I got caught.
+\\E……欸…	\\E……eek…
+\\E……注意别被发现…	\\E……Be careful not to be found…
+\\E……用一下……肉棒，可以吧……	\\E……can I use… your thing… for a bit……
+\\E……真是的…哥哥真是色狼啊…	\\E……geez… big brother really is a pervert…
+\\E……着这种地方射的话…很浪费…的吧？	\\E……if you let it out in a place like this… it's a waste… right?
+\\E……能有这种相遇…要向妹妹…表示感谢。	\\E……to have a meeting like this… I should… thank my sister.
+\\E……虽然就一起生活的日子来说\n妹妹出生到现在几乎一直都在一起的…	\\E……though as far as our life together goes,\nmy sister and I have been together almost since she was born…
+\\E……要进到厕所里面吗？	\\E……Are you going into the toilet?
+\\E……让哥哥也…轻松一下吧…	\\E……Let big brother… relax too…
+\\E……说起来我好像说过这样的话呢。	\\E……Now that I think about it, I feel like I said something like that.
+\\E……轻手轻脚…	\\E……quietly…
+\\E……这是一生的宝藏啊。	\\E……This is a lifelong treasure.
+\\E……这是！	\\E……This is!
+\\E……那么，从这个秘密的小孔里…	\\E……Now then, through this secret little hole…
+\\E……那么，要怎么做…？	\\E……Now then, what should we do…?
+\\E……！……哥、哥哥……	\\E……!… b-big brother……
+\\E…一定，以后也是…	\\E…For sure, from now on too…
+\\E…不许任性哦。\n再到了季节的话再去吧。	\\E…Don't be selfish.\nWe'll go again when the season comes.
+\\E…不，我决定去宿舍住了。	\\E…No, I've decided to live in the dorm.
+\\E…不，虽然怀孕本身是妹妹的极大的误会。\n但因为也是因为这次骚动的缘故关系才向父母公开。	\\E…No, the pregnancy itself was a huge misunderstanding on my sister's part.\nBut because of this whole commotion, we ended up telling our parents.
+\\E…两个人一起静静度过了圣诞节。	\\E…The two of us spent Christmas quietly together.
+\\E…两个人的旅行…真不错啊。	\\E…A trip for two… sounds nice.
+\\E…两人一起的话会有些狭窄呢。	\\E…It'd be a bit cramped with just the two of us.
+\\E…为什么是学校泳装？	\\E…Why a school swimsuit?
+\\E…之后他获得了新的肉体回去了！	\\E…After that, he got a new body and went back!
+\\E…也、也是呢…	\\E…Y-yeah, that's true…
+\\E…今天吃泡面就好了吧。	\\E…Instant noodles are fine for today, I guess.
+\\E…今天射在里面了呢…偷偷加一点吧…	\\E…It went inside today… I'll secretly add a little…
+\\E…今天就由哥哥来泡你坐下吧。	\\E…Today let big brother brew it, so sit down.
+\\E…今天就由哥哥来泡你坐下吧。\n…喝果汁可以吗？	\\E…Today let big brother brew it, so sit down.\n…Is juice okay?
+\\E…今天就由我来泡你坐着吧。	\\E…Today I'll brew it, so sit down.
+\\E…今天已经很晚了就算了吧。	\\E…It's already late today, so let's skip it.
+\\E…今天已经很累了呢。	\\E…I'm already tired today.
+\\E…今天是打工的日子来着。	\\E…Today was a work day.
+\\E…今天状态不好…请个假吧…	\\E…I'm not feeling well today… I'll take the day off…
+\\E…今天还是吃便当吧。	\\E…Let's just have a bento today.
+\\E…今年也请多多指教了。	\\E…Please treat us well this year too.
+\\E…从早上开始…就H了呢。	\\E…Since morning… you're already in the mood.
+\\E…会怀上……小宝宝的…\n我已经可以怀孕了哦…？哥哥…	\\E…I might get pregnant… with a baby…\nI can get pregnant now, you know…? Big brother…
+\\E…但是为什么是旧的死库水啊…	\\E…But why an old school swimsuit…
+\\E…但是哥哥这不是熊头吗！！	\\E…But big brother, isn't that a bear head!!
+\\E…但是忍耐的哥哥如果因为偷窥被抓到的话…	\\E…But if big brother, who's been holding back, gets caught peeping…
+\\E…但是赏花，就是很快啊…	\\E…But flower viewing really goes by fast…
+\\E…但是那毫无意义！	\\E…But that's meaningless!
+\\E…你瞧…看得见吗？能看得见吧？	\\E…Look… can you see it? You can see it, right?
+\\E…做吧？	\\E…Shall we do it?
+\\E…做好多…舒服的事吧…	\\E…Let's do lots of… nice things…
+\\E…做好的话我会放在冰箱里…\n到当天为止都不可以偷吃哦，哥哥。	\\E…When it's done I'll put it in the fridge…\nDon't sneak a bite until the day, okay, big brother.
+\\E…其实想当作秘密的…\n但是住在一起的话很难得，啊哈哈。	\\E…Actually I wanted to keep it a secret…\nbut living together makes it hard, ahaha.
+\\E…再怎么说今天也够累了呢。	\\E…Anyway, today was tiring enough.
+\\E…再睡一会儿吧…	\\E…Let's sleep a little more…
+\\E…又留下一个美好的回忆了呢。	\\E…We made another nice memory.
+\\E…可以做这种事的，只有哥哥哦…\n可以用我的身体好好地舒服起来哦…	\\E…The only one who can do this kind of thing is you, big brother…\nYou can use my body and feel really good…
+\\E…可以哦…就这样变得更舒服然后射出来吧…	\\E…It's okay… just feel better like that and let it out…
+\\E…可恶这个是…地雷游戏啊！！！	\\E…Darn it, this is… a landmine game!!!
+\\E…吃些可以回复精力的东西吧。	\\E…Let's eat something that restores energy.
+\\E…呐…哥哥……怎么办啊？\n怎么办才好呢…？我…	\\E…Hey… big brother…… what should we do?\nWhat should I do…? I…
+\\E…呐，哥哥的这里。\n勃起的很厉害哦？	\\E…Hey, big brother, this place.\nIt's really standing up, you know?
+\\E…呜呜——啊…	\\E…mmhh—ah…
+\\E…呼…清爽了呢。	\\E…whew… I feel refreshed.
+\\E…呼…看来已经结束了呢…\n…不快点撤退的话说不定会被发现呢。	\\E…whew… seems it's already over…\n…If we don't retreat quickly we might get found.
+\\E…呼。	\\E…whew.
+\\E…呼呼，变得干净了呢。	\\E…hehe, it got clean.
+\\E…呼姆？舒服吗？……噗。\n怎么样？…妹妹的嘴舒服吗？哥哥。	\\E…mm? Does it feel good?…… pff.\nHow is it?… Does your sister's mouth feel good, big brother?
+\\E…咽口水。	\\E…swallow.
+\\E…哇，哇，已经回来了吗！？	\\E…wa, wa, you're already back!?
+\\E…哇，哥哥你瞧，是雪。	\\E…wow, big brother look, it's snow.
+\\E…哈—…吃饱啦—！肚子满满地呢。	\\E…haa—…I'm full—! My belly is stuffed.
+\\E…哎…哥哥…………	\\E…hey… big brother…………
+\\E…哎，刚刚是不是朝这边看了……？	\\E…hey, did you just look this way……?
+\\E…哎？…哥、哥哥……	\\E…huh?… b-big brother……
+\\E…哥哥……你…射在里面了…？	\\E…big brother…… did you… finish inside…?
+\\E…哥哥……可以…相信你吗？\n我…只要是哥哥就没关系…不，一定要哥哥的。	\\E…big brother…… can I… trust you?\nI… as long as it's you it's okay… no, it has to be you.
+\\E…哥哥…这个，是我的内裤吧…？\n为什么会有这种照片…？	\\E…big brother… this is my underwear, right…?\nWhy do you have a photo like this…?
+\\E…哥哥…这就有点…	\\E…big brother… this is a bit…
+\\E…哥哥…这是什么照片啊…\n在我不知道的时候你都在干什么啊…？	\\E…big brother… what kind of photo is this…\nWhat were you doing when I didn't know…?
+\\E…哥哥。	\\E…big brother.
+\\E…哥哥。\n哥哥这么看着的话我有很难洗啊…	\\E…big brother.\nIf you watch me like that it's hard to wash…
+\\E…哥哥也想…射出来吗…？	\\E…does big brother also want to… let it out…?
+\\E…哥哥也想尿白白的尿吗？	\\E…does big brother want to let out the white stuff too?
+\\E…哥哥是只对那些感兴趣吗？	\\E…is big brother only interested in those?
+\\E…哥哥的…好热啊……	\\E…big brother's… is so hot……
+\\E…哥哥的这里…变得这么硬了呢…	\\E…big brother's place here… has gotten so hard…
+\\E…哥哥真是…哥哥真是……	\\E…big brother really is… big brother really is……
+\\E…哥哥那什么…我有话要说…\n嗯，大概是很重要的…	\\E…big brother, um… I have something to say…\nYeah, probably something important…
+\\E…哥哥！	\\E…big brother!
+\\E…哥哥，好吃吗？	\\E…big brother, is it good?
+\\E…哥哥，那个…不来了。	\\E…big brother, um… never mind.
+\\E…哥哥？	\\E…big brother?
+\\E…哦？那就稍微看看吧…	\\E…oh? Then let's take a little look…
+\\E…哼哼，这边也让我尝尝看吧。	\\E…hehe, let me taste this side too.
+\\E…唉嘿嘿，总觉得有点害羞呢……	\\E…hehehe, I somehow feel a little shy……
+\\E…啊……哥哥…早上好…	\\E…ah…… big brother… good morning…
+\\E…啊…哥哥……	\\E…ah… big brother……
+\\E…啊…哥哥的那个插进来了……	\\E…ah… big brother's thing went in……
+\\E…啊，原来是那个时候买的啊……	\\E…ah, so you bought it back then……
+\\E…啊，哥哥，欢迎回来。	\\E…ah, big brother, welcome back.
+\\E…喂，哥哥…你在的吧…？	\\E…hey, big brother… you're there, right…?
+\\E…嗯……嗯嗯！？\n…这，这是…！	\\E…mm…… mmmh!?\n…Th-this is…!
+\\E…嗯…哥哥这个感觉好害羞啊…	\\E…mm… big brother, this feels so embarrassing…
+\\E…嗯…唔……要射的话…射在外面哦…哥哥……\n会怀上…宝宝的…唔…嗯…	\\E…mm… mm…… if you're going to finish… do it outside, okay… big brother……\nI'll get… pregnant… mm… mm…
+\\E…嗯…就这样…射在里面…也可以哦…\n嗯……射出来…射……射在屁股里！	\\E…mm… just like that… inside is… okay too…\nmm…… let it out… let… let it out inside!
+\\E…嗯…那我来帮你弄干净吧。	\\E…mm… then let me clean it up for you.
+\\E…嗯，剩下的已经全部弄干净了呢。	\\E…yeah, the rest is all cleaned up.
+\\E…嗯，可以哦。	\\E…yeah, it's okay.
+\\E…嗯，妹妹变成被炉里的虫了呢。	\\E…yeah, my sister has become a bug in the kotatsu.
+\\E…嗯，茶已经泡好了吗。	\\E…yeah, is the tea ready yet?
+\\E…嗯，越出门越觉得没劲呢…	\\E…yeah, the more I go out the more listless I feel…
+\\E…嘛啊，也行。	\\E…well, fine.
+\\E…嘶呀……咕……	\\E…zzz…… gulp……
+\\E…噗哈……哎嘿…第二次…又射了呢…	\\E…puhah…… hehe… the second time… came out again…
+\\E…噗啊…！\n好的，变干净了呢哥哥。	\\E…pwah…!\nOkay, it's clean now, big brother.
+\\E…噗啊！……嗯，哥哥。\n啊———————……	\\E…pwah!…… mm, big brother.\nah———————……
+\\E…回家吧。	\\E…let's go home.
+\\E…因为我没想到外面会这么冷啊。	\\E…because I didn't think it'd be this cold outside.
+\\E…在一跳一跳的呢…\n很想射出来呢…现在就让你舒服起来哦。	\\E…it's twitching…\nyou really want to let it out… I'll make you feel good now.
+\\E…好像玩的很开心。	\\E…looks like you had fun.
+\\E…好像非常开心的样子。	\\E…you look like you had a lot of fun.
+\\E…好的，啊————嗯。	\\E…okay, ah————mm.
+\\E…好的，身体变得干净了呢。	\\E…okay, your body is clean now.
+\\E…如果，哥哥也和我…是同一种感觉的话…\n要是能一生待在哥哥身边的话…	\\E…if… big brother feels the same way I do…\nif only I could stay by your side for life…
+\\E…完全没能炒热气氛。	\\E…I totally failed to liven things up.
+\\E…对了，这是红包。	\\E…right, this is New Year's money.
+\\E…就算不说我也心里有数。	\\E…even if you don't say it, I know.
+\\E…就算是哥哥……也是…不行…的啦。	\\E…even for big brother… that's… not… okay.
+\\E…差不多就出去了吧。\n这里很狭窄…呢？	\\E…let's get out soon.\nIt's cramped in here… right?
+\\E…已经…做好准备了…	\\E…I'm… already prepared…
+\\E…已经对妈妈说过了，也获得同意了。\n我想一定住在那边比较好…	\\E…I already told Mom, and got her permission.\nI think it's definitely better to live over there…
+\\E…应该也有那种…\n好好地拍到的照片吧？	\\E…there should be those kinds too…\nphotos that were taken properly, right?
+\\E…度过了安稳的正月。	\\E…we spent a quiet New Year.
+\\E…开始了哦…	\\E…it's starting…
+\\E…当然打开妹妹的衣橱的话就能看到内裤。\n伸手就能毫不费事的得到内裤。	\\E…of course, if you open my sister's closet you'll find underwear.\nReach out and you can get it with no trouble.
+\\E…怎么样？好吃吗？	\\E…how is it? Is it good?
+\\E…怎么样？清爽多了吗？	\\E…how is it? Do you feel refreshed?
+\\E…总觉得一眨眼就过去了呢。	\\E…it felt like it passed in the blink of an eye.
+\\E…总觉得久违的在外面闲逛了一会儿…	\\E…it felt like I wandered outside for the first time in a while…
+\\E…总觉得很久没吃过蛋糕店的蛋糕了呢。	\\E…it feels like it's been a long time since I had cake from the cake shop…
+\\E…情人节吗…	\\E…Valentine's, huh…
+\\E…我也是…我也很喜欢哥哥…最喜欢了。\n但是…	\\E…me too… I like you too, big brother… I love you the most.\nBut…
+\\E…我们还只是学生哦？在这之前还是兄妹哦……\n没有钱的…兄妹之前这样子…	\\E…we're still just students, you know? And before that, siblings……\nwith no money… siblings doing this kind of thing…
+\\E…我可以看到的…？\n哥哥…告诉我…	\\E…can I look…?\nBig brother… tell me…
+\\E…我回来了——	\\E…I'm home—
+\\E…我家没有那个钱呢…	\\E…my family doesn't have that kind of money…
+\\E…我的脸好像看起来很傻…\n哥哥！我要求重新拍！	\\E…my face looks silly…\nBig brother! I demand a retake!
+\\E…我要含了哦。	\\E…I'm going to put it in my mouth now.
+\\E…我，想去学校宿舍住。	\\E…I… want to live in the school dorm.
+\\E…抱歉，今天有点…	\\E…sorry, today is a bit…
+\\E…是啊，有点累了稍微躺一会儿吧。	\\E…yeah, I'm a little tired so let me lie down for a bit.
+\\E…是啊，有点累了躺一会儿吧。	\\E…yeah, I'm a little tired, let me lie down for a bit.
+\\E…有空两个人一起住宿旅行…什么好像也不错。	\\E…when we have time, a trip with just the two of us… that might be nice.
+\\E…果然越是想去旅行越没精神呢…	\\E…as I thought, the more I want to travel the more listless I get…
+\\E…果然还是算了。	\\E…as I thought, forget it.
+\\E…欸？想要看…尿尿的地方…	\\E…huh? You want to see… where I pee…
+\\E…比起这个今天想要休息呢…	\\E…rather than that, I want to rest today…
+\\E…气氛稍微有些尴尬。	\\E…the mood got a little awkward.
+\\E…没什么想要的东西。	\\E…there's nothing I want.
+\\E…没有工作的力气了呢。	\\E…I don't have the energy to work, huh.
+\\E…没有工作的力气了哦。	\\E…I don't have the energy to work, you know.
+\\E…没，没有看错吧？	\\E…n-no, I didn't see wrong, did I?
+\\E…现在回想起来\n这也许正是开始意识到与妹妹发生种种事情的契机吧。	\\E…now that I look back,\nthis may have been the trigger for becoming aware of all sorts of things with my sister.
+\\E…留下了很好的回忆了呢。	\\E…we made a really nice memory.
+\\E…看到了不得了的东西了呢…	\\E…I saw something amazing…
+\\E…真是的…哥哥你……	\\E…geez… big brother, you……
+\\E…真是的…哥哥真是…色狼…	\\E…geez… big brother really is… a pervert…
+\\E…真是的、因为哥哥是个变态呢…	\\E…geez, it's because big brother is a pervert…
+\\E…真是的！哥哥！在这种地方…！？\n…哎…那是…我的……	\\E…geez! Big brother! In a place like this…!?\n…huh… that's… mine……
+\\E…真是的！突然就插到我的嘴里……\n而且…哥哥射的也太多了！	\\E…geez! Suddenly putting it in my mouth……\nAnd… big brother let out way too much!
+\\E…真是的，想看妹妹尿尿的地方什么的\n真的是变态的哥哥…	\\E…geez, wanting to see where your sister pees\nreally is a perverted big brother…
+\\E…真的吗…？	\\E…really…?
+\\E…稍微去下洗手间哦。	\\E…I'm just going to the restroom for a bit.
+\\E…稍微有些累了呢。	\\E…I'm a little tired, huh.
+\\E…稍微有点累了呢。	\\E…I'm a little tired, you know.
+\\E…而且不知道为什么还认真的拍了照片！	\\E…and for some reason you even took a proper photo!
+\\E…虽然不是很清楚…一定是…哥哥的……	\\E…I'm not really sure… but it must be… big brother's……
+\\E…虽然哥哥一直很温柔对我很好…\n但是…但是只靠这个是很难生存下去的…！	\\E…big brother has always been kind and good to me…\nbut… but with just that it's hard to survive…!
+\\E…虽然有些费事但是手工做的才是最好的呢。	\\E…it's a bit of trouble, but handmade is the best.
+\\E…虽然真的很累但留下了美好的回忆。	\\E…it was really tiring but we made a nice memory.
+\\E…虽然还是没出生的孩子\n我至今也忘不了妹妹哭泣时的样子。	\\E…though the child still isn't born,\nI can never forget the way my sister cried.
+\\E…被炉真舒服，哥哥也进来吧…\n…喵……	\\E…the kotatsu is so cozy, come in too, big brother…\n…meow……
+\\E…说出来的话就没有惊喜了啊…	\\E…if I say it, it won't be a surprise anymore…
+\\E…越去海边越觉得没劲呢…	\\E…the more I go to the beach the more listless I get…
+\\E…越去游泳越觉得没劲呢…	\\E…the more I go swimming the more listless I get…
+\\E…越是买东西越没精神呢…	\\E…the more I buy the more listless I get…
+\\E…越是去赏花越觉得没劲呢…	\\E…the more I go flower viewing the more listless I get…
+\\E…越是玩越没钱呢。	\\E…the more I play the less money I have.
+\\E…还有很多想两个人一起去的地方呢…	\\E…there are still so many places I want to go together…
+\\E…还要再偷看吗？…好的…	\\E…are you going to peek again?… okay…
+\\E…这、这…确实很厉害……\n这怎么说呢…确实有相当糟糕的东西啊…	\\E…th-this… this is really something……\nhow should I put it… there really is some pretty bad stuff here…
+\\E…这、这样的吗…那、那来一个这个…	\\E…th-this kind of…? Th-then how about this one…
+\\E…这种规则是从什么时候开始改变的呢？	\\E…since when did this rule change, I wonder?
+\\E…那、那我就尿了哦！\n哥哥绝对不要在外边偷看啊！	\\E…th-then I'll go now!\nBig brother, absolutely don't peek from outside!
+\\E…那个…我有话对哥哥说。	\\E…um… I have something to tell big brother.
+\\E…那个，哥哥…昨天我做了…什么？	\\E…um, big brother… what did I do… yesterday?
+\\E…那个，那什么。	\\E…um, you know.
+\\E…那么…再来一次…	\\E…now then… let's go once more…
+\\E…那么、到底是什么呢…\n…嗯？这家店…	\\E…now then, what was it…\n…huh? This shop…
+\\E…那么，在这之后怎么办呢。	\\E…now then, what should we do after this.
+\\E…那我尿了哦。	\\E…then I'll go now.
+\\E…那我用嘴来帮你做吧。	\\E…then let me use my mouth to help you.
+\\E…那，那个…早上…好…	\\E…th-then… good… morning…
+\\E…都射到背部了…真是的…\n…妹妹的臀部就这么舒服吗？	\\E…it all got on my back… geez…\n…is my sister's backside really that nice?
+\\E…难道说…还要做吗…？	\\E…could it be… you want to do more…?
+\\E…高潮了…	\\E…I reached my peak…
+\\E…鸡鸡变得非常硬了呢…\n这么硬…这么热…还在一跳一跳的呢…	\\E…it's gotten really hard…\nso hard… so hot… and still twitching…
+\\E─之后为了回到原来的世界，为了寻找妹妹…\n没错，大冒险开始了。	\\E─After that, to return to the original world, to find my sister…\nyes, the great adventure began.
+\\E─从那天开始就开始拼命的学习了。\n也开始在附近的超市开始打工了。	\\E─From that day on I studied desperately.\nI also started working part-time at a nearby supermarket.
+\\E─刚刚察觉到的瞬间，世界被光所包裹了。	\\E─The moment I noticed it, the world was wrapped in light.
+\\E─在这之后过来两三天，妹妹搬走了。	\\E─Two or three days after that, my sister moved away.
+\\E─就这样世界毁灭了。	\\E─Just like that, the world ended.
+\\E─我告诉了母亲。\n当然的震惊，悲伤，而且理所当然的反对了。	\\E─I told my mother.\nOf course she was shocked, sad, and naturally opposed it.
+\\E─结果…妹妹怀孕了。	\\E─As a result… my sister got pregnant.
+\\E─这样的话就多在打工上出些力吧。\n增加换班靠着打工就得到了足以生活的收入了。	\\E─In that case, I'll put more effort into my part-time work.\nI increased my shifts and earned enough from part-time work to live on.
+\\E　以下URLの「基本システム2の更新分」をダウンロードし、\n　DBファイルをユーザデータベース　タイプ4にドラッグしてください。\n \n  http://www.silversecond.com/WolfRPGEditor/Download.html\n 	\\E　Please download the 'Basic System 2 update' from the URL below,\n　and drag the DB file to the user database type 4.\n \n  http://www.silversecond.com/WolfRPGEditor/Download.html\n 
+\\E【基本システムエラー】　基本システムがVer2.02になりましたが\n　ユーザデータベースDBのタイプ「防具」が更新されていません。	\\E[Basic System Error]　The basic system has become Ver2.02, but\n　the user database DB type 'Armor' has not been updated.
+\\E一如既往的日常，不变的对话。	\\EAn unchanging everyday, unchanging conversation.
+\\E一定要……负责哦…	\\EUh… you have to take responsibility… okay…
+\\E一打开家门妹妹就出来迎接。\n这样看似理所当然的日常生活如果能一直持续下去就好了…	\\EWhen I opened the front door, my sister came out to greet me.\nIf this seemingly ordinary daily life could last forever…
+\\E一起看了新闻报道。\n好像是在国外活跃着的运动选手特辑。	\\EWe watched the news together.\nIt seemed to be a feature on an athlete active overseas.
+\\E一起看了新闻报道。\n明天好像是晴天。	\\EWe watched the news together.\nTomorrow's weather is supposed to be sunny.
+\\E一起看了新闻报道。\n电视在播着断断续续的新闻	\\EWe watched the news together.\nThe TV was playing intermittent news reports.
+\\E一起看了新闻报道。\n说了些老人的失控问题怎么怎么样了。	\\EWe watched the news together.\nThey talked about something like elderly people losing control.
+\\E一起看了新闻报道。\n说了些艺人的丑闻怎么怎么样了。	\\EWe watched the news together.\nThey talked about some celebrity scandal.
+\\E一起看了新闻报道。\n说了贫富差距怎么怎么样了	\\EWe watched the news together.\nThey talked about the wealth gap.
+\\E一起看了新闻报道。\n说了贸易战怎么怎么样了。	\\EWe watched the news together.\nThey talked about a trade war.
+\\E一起看了新闻报道。\n说了车子失控了怎们怎么样了。	\\EWe watched the news together.\nThey talked about a car losing control.
+\\E一起看了棒球转播。	\\EWe watched a baseball broadcast together.
+\\E一起看了深夜动画。\n好像是哥哥和妹妹们一起冒险的动画	\\EWe watched a late-night anime together.\nIt seemed to be about a brother and sisters going on an adventure.
+\\E一起看了深夜动画。\n是一名少女和一群帅哥勾心斗角地谈恋爱的动画。	\\EWe watched a late-night anime together.\nIt was about a girl and a group of handsome guys scheming and romancing.
+\\E一起看了深夜动画。\n是一群巨人在袭击人类城市的动画。	\\EWe watched a late-night anime together.\nIt was an anime about a group of giants attacking a human city.
+\\E一起看了深夜动画。\n是不起眼的工薪族在异世界大显身手的冒险剧。	\\EWe watched a late-night anime together.\nIt was an adventure drama about a plain office worker making a name for himself in another world.
+\\E一起看了深夜动画。\n是在快要废部之前巡回活动的青春物语。	\\EWe watched a late-night anime together.\nIt was a youth story about a club doing a tour before it was about to be disbanded.
+\\E一起看了深夜动画。\n是女子高中生在战车上活跃的动画。	\\EWe watched a late-night anime together.\nIt was an anime about high-school girls active on tanks.
+\\E一起看了电视剧 \n是危机不断十分有悬念的探案电视剧。	\\EWe watched a drama together.\nIt was a suspenseful detective drama full of crises.
+\\E一起看了电视剧 \n都是些令人心动时髦的恋爱电视剧。	\\EWe watched a drama together.\nThey were all trendy, heart-fluttering romance dramas.
+\\E一起看了电视剧。\n是令人心急的恋爱电视剧。	\\EWe watched a drama together.\nIt was an impatient romance drama.
+\\E一起看了综艺节目\n在风趣地介绍世界各地奇怪的习俗。	\\EWe watched a variety show together.\nIt was cheerfully introducing strange customs from around the world.
+\\E一起看了综艺节目。\n好像是骑着摩托周游世界了。	\\EWe watched a variety show together.\nIt seemed to be about a motorcycle trip around the world.
+\\E一起看电视吧。	\\ELet's watch TV together.
+\\E一路走好，注意安全。	\\ETake care, and be safe.
+\\E一路顺风。	\\EHave a safe trip.
+\\E一路顺风，哥哥。	\\EHave a safe trip, big brother.
+\\E下次再去海边吧！下周！	\\ELet's go to the beach again next time! Next week!
+\\E不…在这之前还有要做的事	\\ENo… before that, there's still something to do.
+\\E不加糖也可以吗？	\\EIs it okay without sugar?
+\\E不是普通的做爱…那什么…用屁股比较好吗？	\\ENot the usual kind of intimacy… what was it… would the backside be better?
+\\E不是这种氛围呢…	\\EThis isn't really the mood…
+\\E不然的话…这里…已经去了！	\\EOtherwise… this place… has already reached its peak!
+\\E不熟悉的人，和事物，最开始很困扰。\n…就是这样，也是回不到从前的，才不会像过去那样呢。	\\EUnfamiliar people and things are confusing at first.\n…That's how it is, and we can't go back to how it was, not like the past.
+\\E不留情面的取得了压胜…	\\EWe achieved an overwhelming victory without mercy…
+\\E不能让重要的妹妹每天都吃泡面。\n哥哥失格了哦。	\\EI can't let my precious little sister eat instant noodles every day.\nBig brother has failed his duty.
+\\E不费事的才是最好的呢…	\\EThe ones that take the least effort are the best, huh…
+\\E不过，下次也和妈妈他们一起去温泉什么的吧。	\\EBut next time, let's go to a hot spring with Mom and the others too.
+\\E不，不行啦…	\\ENo, it's not okay…
+\\E不，不行啦…这种事回房间再做吧…好吗？	\\ENo, it's not okay… let's do this kind of thing back in the room… okay?
+\\E专业的锻炼器械吗…好像会很管用呢。	\\EProfessional training equipment, huh… that sounds like it'd be really effective.
+\\E两个人一起吃了便当。	\\EThe two of us ate bento together.
+\\E两个人一起吃了泡面。	\\EThe two of us ate instant noodles together.
+\\E两个人一起开心的购了物。	\\EThe two of us enjoyed shopping together.
+\\E为了我…能为了妹妹而改变了吗…？\n这样的话…我就可以和哥哥……	\\EFor my sake… did you change for your little sister…?\nIf so… then I can be with big brother…
+\\E久等了~哥哥。\n一起来吃吧。	\\ESorry for the wait~ big brother.\nLet's eat together.
+\\E久等了。\n哥哥请吧。	\\ESorry for the wait.\nGo ahead, big brother.
+\\E久等啦！哥哥买了什么呀？	\\ESorry for the wait! What did big brother buy?
+\\E之后…日子一天天过去…	\\EAfter that… the days passed one by one…
+\\E之后两个人一起去买了蛋糕和鸡肉…	\\EAfter that, the two of us went to buy cake and chicken together…
+\\E之后交替着清洗了身体。	\\EAfter that, we took turns washing our bodies.
+\\E之后把在更衣室邂逅的内裤用新品渐渐地代替\n总算完成了"残留着温度"的妹妹内裤的收集。	\\EAfter that, I gradually replaced the underwear I'd found in the changing room with new ones\nand finally completed my collection of little sister's 'still-warm' underwear.
+\\E之后某一天的事…	\\EThen one day…
+\\E也没什么需要做的就懒洋洋地度过吧…	\\EThere's nothing that needs doing, so let's laze around…
+\\E买点吃的东西吧！那个那个…\n你好！请给我两个熊好烧！	\\ELet's buy something to eat! That one, that one…\nHello! Two bear-shaped griddle cakes, please!
+\\E交替去泡了澡。	\\EWe took turns soaking in the bath.
+\\E交替着？去泡了澡。	\\ETaking turns? We went to soak in the bath.
+\\E什——么…？想要看妹妹尿尿吗？	\\EWha—at…? You want to see your little sister pee?
+\\E什么都没做无所事事地度过了。	\\EWe did nothing and spent the day idly.
+\\E今后也一直…多多关照啊。\n哥哥！	\\EFrom now on too, always… please take care of me.\nBig brother!
+\\E今天也很努力了呢…	\\EYou worked hard today too…
+\\E今天也陪我出去太谢谢了，哥哥。	\\EThank you for taking me out today too, big brother.
+\\E今天休息呢，要怎么度过呢。	\\EYou're off today, so how should we spend it?
+\\E今天啊……	\\ESo today…
+\\E今天天气不错一起去赏花吧！	\\EThe weather's nice today, so let's go flower viewing together!
+\\E今天妹妹也在等待你回家。\n一定明天也是，之后的日子也是——	\\EToday too, little sister is waiting for you to come home.\nSurely tomorrow too, and the days after—
+\\E今天就出门购物吧。	\\ELet's go out shopping today.
+\\E今天接着玩这个吧。	\\ELet's keep playing this today.
+\\E今天是我来这里的第100天哦，你记得吗？	\\EToday is my 100th day since coming here, do you remember?
+\\E今天玩这个游戏吧。	\\ELet's play this game today.
+\\E今天的晚饭，那个…我去烧开水。	\\EDinner tonight, um… I'll go boil some water.
+\\E今天能带我去真的太感谢了，哥哥。	\\EThank you so much for taking me out today, big brother.
+\\E从老家那里收到了生活费。	\\EI received some living money from the old hometown.
+\\E伸展————！	\\EStretch————!
+\\E你是……\\cdb[0:12:0]\\cdb[0:12:1]哥哥。	\\EYou're……\\cdb[0:12:0]\\cdb[0:12:1]big brother.
+\\E你瞧，今年说因为是工作日所以留到周末。\n今天就是那个所说的周末哦，哥哥。	\\ESee, this year they said it's a workday so keep it to the weekend.\nToday is that weekend I mentioned, big brother.
+\\E你，知道吗？	\\EYou, do you know?
+\\E做了无谓的狡辩。	\\EI made a pointless excuse.
+\\E做的很不错…把哥哥喜欢的给你。	\\EYou did great… I'll give you what big brother likes.
+\\E偶尔不好好地吃一顿回复精力可不行。	\\EOnce in a while you have to eat properly and restore your energy.
+\\E偶尔也要做做家务呢。	\\EOnce in a while you should do the housework too.
+\\E偶尔在超市有卖冷冻的吧？	\\ESometimes they sell them frozen at the supermarket, right?
+\\E偶然在街上看到妹妹被朋友们其乐融融地环绕着。	\\EI happened to see little sister in town, happily surrounded by her friends.
+\\E偷看妹妹上厕所嘛…？	\\EPeeking while little sister uses the toilet…?
+\\E像这个样子前后揉搓的话…舒服吗？\n可以哦…不用忍耐射出来吧。	\\EIf I rub it back and forth like this… does it feel good?\nIt's okay… don't hold back, go ahead and let it out.
+\\E兄妹之间做这种事…不行啦…	\\EDoing this kind of thing between siblings… is not okay…
+\\E全都吃下去了哦…………啊姆…	\\EI ate it all up………… ahm…
+\\E内裤结局恭喜恭喜！\n还可以继续玩下去。	\\ECongratulations on finishing the underwear storyline!\nYou can keep playing more.
+\\E凡事都有一个开始。	\\EEverything has a beginning.
+\\E凹凸不平呢…没看过零食的容器长这个样子…	\\EIt's bumpy, huh… I've never seen a snack container shaped like this…
+\\E刚刚察觉到的瞬间，世界就被光包围了。	\\EThe moment I noticed, the world was wrapped in light.
+\\E刚刚才下单呢。	\\EI just placed an order.
+\\E刚刚才下过单呢…	\\EI just placed an order…
+\\E初心者的话　这边的　比较推荐\n女朋友　一定会　很开心的哦	\\EFor beginners, this one is recommended\nYour girlfriend will surely be happy.
+\\E到出发还有一点时间呢，那么…	\\EThere's still a little time before we leave, so…
+\\E到家啦，呼…流了好多汗呢。	\\EWe're home, whew… I sweated a lot.
+\\E到底还是老实点吧…	\\EIn the end, I'd better be honest…
+\\E剧场第一排里排满艺人的综艺节目。	\\EA variety show packed with celebrities in the front row of the theater.
+\\E即使是认识的人也有不想让他看到的场面。\n至少也要到赤裸相见也没问题的关系才行…	\\EThere are scenes you don't want even someone you know to see.\nAt the very least, you need a relationship where being fully exposed is fine…
+\\E即使这样…	\\EEven so…
+\\E去偷看妹妹泡澡吧…？	\\ELet's peek while little sister takes a bath…?
+\\E去年圣诞节的照片啊。	\\EIt's a photo from last Christmas.
+\\E又是新的一天…	\\EAnother new day…
+\\E发现妹妹的新鲜内裤了。	\\EI found little sister's fresh underwear.
+\\E发现妹妹穿过的内裤。	\\EI found the underwear little sister had worn.
+\\E发生了各种事情了呢…对吧，哥哥。	\\EA lot of things happened, didn't they… right, big brother.
+\\E变干净了呢，哥哥！	\\EIt got clean, big brother!
+\\E变态…吗…？	\\EA pervert… am I…?
+\\E只对哥哥一个人特别哦…\n在特等席…给你看看妹妹的自慰场景哦…	\\EI'm only special to big brother…\nIn the best seat… I'll show you little sister taking care of herself…
+\\E只是，有些悲伤，摆出一副已经知道了的表情。\n早晨事送报纸，下午去便利店…休息日也开始打工了。	\\EBut… a little sad, I put on a face as if I already knew.\nDelivering newspapers in the morning, going to the convenience store in the afternoon… I started working part-time on days off too.
+\\E只有这个要注意不要全喝完。	\\EJust be careful not to drink it all.
+\\E可不能对着少女做鸡鸡伸展这种动作哦。	\\EYou can't do that kind of stretching move on a young girl.
+\\E可以哦——	\\EIt's okay—
+\\E可以哦…不要忍耐，射出白白的，变得更舒服吧？	\\EIt's okay… don't hold back, let out the white stuff and feel even better, okay?
+\\E可以哦…我会再多帮你揉搓揉搓的…	\\EIt's okay… I'll rub it for you a bit more…
+\\E可以哦…用屁股来做…	\\EIt's okay… let's do it with the backside…
+\\E可以哦…这里也帮你弄干净哦。	\\EIt's okay… I'll clean this place up for you too.
+\\E可以哦…都射在妹妹的手里吧…\n到哥哥说停为止我都会缓缓地接着撸的。	\\EIt's okay… let it all out in little sister's hand…\nUntil big brother says stop, I'll gently keep going.
+\\E可以哦、在妹妹的嘴巴里灌满白色的东西吧。	\\EIt's okay, fill little sister's mouth with the white stuff.
+\\E可以哦。	\\EIt's okay.
+\\E可以哦，还会帮你喝的哦。	\\EIt's okay, I'll even drink it for you.
+\\E可没有那种东西哦。	\\EThere's no such thing.
+\\E吃了妹妹做的料理稍微打起了精神。	\\EI ate the food little sister made and felt a little better.
+\\E同居100天作为目标！	\\EAiming for 100 days of living together!
+\\E呀…哥、哥哥你在做什么啊…？	\\EEep… b-big brother, what are you doing…?
+\\E呀…哥、哥哥！？\n哎…那是…我的……	\\EEep… b-big brother!?\nHuh… that's… mine……
+\\E呀…啊，哥哥…！？	\\EEep… ah, big brother…!?
+\\E呀…啊，哥哥…！？\n哎？…你在…干什么…？	\\EEep… ah, big brother…!?\nHuh?… what are you… doing…?
+\\E呀…流出来了…呀，好害羞啊……	\\EEep… it came out… eep, so embarrassing……
+\\E呀啊！	\\EEep!
+\\E呀！谁…啊哥哥！？	\\EEep! Who—ah, big brother!?
+\\E呐 哥哥。	\\EHey, big brother.
+\\E呐、哥哥。	\\EHey, big brother.
+\\E呐呐，哥哥知道吗？\n金鱼大约可以活十年哦。	\\EHey hey, did you know, big brother?\nGoldfish can live about ten years.
+\\E呜呜——…明年…！\n明年一定要成功准备惊喜！	\\EWuwuu—… next year…!\nNext year I'll definitely succeed in preparing a surprise!
+\\E呜呜…明明都说了不行的……	\\EWuwu… even though I said it's not okay……
+\\E呜呜呜呜—……\n真是的—…妹妹的身体这么色情……	\\EWuwuwu—……\nHonestly—… little sister's body is so alluring……
+\\E呜唔…	\\EMmm…
+\\E呼…今天也很累了呢……	\\EWhew… today was tiring too……
+\\E呼…哥哥，差不多该睡了吗？	\\EWhew… big brother, isn't it about time to sleep?
+\\E呼…基本没买什么必须买的呢…？	\\EWhew… I barely bought anything essential, huh…?
+\\E呼…奋斗了一周真的很累呢…	\\EWhew… working hard for a week is really tiring…
+\\E呼…已经攒了很久了呢。	\\EWhew… I've been saving for a long time now.
+\\E呼…已经这个点了吗。	\\EWhew… is it already this time?
+\\E呼…已经这个点了呢。	\\EWhew… it's already this time, huh.
+\\E呼…感觉增添了不少体力呢。	\\EWhew… I feel like I've built up quite a bit of stamina.
+\\E呼…感觉有好好运动到呢。\n妹妹也很开心也不错呢。	\\EWhew… I feel like I got some good exercise.\nAnd little sister being happy is nice too.
+\\E呼啊…………啊…哥哥…	\\EWhaa………… ah… big brother…
+\\E呼啊………啊…	\\EWhaa……… ah…
+\\E呼啊……啊…	\\EWhaa…… ah…
+\\E呼啊…哥哥早上好—…	\\EWhaa… good morning, big brother…
+\\E呼啊…哥哥早上好…	\\EWhaa… good morning, big brother.
+\\E呼欸？	\\EWhaa?
+\\E和哥哥的双人旅行呢、\n真的非常开心呢。	\\EA two-person trip with big brother, huh…\nIt was really, really fun.
+\\E和妹妹一起享受了游戏。	\\EI enjoyed a game together with little sister.
+\\E和妹妹一起吃了早饭。	\\EI ate breakfast together with little sister.
+\\E和妹妹一起进了浴室。	\\EI went into the bath together with little sister.
+\\E和妹妹在家里悠闲度过了。	\\EI spent a relaxing time at home with little sister.
+\\E和妹妹开心的玩了游戏。	\\EI happily played games with little sister.
+\\E咦？哥哥什么时候拍的这样的照片？	\\EHuh? When did big brother take a photo like this?
+\\E咿！……唔……哥哥…好…紧…\n屁…屁股…要坏掉了………	\\EEek!… mm…… big brother… so… tight…\nmy… backside… is going to break………
+\\E哇——好过分的照片。	\\EWow— what an awful photo.
+\\E哇——海真棒！好大啊！	\\EWow— the sea is amazing! It's so big!
+\\E哇—谢谢你哥哥。	\\EWow— thank you, big brother.
+\\E哇—，有好多人呢哥哥！	\\EWow—, there are so many people, big brother!
+\\E哇—，还有内部浴室啊！比家里的要大多了呢—！\n料理也很令人期待呢，哥哥！	\\EWow—, there's even an indoor bath! It's much bigger than the one at home—!\nI'm looking forward to the food too, big brother!
+\\E哇…变大了呢…\n看妹妹的裸体也能变这么大呢…哥哥。	\\EWow… it got bigger…\nJust looking at little sister's body makes it this big… big brother.
+\\E哇啊，总觉得今天很豪华呢。	\\EWow, somehow today feels luxurious.
+\\E哇！哥哥！？	\\EWow! Big brother!?
+\\E哇，哥哥连这种照片都拍了吗！？	\\EWow, you even took a photo like this, big brother!?
+\\E哇，很好吃的样子！谢谢你哥哥。	\\EWow, it looks delicious! Thank you, big brother.
+\\E哇，该出发了呢。\n哥哥也一起出门吧。	\\EWow, it's about time to leave.\nLet's go out together too, big brother.
+\\E哈—…真的到温泉来了呢…\n总觉得好厉害呢！和做梦一样呢哥哥！	\\EHaa—… we really made it to the hot spring…\nSomehow it's amazing! It's like a dream, big brother!
+\\E哈—好暖和…果然还是家里最好哥哥。	\\EHaa— so warm… home really is the best after all, big brother.
+\\E哈哈、对吧？\n啊——说着就变得想吃熊好烧了。	\\EHaha, right?\nAh— now I feel like eating bear griddle cakes.
+\\E哈啊，干净了干净了！\n…清爽了吗？哥哥。	\\EHaa, clean, all clean!\n…Do you feel refreshed? Big brother.
+\\E哈姆………嗯…啾………啾……	\\EHam……… mm… smack……… smack……
+\\E哈姆……嗯……嗯咕…噗啊……\n哼哼，从刚刚开始就有咸咸的液体不断地流出来了呢。	\\EHam…… mm…… mmh… pwah……\nHehe, since a moment ago a salty liquid keeps flowing out.
+\\E哈姆……嗯…舔…啾……啾……	\\EHam…… mm… lick… smack…… smack……
+\\E哎 温泉旅行！？哥哥我们两个吗？\n那么那么，我去做准备…！	\\EHuh, a hot spring trip!? Just the two of us, big brother?\nThen, then, I'll go get ready…!
+\\E哎—…	\\EHuh—…
+\\E哎—，不要——\n哥哥真是色狼。	\\EHuh—, no—\nbig brother really is a pervert.
+\\E哎…不要……真过分…	\\EHuh… no… that's mean…
+\\E哎…什么嘛…是猫啊…吓死我了…	\\EHuh… what was that… it's a cat… you scared me…
+\\E哎…猫…？\n是从哪里进来的呢…？	\\EHuh… a cat…?\nWhere did it come in from…?
+\\E哎…被臀部夹住……这种事情…\n…可以是可以……	\\EHuh… squeezed by the backside… that kind of thing…\n…I guess it's okay…
+\\E哎…连那种地方都要扫除吗哥哥！？	\\EHuh… you're going to clean even a place like that, big brother!?
+\\E哎、哎…哥哥那个是…	\\EHuh, huh… big brother, that's…
+\\E哎呀已经这个点了啊…	\\EOh my, it's already this time…
+\\E哎呀我也要快点出发了…	\\EOh my, I'd better get going soon…
+\\E哎呀，再去买些吧。	\\EOh my, let's go buy some more.
+\\E哎呀，差不多该去打工了呢。	\\EOh my, it's about time to go to work.
+\\E哎哟！	\\EWhoa!
+\\E哎嘿嘿…\n那下次回礼就让哥哥帮我清洗身体吧。	\\EEhehe…\nThen next time, as a thank-you, let big brother wash my body for me.
+\\E哎！可以吗！？\n太好了——！哥哥！！	\\EHuh! Is it okay!?\nYay—! Big brother!!
+\\E哎！？用，用屁股…可以吗？	\\EHuh!? Wi-with the backside… is that okay?
+\\E哎，什么？怎么了…？要拍照吗？\n好，茄子！啊哈哈我可以稍微等一下哦？	\\EHuh, what? What's wrong…? You want to take a photo?\nOkay, cheese! Ahaha, I can wait a little, you know?
+\\E哎，今天哥哥来做饭吗？	\\EHuh, is big brother cooking today?
+\\E哎，哎—…哥哥这个是…	\\EHuh, huh—… big brother, this is…
+\\E哎，哎哎…现在去海边吗明明那么远！？\n等、等下…我做下准备…！	\\EHuh, huh huh… we're going to the beach now, when it's so far away!?\nW-wait… let me get ready…!
+\\E哎，哥哥一个人去吗？	\\EHuh, is big brother going alone?
+\\E哎，哥哥要一个人去吗？	\\EHuh, are you going alone, big brother?
+\\E哎，啊…嗯，没事哦。	\\EHuh, ah… yeah, it's fine.
+\\E哎，现在吗？	\\EHuh, now?
+\\E哎，祭典是傍晚开始…就悠哉游哉地到午后吧。	\\EHuh, the festival starts in the evening… so let's take it easy until the afternoon.
+\\E哎，祭典？想去想去！\n那我现在就换衣服…！	\\EHuh, a festival? I want to go, I want to go!\nThen I'll change my clothes right now…!
+\\E哎，要停下吗…？	\\EHuh, are you going to stop…?
+\\E哎？…想做爱…什么的…哥哥…唔…\n那，那么…	\\EHuh?… you want to… do it… big brother… mm…\nTh-then…
+\\E哎？变得想做了吗？\n…可以哦…只要哥哥想做的话…	\\EHuh? You feel like doing it now?\n…I'm okay with it… if big brother wants to…
+\\E哎？已经要睡了吗？\n看来哥哥是真的很累了呢…	\\EHuh? You're going to sleep already?\nIt seems big brother really is tired…
+\\E哎？才，才不要…！用屁股做什么的…很奇怪啊…\n…真是的…哥哥真是个变态！	\\EHuh? N-no way…! Doing it with the backside is… weird…\n…Geez… big brother really is a pervert!
+\\E哥…哥哥！？\n…忍不住想要上厕所了吗！？	\\EB-big brother!?\n…Did you get the urge to go to the toilet!?
+\\E哥、哥哥…你在…干什么啊…！？	\\EB-big brother… what are you… doing…!?
+\\E哥、哥哥…！	\\EB-big brother…!
+\\E哥哥 哥哥 哥哥！\n你看！有奇怪的生物哦！	\\EBig brother, big brother, big brother!\nLook! There's a weird creature!
+\\E哥哥…	\\EBig brother…
+\\E哥哥…\n能…温柔些吗？	\\EBig brother…\nCould you… be gentle?
+\\E哥哥……	\\EBig brother……
+\\E哥哥……\n后续…去房里吧……	\\EBig brother……\nThe rest… let's go to the room……
+\\E哥哥……哥哥…菊穴太紧了…\n插进…来的话……太，太怪了……	\\EBig brother…… big brother… it's too tight…\nif it… goes in…… it's, it's too weird……
+\\E哥哥……肚子…好难受…\n做了…这种事…！屁股…屁股…被这样搅动着！	\\EBig brother…… my belly… feels so strange…\ndoing… this kind of thing…! My backside… my backside… is being stirred like this!
+\\E哥哥……舒服了吗？	\\EBig brother…… did it feel good?
+\\E哥哥……难道是…	\\EBig brother…… could it be…
+\\E哥哥…全都射出来了？…已经可以了？	\\EBig brother… did you let it all out?… Is it okay now?
+\\E哥哥…可以睡觉的……啊…	\\EBig brother… you can sleep…… ah…
+\\E哥哥…对不起…啊…停不下来啊…！\n滑滑的…对不起…要去了啊哥哥！	\\EBig brother… sorry… ah… I can't stop…!\nit's slippery… sorry… I'm going to reach it, big brother!
+\\E哥哥…能理解我的吧。\n不用担心我啦。	\\EBig brother… you understand me, right.\nDon't worry about me.
+\\E哥哥。	\\EBig brother.
+\\E哥哥。\n晚饭的食材可以拜托给你吗？	\\EBig brother.\nCould you take care of the ingredients for dinner?
+\\E哥哥一定要负责哦！	\\EBig brother, you have to take responsibility!
+\\E哥哥不行！拔出来…\\.\\^	\\EBig brother, no! Pull it out…\\.\\^
+\\E哥哥也要自己保重，呢。	\\EBig brother, take care of yourself too, okay.
+\\E哥哥买了些什么？	\\EWhat did big brother buy?
+\\E哥哥什么时候拍的这张照片！？	\\EWhen did big brother take this photo!?
+\\E哥哥今天要打工吗？	\\EIs big brother working today?
+\\E哥哥今天谢谢了！很开心呢—！	\\EThank you for today, big brother! It was fun—!
+\\E哥哥快要高潮了吗？\n可以哦…我会好好接住的。	\\EIs big brother about to reach his peak?\nIt's okay… I'll catch it all properly.
+\\E哥哥有好多摊子呢哥哥！	\\EThere are lots of stalls, big brother!
+\\E哥哥的太浓了喝起来可费劲了…？	\\EBig brother's is so thick, it's hard to drink…?
+\\E哥哥的背真漂亮啊。	\\EBig brother's back is really beautiful.
+\\E哥哥看起来还很困…毕竟努力了很久呢……	\\EBig brother still looks sleepy… after all, he worked so hard……
+\\E哥哥真是不会错过按快门机会的男人。	\\EBig brother is a man who never misses a chance to press the shutter.
+\\E哥哥要帮我洗吗…？…嗯。	\\EIs big brother going to wash me…? …Yeah.
+\\E哥哥这不是在家里什么都没做吗…！\n这样当然挣不到钱…我都…这样…	\\EBig brother, you're doing nothing at home…!\nOf course you can't earn money like this… I'm… doing this much…
+\\E哥哥这个变态……	\\EBig brother, you pervert……
+\\E哥哥！	\\EBig brother!
+\\E哥哥！一起去超市吧！	\\EBig brother! Let's go to the supermarket together!
+\\E哥哥！去了…要去了！\n快看…我去的地方…好好看着…啊…啊啊啊啊！！	\\EBig brother! I'm going… I'm going to reach it!\nLook… the place I'm going… watch carefully… ah… aaaaahh!!
+\\E哥哥！我来帮你洗吧！	\\EBig brother! Let me help you wash!
+\\E哥哥！新年快乐！	\\EBig brother! Happy New Year!
+\\E哥哥！是海哦哥哥！	\\EBig brother! It's the sea, big brother!
+\\E哥哥！！什么时候拍了这样的照片啊！\n真是的！	\\EBig brother!! When did you take a photo like this!\nGeez!
+\\E哥哥，…你知道的吧？\n每天每天每天…钱都花在哪了？	\\EBig brother… you know, right?\nEvery day, every day, every day… where is the money going?
+\\E哥哥，之后要一起去买晚饭的食材吗？	\\EBig brother, shall we go buy dinner ingredients together later?
+\\E哥哥，你喜欢这样吧…	\\EBig brother, you like this, don't you…
+\\E哥哥，差不多该泡澡了哦。	\\EBig brother, it's about time to take a bath.
+\\E哥哥，我一会儿要去买晚饭的食材哥哥也一起来吗？	\\EBig brother, I'm going to buy dinner ingredients in a bit, do you want to come too?
+\\E哥哥，我来帮你冲背吧。	\\EBig brother, let me wash your back.
+\\E哥哥，舔我。	\\EBig brother, lick me.
+\\E哦哦，原来如此……！	\\EOh oh, I see……!
+\\E哦，哦…	\\EOh, oh…
+\\E哦，嗯。\n是啊。	\\EOh, yeah.\nThat's right.
+\\E哦｡ｭ	\\EOh…
+\\E哼…啊，啊，啊啊啊啊啊啊！！！！\n屁…股…里……哥哥的在……	\\ENgh… ah, ah, aaaaaah!!!!\nIn… my… backside…… big brother's thing is…
+\\E哼哼…在拼命的动着呢…\n…哥哥…妹妹的臀部…舒服吗？	\\EHehe… you're moving so desperately…\n…Big brother… does little sister's backside… feel good?
+\\E哼哼…就这么想让妹妹喝下精子吗？	\\EHehe… you want little sister to drink it that badly?
+\\E哼哼…谢谢款待，哥哥。\n…舒服吗？	\\EHehe… thanks for the meal, big brother.\n…Did it feel good?
+\\E唔……射了，喝下去…！	\\EMm… it came out, drink it down…!
+\\E唔…今天比平时还冷呢…	\\EBrr… it's colder than usual today…
+\\E唔…呜呜……啊…那个……呜呜呜…屁股…感觉好奇怪……\n还残留着哥哥插在里面的感觉呢……	\\EMm… wuwu…… ah… um…… wuwuwu… my backside… feels so strange……\nI can still feel where big brother was inside me……
+\\E唔…已经看过了尿尿可以了吧！	\\EMm… you've already seen me pee, so isn't that enough!
+\\E唔…被这么做的话…\n我的屁股会被扩张的啦…	\\EMm… if you do that…\nmy backside is going to get stretched out…
+\\E唔哦…怎，怎么回事…！？	\\EWhoa… wh-what's going on…!?
+\\E唔！…啊…哥哥射出来了…\n哼哼…鸡鸡很舒服吧？	\\EMm!… ah… big brother came…\nHehe… did it feel good?
+\\E唔！…啊…啊啊………插进……菊穴里了……\n……嗯……哥哥……	\\EMm!… ah… aah……… it went into… my backside……\n……mm…… big brother……
+\\E唔！！嗯嗯—————！……	\\EMm!! Mmm—————!……
+\\E唔，这个是…	\\EMm, this is…
+\\E啊…哥哥…	\\EAh… big brother…
+\\E啊…哥哥……那个…	\\EAh… big brother…… that…
+\\E啊…啊啊——————！！！！	\\EAh… aaaa——————!!!!
+\\E啊…白色的射出来了…哥哥的精子…\n好厉害好厉害，还在射呢…？	\\EAh… the white stuff came out… big brother's…\namazing, amazing, it's still coming…?
+\\E啊呣……嗯……啾…嗯……啾…	\\EAhm…… mm…… smack… mm…… smack…
+\\E啊啊，很好吃哦。	\\EAh, it's delicious.
+\\E啊啊，是啊。	\\EAh, yeah.
+\\E啊啊，是情人节的时候。	\\EAh, it was on Valentine's Day.
+\\E啊嗯…哥哥，好熟练啊…	\\EAhn… big brother, you're so skilled…
+\\E啊抱歉，热水溅出来了。	\\EAh, sorry, the hot water splashed out.
+\\E啊真是的…\n但是，下次想要好好做便当带过去呢。	\\EAh geez…\nBut next time I want to make a proper bento and bring it, you know.
+\\E啊！…唔……	\\EAh!… mm……
+\\E啊！等一下\\.\\^	\\EAh! Wait a sec…\\.\\^
+\\E啊，哥哥买了便当吗。	\\EAh, did big brother buy a bento?
+\\E啊，哥哥已经要睡了吗？	\\EAh, is big brother going to sleep already?
+\\E啊，哥哥我也去哦——	\\EAh, I'm going too, big brother—
+\\E啊，哥哥欢迎回来—！	\\EAh, welcome back, big brother—!
+\\E啊，哥哥的快递到了。\n买了些什么呢？	\\EAh, big brother's package arrived.\nWhat did you buy?
+\\E啊，哥哥的快递到了。\n好像是个很大的货物呢…	\\EAh, big brother's package arrived.\nIt seems to be a really big parcel…
+\\E啊，哥哥还拍了这样的照片啊？	\\EAh, big brother even took a photo like this, huh?
+\\E啊，这个。	\\EAh, this one.
+\\E啊，这是去海边的照片。	\\EAh, this is a photo from the beach.
+\\E啊，这是去温泉的时候的吧。	\\EAh, this must be from the hot spring trip.
+\\E啊，这是祭典的时候呢——	\\EAh, this is from the festival—
+\\E啊？还有一张照片……	\\EAh? There's one more photo…
+\\E喏，哥哥…\n嘴巴张开，舔我的小穴…	\\EHere, big brother…\nOpen your mouth and lick me down there…
+\\E喘口气吧。	\\ELet's take a breather.
+\\E喝咖啡歇了一口气。	\\EI took a breather with coffee.
+\\E喝玉露歇了一口气。	\\EI took a breather with gyokuro tea.
+\\E喝红茶歇了一口气。	\\EI took a breather with black tea.
+\\E喝绿茶歇了一口气。	\\EI took a breather with green tea.
+\\E喝茶还是要选好茶呢。	\\EWhen it comes to tea, you should pick a good one.
+\\E喵！	\\EMeow!
+\\E嗯——这是什么——	\\EMm— what is this—
+\\E嗯…	\\EMm…
+\\E嗯… 啊……哥哥…射了吗…？	\\EMm… ah…… did you finish, big brother…?
+\\E嗯……去了……	\\EMm…… I reached it……
+\\E嗯……嗯…………嗯…	\\EMm…… mm………… mm…
+\\E嗯……嗯…嗯咕…………嗯……咽。	\\EMm…… mm… mmh………… mm…… swallow.
+\\E嗯……用哥哥的……这样做的话…好舒服啊…	\\EMm…… if you do it like this with big brother's…… it feels so good…
+\\E嗯…呼啊……\n在嘴巴里变得更大了…哥哥要出来了吗？	\\EMm… whaa……\nit got bigger inside my mouth… is big brother about to come?
+\\E嗯…哥哥，好熟练…	\\EMm… big brother, you're so skilled…
+\\E嗯…啊……哥哥…舒服吗？\n我也是…哥哥的鸡鸡…好舒服啊…	\\EMm… ah…… big brother… does it feel good?\nMe too… big brother's feels so good…
+\\E嗯…我知道了…	\\EMm… I understand…
+\\E嗯…碰、碰到深处了…	\\EMm… it's hi-hitting the deepest part…
+\\E嗯…那就起来吧。	\\EMm… then let's get up.
+\\E嗯…？	\\EMm…?
+\\E嗯。	\\EMm.
+\\E嗯！	\\EMm!
+\\E嗯！！…啊……啊…啊！……	\\EMm!!… ah…… ah… ah!……
+\\E嗯，倒也不是不能理解…	\\EMm, it's not that I can't understand it…
+\\E嗯，嗯…我知道了。\n那么路上小心哦。	\\EMm, mm… I understand.\nThen take care on your way.
+\\E嗯，多关照。	\\EMm, take care of me.
+\\E嗯，我知道。\n在家里开圣诞香槟的时候可真是大吵大闹呢。	\\EMm, I know.\nWe really made a racket when we opened the Christmas champagne at home.
+\\E嗯，睡觉吧。	\\EMm, let's sleep.
+\\E嗯，确实…已经这个点了呢。	\\EMm, indeed… it's already this time, huh.
+\\E嗯，这个时间段都在播新闻呢…	\\EMm, this time slot is all news, huh…
+\\E嗯，这是两个人赏花时的照片啊…	\\EMm, this is a photo from when the two of us went flower viewing…
+\\E嗯？	\\EMm?
+\\E嗯？啊，可以哦。	\\EMm? Ah, that's fine.
+\\E嘛啊，是会这样呢。\n…进去吧。	\\EWell, that's how it goes.\n…Let's go in.
+\\E嘛，在那之后两个人一直睡到天黑了啊…	\\EWell, after that the two of us slept until it got dark…
+\\E嘿嘿…差不多起来了吧。	\\EHehe… it's about time to get up.
+\\E噢…噢噢……？	\\EOh… oh oh……?
+\\E噢、是新年的照片。\n…彻底变成了被炉里的懒虫呀。	\\EOh, it's a New Year's photo.\n…I've completely become a kotatsu slacker.
+\\E噢。	\\EOh.
+\\E回家啦—！	\\EWe're home—!
+\\E回家啦—！\n购物约会真开心呢！哥哥！	\\EWe're home—!\nThe shopping date was so fun! Big brother!
+\\E回家啦—！…哈—…总觉得很奢侈呢。	\\EWe're home—!… haa—… somehow it feels luxurious.
+\\E回家啦—！…唔…虽然很累但是很开心呢。	\\EWe're home—!… mm… it was tiring but fun.
+\\E回家啦—！…赏花真开心呢！	\\EWe're home—!… flower viewing was so fun!
+\\E因为…哥哥和我都是学生啊……\n这不是简单的事哦…	\\EBecause… big brother and I are both students……\nIt's not that simple, you know…
+\\E因为哥哥比想象中的还要早回来，\n意外惊喜失败了呢。	\\EBecause big brother came home earlier than I expected,\nmy surprise failed.
+\\E因为已经暴露了嘛！哈哈	\\EBecause it's already been found out! Haha.
+\\E因为平时也尽可能地早些回家了呢…	\\EBecause I try to come home as early as I can, too…
+\\E因为很吓人嘛…\n很大的一声，木塞也会飞起来…	\\EBecause it's scary…\nWith a big pop, the cork flies off too…
+\\E因为是纪念啊。	\\EBecause it's a commemoration.
+\\E圣诞节…	\\EChristmas…
+\\E在两个人决定的新的规则里\n妹妹睡在床的左侧，而我睡在右侧。	\\EUnder the new rules the two of us decided on,\nlittle sister sleeps on the left side of the bed, and I sleep on the right.
+\\E在买也没什么意义了呢。	\\EEven if I buy more it's meaningless now.
+\\E在外面吃的话总觉得更加美味了呢哥哥！	\\EEating out somehow tastes better, big brother!
+\\E在失意中，妹妹回了老家也自然而然地疏远了。\n…妹妹的脸，已经只能靠看照片才能回想起来了。	\\EIn my dejection, little sister went back to the old hometown and we naturally drifted apart.\n…I can only recall little sister's face now by looking at photos.
+\\E在接着下单的话架子上的茶都快溢出来了…	\\EIf I keep ordering, the tea on the shelf will overflow…
+\\E在放运动节目。	\\EA sports program is on.
+\\E在整齐摆放的各色内裤面前一个人发出感概。	\\EIn front of the neatly arranged assortment of underwear, I let out a sigh alone.
+\\E在澡盆里慢慢地泡澡。	\\EI soaked slowly in the bathtub.
+\\E在这个家和妹妹一起度过的每一天都是特别的日子\n也可以说是改变两个人人生的100天吧。	\\EEvery day spent with little sister in this house was special\n—you could say those 100 days changed both of our lives.
+\\E在这个家第一次一起生活100天的晚饭的时候\n作为纪念拍下来的照片。	\\EThe photo taken as a memento on the night of the 100th day of living together for the first time in this house.
+\\E在这之后互相洗了身体。	\\EAfter that, we washed each other's bodies.
+\\E在这种可以说是奇迹的相遇中才值得尊重…	\\EOnly in a meeting that could be called a miracle is there something worth respecting…
+\\E在附近散了步。\n…感觉稍微增长了些体力。	\\EI took a walk nearby.\n…I feel like I've built up a little stamina.
+\\E太好了—！和哥哥一起购物约会—！	\\EYay—! A shopping date with big brother—!
+\\E太好了……！	\\EYay……!
+\\E太好啦—去赏花啦—！我会准备好便当的！	\\EYay— let's go flower viewing—! I'll prepare the bento!
+\\E太害羞了，这张照片没收！\n…哥哥这个H！	\\ESo embarrassing, this photo is confiscated!\n…Big brother, you pervert!
+\\E太棒了！	\\EAwesome!
+\\E头发蓬蓬乱乱的\n脸都还没睡醒…啊，好害羞啊…	\\EMy hair is all messy\nand my face still isn't awake… ah, so embarrassing…
+\\E奇怪…怎么了？现在才回去吗？	\\EStrange… what's wrong? You're going home only now?
+\\E奇怪？哥哥的这里…还很大哦？	\\EStrange? Big brother's place here… is still so big, you know?
+\\E女孩子尿尿之后如果不擦干净的话…	\\EIf a girl doesn't wipe properly after peeing…
+\\E好像今天在附近有祭典的样子…	\\EIt seems there's a festival nearby today…
+\\E好像会提高睡眠质量的…样子。	\\EIt seems to improve sleep quality… apparently.
+\\E好像已经洗好了…\n不快点撤退的话说不定会被发现呢。	\\EIt seems I've already finished washing…\nIf I don't retreat quickly I might get found.
+\\E好像谁说过色情游戏也是文学呢…	\\ESomeone once said that adult games are literature too…
+\\E好像钱不够的样子呢…	\\EIt seems I don't have enough money…
+\\E好像非常高兴的样子…	\\EYou seem really happy…
+\\E好刺眼——	\\ESo bright—
+\\E好厉害…！家里变得干干净净了呢哥哥！	\\EAmazing…! The house has become all clean, big brother!
+\\E好厉害呢！有一种圣诞节的感觉呢哥哥！	\\EAmazing! It feels like Christmas, big brother!
+\\E好厉害啊！很有赏花的感觉呢！	\\ESo amazing! It really feels like flower viewing!
+\\E好吃吗？	\\EIs it good?
+\\E好吧，就玩这个对战游戏吧。	\\EAlright, let's play this fighting game.
+\\E好呀，啊————嗯。	\\EOkay, ah————mm.
+\\E好好地休息了一番。	\\EI took a good rest.
+\\E好好地吃了一顿变精神了呢。	\\EI ate well and feel full of energy.
+\\E好好地射到最后吧…\n咻咻咻的把精子射到妹妹身上吧…	\\ELet's go all the way to the end…\nLet it out onto little sister with a splurt splurt…
+\\E好的…	\\EOkay…
+\\E好的…今天玩这个！！	\\EOkay… today let's play this!!
+\\E好的…今天试着玩这个吧。	\\EOkay… let's try playing this today.
+\\E好的…从墙壁到天花板都彻底扫除一下吧！	\\EOkay… let's clean thoroughly from the walls to the ceiling!
+\\E好的…可以哦…\n把，把鸡鸡…插进…菊穴里……	\\EOkay… it's fine…\nPut, put your thing… into… my backside……
+\\E好的…我点。	\\EOkay… I'll order.
+\\E好的…正好没在朝这边看呢…	\\EOkay… it just so happens they aren't looking this way…
+\\E好的…这样子…可以吗？	\\EOkay… is this… alright?
+\\E好的！两个人一起去温泉旅行吧！\n留下润湿的回忆吧！	\\EOkay! Let's go on a hot spring trip together!\nLet's leave behind some soaked memories!
+\\E好的！今天去泳池！	\\EOkay! Today we're going to the pool!
+\\E好的！今天就下定决心去海边玩吧！\n留个好的回忆吧！	\\EOkay! Today let's make up our minds and go play at the beach!\nLet's make some good memories!
+\\E好的！能赶上…！\n哥哥！我走啦！	\\EOkay! I can make it…!\nBig brother! I'm off!
+\\E好的，今天玩这个吧。	\\EOkay, let's play this today.
+\\E好的，做了这么多妹妹也会高兴的吧。	\\EOkay, if I do this much little sister will be happy too.
+\\E好的，到最近的神社去参拜吧。	\\EOkay, let's go worship at the nearest shrine.
+\\E好的，回家吧。	\\EOkay, let's go home.
+\\E好的，就选这边吧。\n…铺一下垫子…	\\EOkay, let's choose this side.\n…Lay out the mat…
+\\E好的，差不多该出发了…	\\EOkay, it's about time to set off…
+\\E好的，开始清洗身体吧。	\\EOkay, let's start washing our bodies.
+\\E好的，晚安喽…	\\EOkay, good night then…
+\\E好的，洗头吧。	\\EOkay, let's wash my hair.
+\\E好的，结束了。\n…有感觉好一点吗？哥哥。	\\EOkay, all done.\n…Do you feel a little better? Big brother.
+\\E好耶一起玩游戏吧！	\\EYay, let's play a game together!
+\\E好耶！	\\EYay!
+\\E好耶！太棒了—！	\\EYay! Awesome—!
+\\E好！	\\EOkay!
+\\E好，去吧。	\\EOkay, let's go.
+\\E妹妹…喝果汁就好了吗？	\\ELittle sister… is juice really fine?
+\\E妹妹…好像喜欢喝红茶呢…	\\ELittle sister… seems to like black tea…
+\\E妹妹从学校回来了。	\\ELittle sister came back from school.
+\\E妹妹怀孕？作为目标！	\\ELittle sister pregnant? Make that the goal!
+\\E妹妹睡在床上，自己睡在沙发上。\n…这是在这个房子里生活时最初决定的规则之一。	\\ELittle sister sleeps in the bed, and I sleep on the sofa.\n…This is one of the first rules we decided on when we started living in this house.
+\\E妹妹稍微闭起了眼深呼吸了一下。\n在少许沉默之后开了口。	\\ELittle sister closed her eyes for a moment and took a deep breath.\nAfter a short silence, she spoke.
+\\E妹妹穿了一天残留着温度和汗水的内裤。\n然后和这些内裤们的偶然邂逅。	\\EThe underwear little sister wore for a day, still carrying warmth and sweat.\nAnd then, a chance encounter with these underwear.
+\\E家里还有这小腹微微隆起的妹妹等着我。\n…现在，现在也是，隔几分钟确认一下时间。	\\EAt home, little sister with her slightly bulging belly is waiting for me.\n…Even now, even now, I keep checking the time every few minutes.
+\\E对不起……啊…我来…嗯…动……	\\ESorry…… ah… I'll… mm… move…
+\\E对不起─\\^	\\ESorry—\\^
+\\E对了，在洗澡之前还有要做的事呢…	\\ERight, there's something to do before taking a bath…
+\\E就因为昨天做了这么多啊…真是的！	\\EIt's because I did so much yesterday… geez!
+\\E就算你这么说……而且完全不奇怪的啊。\n倒不如说是拍的很好呢。	\\EEven if you say that…… and it's not strange at all.\nIf anything, it turned out great.
+\\E就算很喜欢妹妹也一定要避孕哦。\n被一时的欲望冲昏头脑作为哥哥失格了哦。	\\EEven if you love little sister so much, you absolutely must use protection.\nBeing swept away by momentary desire is disqualifying as a big brother.
+\\E就算这么说…钱也不够……工作也是…\n…哥哥…也只是个打工的……	\\EEven so… I don't have enough money… and work is…\n…Big brother… is just a part-timer too……
+\\E就这样安稳的迎来了和妹妹同居的100天。\n这是和至今为止两人一起度过的时光比起十分短暂的时间。	\\EAnd so, peacefully, we welcomed the 100th day of living together with little sister.\nIt's a very short time compared to the time the two of us have spent together up to now.
+\\E就这样，过着一如既往的日常─。	\\EAnd so, we live out the same everyday life as always—.
+\\E就，就那么想看吗…？	\\EDo, do you want to see it that badly…?
+\\E屋子里残留的妹妹的微弱的香味和气息\n也消失的无影无踪了。	\\EThe faint scent and presence of little sister lingering in the room\nhave vanished without a trace.
+\\E工资打进来了。	\\EMy salary was deposited.
+\\E差不多要射了吗…？\n哼哼…我帮你喝下去吧。	\\EAre you about to finish…?\nHehe… I'll drink it down for you.
+\\E差不多该睡了吧…？	\\EIt's about time to sleep…?
+\\E已经不需要这个了呢。	\\EWe don't need this anymore.
+\\E已经可以随便中出了呢。	\\EYou can already do it inside freely now.
+\\E已经泡过澡了呢…	\\EI've already taken a bath…
+\\E市民游泳池必须要戴好泳帽哦。	\\EAt the municipal pool you absolutely have to wear a swim cap.
+\\E带可爱的泳帽的话反而会很羞耻吧。\n所以学校的泳衣是最合适的哦，哥哥。	\\EA cute swim cap would actually be more embarrassing, right.\nSo the school swimsuit is the best fit, big brother.
+\\E帮妹妹冲洗了背部哦…	\\EI washed little sister's back…
+\\E帮妹妹洗了头哦…	\\EI washed little sister's hair…
+\\E平凡日常的每一个早上。	\\EEvery morning of an ordinary everyday.
+\\E应付一下就出去吧…	\\ELet's brush it off and go out…
+\\E开饭了。	\\ETime to eat.
+\\E当然…射在里面……会比较舒服…\n但是不行啦！哥哥…！	\\EOf course… inside…… feels better……\nBut that's not allowed! Big brother…!
+\\E形状也太刺激了…到底谁会用呢？	\\EThe shape is so stimulating too… just who would use this?
+\\E怎么可能呢！！！哥哥！	\\EImpossible!!! Big brother!
+\\E怎么回事	\\EWhat's going on
+\\E怎么样呢…	\\EHow about it…
+\\E怎么样？有没搓到的地方吗？	\\EHow is it? Is there anywhere you didn't get scrubbed?
+\\E总算是蒙混过去了。	\\EI somehow managed to bluff my way through.
+\\E总算讨了妹妹的欢心。	\\EI finally won little sister's favor.
+\\E总觉得妹妹样子不对。	\\ELittle sister somehow seems off.
+\\E恭喜达成GOODEND。\n之后也可以继续玩此存档。	\\ECongratulations on reaching the GOOD END.\nYou can continue playing this save afterward.
+\\E恭喜达成同居100天！\n还可以继续玩下去。	\\ECongratulations on reaching 100 days of living together!\nYou can keep playing.
+\\E恭喜达成稀有结局！\n这个数据可以转生之后继续玩。	\\ECongratulations on reaching a rare ending!\nAfter reincarnating, you can continue playing this data.
+\\E想起了妹妹宣布怀孕时的事情。	\\EI remembered the time little sister announced her pregnancy.
+\\E意外地聊得火热。	\\EWe ended up chatting surprisingly enthusiastically.
+\\E意外的聊得火热。	\\EWe chatted surprisingly enthusiastically.
+\\E感觉变得元气满满了。	\\EI feel full of energy now.
+\\E感觉好奇怪…哥哥的碰到了…	\\EIt feels so strange… big brother's is touching me…
+\\E感谢惠顾——！	\\EThank you for your patronage—!
+\\E我们两个明年还来吧…	\\ELet's come again next year, the two of us…
+\\E我会很快做好的等一下哦，哥哥。	\\EI'll make it quickly, so wait a moment, big brother.
+\\E我出发了！\n哥哥也注意别迟到了哦！	\\EI'm off!\nBig brother, be careful not to be late too!
+\\E我出发啦！	\\EI'm off!
+\\E我去的地方…要好好地…看着哦…哥哥…	\\EWhere I'm going… watch me properly… okay… big brother…
+\\E我回来了——	\\EI'm home—
+\\E我回来了。	\\EI'm home.
+\\E我想尿尿所以快出去啊，真是的…！	\\EI need to pee so hurry up and get out, geez…!
+\\E我来做饭你再睡一会儿吧，哥哥。	\\EI'll cook, so sleep a little longer, big brother.
+\\E我看看，一直有在喝的茶是…这个。	\\ELet me see, the tea I've been drinking all along is… this one.
+\\E我知道哥哥有哥哥自己的人生，\n…但是我也有我的人生。	\\EI know big brother has his own life,\n…but I have my life too.
+\\E我觉得哥哥能出去工作很了不起哦…\n但是，只是现在这样还不行啊…哥哥…	\\EI think it's amazing that big brother can go out and work…\nBut just the way things are now isn't enough… big brother…
+\\E我说……	\\EHey…
+\\E我这就去泡哥哥就坐下吧。	\\EI'll go fill the bath, so sit down, big brother.
+\\E所以早上醒来，妹妹就在旁边，\n揉着睡意朦胧的眼睛，打着哈欠向我说早上好。	\\ESo when I wake in the morning, little sister is beside me,\nrubbing her sleepy eyes and yawning as she says good morning to me.
+\\E手里好像没有那么多钱。	\\EIt seems I don't have that much money on me.
+\\E手里拿着的内裤还残留着妹妹的余香…	\\EThe underwear in my hand still carries little sister's lingering scent…
+\\E打工休息的日子就穿着不合身的制服\n跑遍的不计其数的公司。	\\EOn my days off from work, I wear an ill-fitting suit\nand run around countless companies.
+\\E把妹妹的背给好好的？清洗一下…	\\ELet me wash little sister's back properly, okay? Scrub it…
+\\E把积攒的洗完的东西给收拾下吧！	\\ELet's put away the washed things that have piled up!
+\\E抱歉…请给我这个。	\\EExcuse me… please give me this.
+\\E接下来…	\\ENext…
+\\E接下来有意识的时候，自己已经身处异世界了。\n是剑和，魔法和，怪物横行的幻想世界。	\\EThe next thing I knew, I was already in another world.\nA fantasy world where swords, magic, and monsters run rampant.
+\\E收下了打工的工资。	\\EI received my part-time wages.
+\\E收集大量的内裤吧！	\\ELet's collect a whole bunch of underwear!
+\\E收集这么多内裤真的很辛苦。\n…首先买完全一样的内裤的准备真的很困难。	\\ECollecting this much underwear is really tough.\n…First of all, preparing completely identical pairs is really hard.
+\\E新游戏吗…怎么办呢。	\\EA new game, huh… what to do.
+\\E旅行吗……是啊…	\\EA trip, huh…… yeah…
+\\E无论是悬于夜空的皓月、还是挂于高空的太阳\n就连宇宙中的无边黑暗也尽数被其吞没尽归于无——	\\EBe it the bright moon hanging in the night sky, or the sun hanging high above,\neven the boundless darkness of the cosmos is all swallowed up and reduced to nothing—
+\\E无论是悬于夜空的皓月，还是挂于高空的太阳\n就连宇宙中的无边黑暗也尽数被其吞没尽归于无─	\\EBe it the bright moon hanging in the night sky, or the sun hanging high above,\neven the boundless darkness of the cosmos is all swallowed up and reduced to nothing─
+\\E无论是悬于夜空的皓月，还是挂于高空的太阳，\n就连宇宙中的无边黑暗也尽数被其吞没尽归于无——	\\EBe it the bright moon hanging in the night sky, or the sun hanging high above,\neven the boundless darkness of the cosmos is all swallowed up and reduced to nothing———
+\\E早上好，哥哥！	\\EGood morning, big brother!
+\\E早上好，哥哥！\n饭做好了哦，一起吃吧！	\\EGood morning, big brother!\nBreakfast is ready, let's eat together!
+\\E春药吗…真的能起效吗？	\\EAn aphrodisiac, huh… will it really work?
+\\E昨天…翻云覆雨了很久呢…	\\EYesterday… we really went at it for a long time…
+\\E是动物综艺节目。\n动物的宝宝好像是由艺人养大的。	\\EIt's an animal variety show.\nThe baby animals seem to be raised by celebrities.
+\\E是吗…那么拜托你看家啦。	\\EIs that so… then please look after the house.
+\\E是吗…那么明天也拜托了哦。	\\EIs that so… then please again tomorrow.
+\\E是吗…那我就留下看家吧。	\\EIs that so… then I'll stay and look after the house.
+\\E是吗…？完全没有注意到啊…	\\EIs that so…? I didn't notice at all…
+\\E是吗，那哥哥晚安啦。	\\EIs that so, then good night, big brother.
+\\E是吗？	\\EIs that so?
+\\E是呢，要把小穴舔干净呢。	\\EYeah, I have to lick it clean.
+\\E是啊、明年也一起去吧。	\\EYeah, let's go together next year too.
+\\E是啊，为了健康就在附近散散步吧。	\\EYeah, for health let's take a walk nearby.
+\\E是啊，在暴露前撤退吧…	\\EYeah, let's retreat before we're exposed…
+\\E是啊，就锻炼一下日渐迟钝的身体吧。	\\EYeah, let's exercise this increasingly sluggish body a bit.
+\\E是啊，差不多该睡了呢。	\\EYeah, it's about time to sleep.
+\\E是在电脑上玩的色情游戏。\n虽说是个色情游戏但据说催泪是卖点。	\\EIt's an adult game played on the computer.\nEven though it's an adult game, it's said that its tearjerker story is the selling point.
+\\E是大人小孩都爱玩的人气卡牌竞技游戏。\n是个无论谁玩都会开心的经典游戏呢。	\\EIt's a popular card battle game that both adults and kids love.\nIt's a classic game that anyone will enjoy.
+\\E是我就可以了吗…	\\EIs it really okay for it to be me…
+\\E是旅行综艺节目。\n好像是骑着摩托车在四处旅行。	\\EIt's a travel variety show.\nIt seems they travel around on motorcycles.
+\\E是有偶像团体出演的国民性的综艺节目。	\\EIt's a national variety show featuring an idol group.
+\\E是歌会。\n无论看几次也看不出歌团的区别。	\\EIt's a music show.\nNo matter how many times I watch, I can't tell the idol groups apart.
+\\E是歌会。\n是没怎么见过的偶像团体开展的演出。	\\EIt's a music show.\nIt's a performance by an idol group I've hardly seen before.
+\\E是歌会。\n用排行榜的方式介绍了流行歌曲。	\\EIt's a music show.\nThey introduced popular songs in a ranking format.
+\\E是炸弹	\\EIt's a bomb
+\\E是独立制作的色情RPG游戏。\n几乎每天都会更新也常常会发布新游戏哦。	\\EIt's an independently made adult RPG.\nIt's updated almost every day and new games are often released too.
+\\E是猜谜综艺节目。\n以前好像有更多猜谜的节目。	\\EIt's a quiz variety show.\nThere used to be more quiz shows before.
+\\E是的…一切都是从这次相遇开始的。	\\EYes… everything started from this encounter.
+\\E是综艺节目。\n龅牙的主持人在一个人说个不停。	\\EIt's a variety show.\nThe buck-toothed host is talking on and on all by himself.
+\\E是至今都很有人气的对战格斗游戏。\n煮、烧、炸预测这三种互克的游戏很火热！	\\EIt's a still-popular competitive fighting game.\nBoil, burn, fry—predicting these three-way matchups is what's hot!
+\\E是赏花的时候啊…	\\EIt was during the flower viewing…
+\\E是这样的吗…\n这个姿势也太像小孩子了…	\\EIs that so…\nThis pose really looks too much like a child…
+\\E晚安哥哥，好好休息吧。	\\EGood night big brother, rest well.
+\\E晚安，哥哥。	\\EGood night, big brother.
+\\E最近好像也有可以普通拧开的哦。	\\EApparently these days there are ones you can open normally, too.
+\\E有一天，在洗衣篮里。\n叠摞这的衣服中藏着一条内裤。	\\EOne day, in the laundry basket.\nHidden among the piled-up clothes was a single pair of underwear.
+\\E有备的话…或许没错但对谁用呢？	\\EBeing prepared might be right, but who would you use it on?
+\\E有是有，但是总觉得有点不一样…\n果然还是祭典上的熊好烧最好吃啊。	\\EThere is, but somehow it feels a bit different…\nAs expected, the bear-shaped griddle cakes at the festival are the best.
+\\E有没有痒的地方啊？	\\EIs there anywhere that itches?
+\\E有空再…做爱哦。	\\EWhen we have time again… let's do it.
+\\E机会难得就把家里现有的东西塞一点进去吧！\n稍等一下哦哥哥。	\\ESince it's a rare chance, let's stuff in some of the stuff we have at home!\nWait just a moment, big brother.
+\\E来了——！	\\EComing—!
+\\E来了！公共游泳池！	\\EHere we go! The public pool!
+\\E果然还是个比起花还是团子派呢。	\\EAs expected, I'm still the dango over the flowers type.
+\\E果然还是要选格斗游戏啊。	\\EAs expected, it has to be a fighting game.
+\\E果然这里还是选洗头吧。	\\EAs expected, let's go with washing my hair here.
+\\E果然风险还是很大…放弃吧…	\\EAs expected the risk is still big… let's give up…
+\\E樱花也开得正盛…\n啊，哥哥喝茶吗？	\\EThe cherry blossoms are in full bloom too…\nAh, big brother, do you want some tea?
+\\E欢迎啊　这位客人\n要看看吗　我们有很厉害的东西哦——	\\EWelcome, sir\nWould you like a look? We've got some amazing things—
+\\E欢迎回来——	\\EWelcome back—
+\\E欢迎回来，那我也去洗了。	\\EWelcome back, then I'll go wash too.
+\\E欸…什么？不、不要！！	\\EHuh… what? N-no!!
+\\E欸…哥、哥哥…！？	\\EHuh… b-big brother…!?
+\\E欸…哥、哥哥也要上厕所吗！？\n等、等一下呢…	\\EHuh… b-big brother, are you going to the toilet too!?\nW-wait a moment…
+\\E欸…？不、不要！滚出去…！！！	\\EHuh…? N-no! Get out…!!!
+\\E正因为如此，这两个人一起度过的100天也无可取代。\n平平无奇日常的一格也看起来闪闪发光。	\\EPrecisely because of that, these 100 days the two of them spent together are irreplaceable.\nEven a single frame of the utterly ordinary everyday looks sparkling.
+\\E每天都一个劲的工作。\n一分钟也好，一秒钟也好为了能尽早回家而努力着。	\\EEvery day I just work and work.\nEven a minute, even a second, I strive to get home as early as I can.
+\\E比起炸鸡绝对是烤鸡更好。\n甜辣的！	\\ERather than fried chicken, grilled chicken is definitely better.\nSweet and spicy!
+\\E没有发现目标物…	\\ENo target object found…
+\\E没有玩的那么起劲儿…	\\EWe didn't get that into it…
+\\E没有聊的那么起劲儿…	\\EWe didn't chat that enthusiastically…
+\\E泳池！？\n太好了！和哥哥去泳池！	\\EThe pool!?\nYay! Going to the pool with big brother!
+\\E浴室是用来偷窥的，用来偷内裤的。\n至少等妹妹的心情一点就能笑着原谅你了。	\\EThe bath is for peeking, for stealing underwear.\nAt least if little sister's feelings improve a little she'll forgive you with a smile.
+\\E深夜模式全部由光标操作。\n（操作仍需优化，给您带来不便，敬请谅解）	\\ELate-night mode is entirely operated by cursor.\n(Controls still need improvement; we apologize for any inconvenience.)
+\\E清爽了呢！哥哥！	\\ESo refreshing! Big brother!
+\\E熊好烧真好吃啊。\n如果便利店什么的也有的卖就好了。	\\EBear-shaped griddle cakes are delicious.\nIt'd be nice if convenience stores sold them too.
+\\E狭小的家里，\n没有各自的房间也是没有办法的事情。	\\EIn the cramped house,\nnot having separate rooms can't be helped.
+\\E玩了无人不知的国民性的RPG。\n是四位陪酒女郎一边搭便车旅行一边找老公的游戏。	\\EI played a nationally famous RPG that everyone knows.\nIt's a game where four hostesses hitchhike around while looking for husbands.
+\\E玩了曾经流行一时的对战游戏。\n击落掉下的蔬菜就可以给对手扔大量的萝卜。	\\EI played a battle game that was popular for a while.\nKnock down the falling vegetables and you can throw a mountain of radishes at your opponent.
+\\E玩了校园恋爱游戏。\n是不断精进自己之后对传说中的木之下同学告白的游戏。	\\EI played a school romance game.\nIt's a game where you keep improving yourself and then confess to the legendary Kinoshita classmate.
+\\E玩什么游戏呢…	\\EWhat game should I play…
+\\E玩哪个游戏呢…	\\EWhich game should I play…
+\\E玩的很开心。	\\EI had fun.
+\\E现在我就来收拾餐桌。	\\EI'll clear the table now.
+\\E用好一点的枕头就会有好的睡眠…就是这么回事。	\\EUsing a good pillow gives you good sleep… that's how it is.
+\\E用手…就行的话…	\\EIf using my hand… is fine with you…
+\\E用这些锻炼身体能变得肌肉满满吗…？	\\EWill exercising with these make me all muscular…?
+\\E男人的身体啊……	\\EA man's body, huh……
+\\E直接拿回家会太大了还是配送回去吧。	\\ETaking it home directly would be too big, so let's have it delivered.
+\\E直接拿回家会太重了还是配送回去吧。	\\ETaking it home directly would be too heavy, so let's have it delivered.
+\\E看一眼网上商店吧。	\\ELet's take a look at the online shop.
+\\E看吧，看得到吗？\n…尿是从这里出来的哦。	\\ELook, can you see?\n…Pee comes out from here, you know.
+\\E看着背部总觉得有些欲火难耐…	\\ELooking at her back, I somehow feel a surge of desire…
+\\E真开心啊哥哥！\n以后还去！	\\EThat was so fun, big brother!\nLet's go again!
+\\E真是个好游戏啊…	\\EWhat a great game…
+\\E真是的…做这种事…我们可是兄妹哦？\n…你真的懂吗？哥哥。	\\EGeez… doing something like this… we're siblings, you know?\n…Do you really understand? Big brother.
+\\E真是的…如果那么喜欢内裤的话告诉我啊…	\\EGeez… if you like underwear that much, just tell me…
+\\E真是的！我已经说了住手了吧！	\\EGeez! I already told you to stop!
+\\E真是的，哥哥又在说这种话…	\\EGeez, big brother is saying that kind of thing again…
+\\E真是绅士的爱好呢。	\\EWhat a gentlemanly hobby.
+\\E真格的锻炼器械吗…好像很管用呢。	\\EReal exercise equipment, huh… seems like it'd really work.
+\\E真的吗。	\\EReally.
+\\E真的，一起经历了很多很多事情啊…\n呐，哥哥。	\\EReally, we've been through so many things together…\nHey, big brother.
+\\E睡觉吧…	\\ELet's sleep…
+\\E确实，偶尔也要孝顺父母啊。	\\EIndeed, you should be filial to your parents once in a while too.
+\\E离开烟雾缭绕的树林是映照着月亮闪闪发光的湖面，\n看向水面那里照映出的是？	\\ELeaving the smoke-wreathed forest, there's a lake shining as it reflects the moon,\nWhen you look at the water's surface, what is reflected there?
+\\E竟然在播出色色的节目内容。	\\EIt's even broadcasting naughty program content.
+\\E等一下——\\^	\\EWait a sec—\\^
+\\E等待降临的是没有声响，没有光亮的，只留处处“熊头”。	\\EWhat awaits is without sound, without light, only "bear heads" left everywhere.
+\\E等待降临的是没有声响，没有光亮的，只留处处“虚无”。	\\EWhat awaits is without sound, without light, only "nothingness" left everywhere.
+\\E等着送到家吧。	\\ELet's wait for it to be delivered home.
+\\E精力剂吗…已经不需要了呢	\\EA stamina drink, huh… I don't need it anymore.
+\\E糊弄过去了。	\\EI glossed it over.
+\\E糟了…咖啡已经被喝完了…	\\EOh no… the coffee's already been drunk up…
+\\E糟了…玉露已经被喝完了…	\\EOh no… the gyokuro's already been drunk up…
+\\E糟了…红茶已经被喝完了…	\\EOh no… the black tea's already been drunk up…
+\\E糟了…茶都被喝完了…	\\EOh no… all the tea's already been drunk up…
+\\E累…累死了…	\\ET… tired…
+\\E终于…终于集齐了…！	\\EFinally… finally collected them all…!
+\\E结束收集恭喜恭喜！\n还可以继续玩下去。	\\ECongratulations on finishing the collection!\nYou can keep playing.
+\\E聊了色色的话题。	\\EWe talked about naughty things.
+\\E能够在网上下单的还好，\n不是那样的话，只能到实体店去找类似的款式……	\\EBeing able to order online is fine,\nbut if not, I can only go to physical stores and look for similar styles……
+\\E能带我去真的太谢谢了，哥哥。	\\EThank you so much for taking me, big brother.
+\\E至今仍然清楚地记得\n内心因为隐约留下的妹妹的存在感而产生的无法抑制地激动。	\\EI still clearly remember\nthe uncontrollable excitement welling up inside me from the faint lingering presence of little sister.
+\\E虽然也不能说是亡羊补牢\n但也一定成为了自己各种各样改变的契机。	\\EIt can't exactly be called locking the barn after the horse has bolted,\nbut it surely became a chance for various changes in myself.
+\\E虽然时间还早但还是睡吧。	\\EEven though it's still early, let's sleep.
+\\E虽然没有能保住秘密…\n但我还是会好好准备哥哥的手工巧克力的。	\\EEven though I couldn't keep the secret…\nI'll still properly prepare big brother's handmade chocolates.
+\\E虽然走到这一步有很多辛苦。\n也有没有发现目标的内裤而纯胸顿足过。	\\EGetting this far took a lot of hardship.\nThere were also times I beat my chest in frustration when I couldn't find the target underwear.
+\\E虽说是按摩器具名字全是色情道具呢。	\\EEven though it's a massage device, the names are all adult toys.
+\\E蛋糕和…鸡肉！一起去买吧！	\\ECake and… chicken! Let's go buy them together!
+\\E蛋糕，一起去买吧！	\\EThe cake, let's go buy it together!
+\\E被夕阳染红的天空，无限拉长的影子，\n归山的鸟儿，匆匆行走的人们。\n你在想什么？	\\EThe sky dyed red by the setting sun, shadows stretched infinitely long,\nbirds returning to the mountains, people hurrying along.\nWhat are you thinking about?
+\\E被妹妹帮着洗了头哦…	\\ELittle sister washed my hair for me…
+\\E被炉…不可小觑…！	\\EThe kotatsu… can't be underestimated…!
+\\E被赶出去了…	\\EI got kicked out…
+\\E被这么看着的话有些害羞，呢。	\\EBeing looked at like this is kind of embarrassing, huh.
+\\E被骂得一塌糊涂…	\\EI got scolded terribly…
+\\E要…射，射了…！	\\EI'm… c-coming…!
+\\E要从背后…做吗…？\n嗯，可以哦…插进来…哥哥。	\\EDo you want to… do it from behind…?\nYeah, it's fine… put it in… big brother.
+\\E要去偷妹妹的内裤吗…？	\\EShould I go steal little sister's underwear…?
+\\E要去获取刚刚脱下的内裤吗…？	\\EShould I go get the underwear she just took off…?
+\\E要又便宜又不费事的最好呢…	\\ECheap and not a hassle would be best…
+\\E要是…要是之后也能这样一直过下去就好了呢。	\\EIf only… if only we could keep going like this forever.
+\\E要是你说…一定要做的话…	\\EIf you say… you absolutely have to do it…
+\\E要是动作太大的话会被发现的…	\\EIf I move too much I'll be found out…
+\\E要是哥哥…一定要做的话…	\\EIf big brother… absolutely has to do it…
+\\E要是无论如何都想变得幸福的话妹妹的信赖是必须的。	\\EIf you want to be happy no matter what, little sister's trust is essential.
+\\E要是无论如何都想变得幸福的话钱…\n还有妹妹的信赖是必须的。	\\EIf you want to be happy no matter what, money…\nand little sister's trust are essential.
+\\E要是无论如何都想变得幸福的话钱…\n还有妹妹的巨大信赖是必须的。	\\EIf you want to be happy no matter what, money…\nand little sister's great trust are essential.
+\\E要是无论如何都想变得幸福的话钱…\n还有妹妹的很大信赖是必须的。	\\EIf you want to be happy no matter what, money…\nand little sister's very great trust are essential.
+\\E要是能许一个愿，\n和妹妹度过的日子…妹生活能一直持续下去就好了。	\\EIf I could make one wish,\nI'd wish that the days spent with little sister… that this little-sister life could go on forever.
+\\E要睡到早上吗？	\\EShall we sleep until morning?
+\\E要继续玩吗？\n※之后不会变为怀孕状态。	\\EDo you want to keep playing?\n※Afterward the pregnancy state will not occur.
+\\E要转生吗？	\\EDo you want to reincarnate?
+\\E觉得有些害羞可以哦…	\\EIt's fine to feel a little embarrassed…
+\\E解锁这个回忆吗？	\\EUnlock this memory?
+\\E解锁这个回忆需要20000日元。	\\EUnlocking this memory requires 20,000 yen.
+\\E訪れるのは音もなく、光もなく、ただ等しくそこに有る	\\EWhat arrives comes without sound, without light, merely existing there in equal measure.
+\\E让妹妹帮忙冲了背哦…	\\ELittle sister washed my back for me…
+\\E说了些无关紧要的话。	\\EWe talked about trivial things.
+\\E说了些色色的话题。	\\EWe talked about naughty things.
+\\E说了无关紧要的话题。	\\EWe talked about trivial things.
+\\E说什么事情巧克力啊巧克力！\n你瞧，已经快要情人节了呢。	\\EWhat's all this about chocolate, chocolate!\nLook, Valentine's Day is almost here, you know.
+\\E说什么，怎么了今天是圣诞节哦哥哥！\n你瞧，今年说因为是工作日所以留到周末过的吧。	\\EWhat are you saying, what's going on, today is Christmas, big brother!\nLook, this year you said it's a workday so we'd celebrate on the weekend, right.
+\\E请多关照啦，哥哥。	\\ETake care of me, big brother.
+\\E请多陪陪妹妹好好珍惜她。\n作为哥哥失格了哦。	\\EPlease spend lots of time with little sister and cherish her.\nYou're disqualified as a big brother.
+\\E谁！？哎……哥、哥哥！？\n…不，不要！！一边去！！！！	\\EWho!? Huh…… b-big brother!?\n…N-no!! Go away!!!!
+\\E走上险恶的登山道，往上看去视野里出现了什么呢？	\\EWalking up the rugged mountain trail, when you look up, what appears in your field of view?
+\\E超级好玩…	\\ESuper fun…
+\\E超色情RPG吗…这一类东西会有很大的偏差呢…	\\EA super naughty RPG, huh… this kind of thing really varies a lot…
+\\E超越史瓦西妹妹半径的光的奔流\n席卷了大地高山，江河湖海之后包裹了整个星球。	\\EA torrent of light surpassing the Schwarzschild little-sister radius\nswept across the earth and mountains, the rivers and seas, and then wrapped around the entire planet.
+\\E超越史瓦西妹妹半径的光的奔流，\n席卷了大地高山，江河湖海之后包裹了整个星球。	\\EA torrent of light surpassing the Schwarzschild little-sister radius,\nswept across the earth and mountains, the rivers and seas, and then wrapped around the entire planet.
+\\E输给一时的欲望，使得人生受了重大挫折。\n但是世上没有后悔药…	\\ELosing to a moment's desire caused a major setback in life.\nBut there's no medicine for regret in this world…
+\\E还是去洗澡吧…	\\ELet's go take a bath…
+\\E还有其他的东西吗…？	\\EIs there anything else…?
+\\E还有其他的吗…？	\\EIs there anything else…?
+\\E这…这里我自己来洗吧…	\\ETh-this… I'll wash this part myself…
+\\E这个到紧要关头可能会很有用呢。	\\EThis might be very useful at the crucial moment.
+\\E这个好像可以提高睡眠质量能睡得很好…大概。	\\EThis seems to improve sleep quality and let you sleep well… probably.
+\\E这个已经有了呢…	\\EI already have this…
+\\E这个我知道…\n但也不用拍人家吃到肚子鼓鼓的照片嘛。	\\EI know that…\nBut you don't have to take a picture of me with my belly all stuffed.
+\\E这个戒指，虽然不能在学校带\n但是在家里会好好带上哦，哈哈。	\\EThis ring, even though I can't wear it at school,\nI'll wear it properly at home, haha.
+\\E这个时间在放映国外电影。	\\EA foreign movie is showing at this hour.
+\\E这个，给哥哥。	\\EHere, for big brother.
+\\E这是今年冬天和妹妹一起去温泉旅行时的照片啊。	\\EThis is a photo from when I went on a hot spring trip with little sister this winter.
+\\E这是辛苦集齐的妹妹的内裤。	\\EThese are the little sister underwear I worked so hard to collect.
+\\E这样吊儿郎当的样子\n绝对不能给哥哥以外的人看啊……	\\EA sloppy look like this\nabsolutely must not be shown to anyone but big brother……
+\\E这样子两个人永远生活在了一起。	\\EAnd so the two of them lived together forever.
+\\E这种事…我し……\n用屁股来…来…做爱什么的……唔……	\\EThis kind of thing… I'm…\ndoing it with my backside and all…… mm……
+\\E这边……这里…可以用吗…？	\\EThis side…… here… can we use it…?
+\\E这里只能这样做了…！	\\EHere I can only do it this way…!
+\\E这里是温泉旅馆，看起来是混浴的样子…\n温泉里有？	\\EThis is a hot spring inn, and it seems to be a mixed bath…\nIn the hot spring there's…?
+\\E这里要小心谨慎…	\\EI have to be careful here…
+\\E连打一声招呼都有所顾忌。\n就这样，远远地目送其离去了。	\\EEven greeting them feels awkward.\nAnd so, I just watched them leave from afar.
+\\E那个…我要先走了哦。	\\EUm… I'm going to head out first.
+\\E那个不行。\n会砰地一声响的比较好。	\\EThat's no good.\nIt's better if it goes off with a bang.
+\\E那个，哥哥的那个…很有精神啊……	\\EUm, big brother's thing… is very energetic, you know……
+\\E那个，要做什么呢哥哥。	\\EUm, what should we do, big brother.
+\\E那个，要怎么办哥哥。	\\EUm, what should we do, big brother.
+\\E那么…今天试试这个吧。	\\EThen… let's try this today.
+\\E那么…在这里帮你揉搓鸡鸡…	\\EThen… I'll rub your thing for you here…
+\\E那么…开始吧！	\\EThen… let's begin!
+\\E那么…我先来清洗身体吧。	\\EThen… I'll wash my body first.
+\\E那么一起去吧！哥哥！	\\EThen let's go together! Big brother!
+\\E那么我出发了。	\\EThen I'm off.
+\\E那么我出发了，哥哥！	\\EThen I'm off, big brother!
+\\E那么我要走这边了。	\\EThen I'll be going this way.
+\\E那么该做什么呢…	\\EThen what should we do…
+\\E那么，一起玩游戏吧。	\\EThen, let's play a game together.
+\\E那么，今天就在家里悠闲度过吧。	\\EThen, let's spend today relaxing at home.
+\\E那么，今天就玩这个吧。	\\EThen, let's play this today.
+\\E那么，加些什么呢…	\\EThen, what should we add…
+\\E那么，去哪里呢…	\\EThen, where shall we go…
+\\E那么，去玩游戏吧。	\\EThen, let's go play a game.
+\\E那么，回去吧。	\\EThen, let's go home.
+\\E那么，干什么好呢…	\\EThen, what should I do…
+\\E那么，开始清洗身体吧。	\\EThen, let's start washing our bodies.
+\\E那么，我先去泡澡了。	\\EThen, I'll go take a bath first.
+\\E那么，我出发了…	\\EThen, I'm off…
+\\E那么，接下来就由哥哥来为我洗香香吧。	\\EThen, from here on big brother will wash me all clean.
+\\E那么，该怎么做呢…	\\EThen, what should I do…
+\\E那么，该怎么做呢。	\\EThen, what should I do.
+\\E那么，这次换我进去泡哦。	\\EThen, this time I'll get in to soak.
+\\E那哥哥，我去对面看看吧！	\\EThen, big brother, I'll go take a look across there!
+\\E那就…拜托了。	\\EThen… please.
+\\E那我们一起去吧！哥哥！	\\EThen let's go together! Big brother!
+\\E那我去泡了哦，哥哥。	\\EThen I'll go soak, big brother.
+\\E采用了超级奥特逃生装置。	\\EUsed the super-ultra escape device.
+\\E金钱也是…学校也是…父母也是…\n即使这样…即使这样也可以吗？也能努力下去吗…？	\\EMoney too… school too… parents too…\nEven so… is even so okay? Can I keep trying…?
+\\E难得的休息日今天还是和妹妹玩吧。	\\EOn this rare day off, let's play with little sister today.
+\\E难道又…想看了吗…？	\\ECould it be… you want to see it again…?
+\\E难道要去偷看妹妹的上厕所吗…？	\\ECould it be you're going to peek at little sister going to the toilet…?
+\\E非常遗憾是命中注定不能和妹妹在一起的哥哥。\n没关系，期待下一次的人生吧。	\\EUnfortunately, you are a big brother fated to never be with little sister.\nIt's fine, look forward to the next life.
+\\E首先是…房间的扫除！	\\EFirst… cleaning the room!
+\\E高人气的综艺节目。\n身材娇好的女装主持人在说着欢快的话题气氛火热。	\\EA popular variety show.\nA well-figured cross-dressing host keeps the mood lively with cheerful topics.
+\\E鸡鸡都软下去了…	\\EMy thing has gone soft…
+\\E！！……啊……	\\E!!…… ah……
+\\E！！……嗯……嗯………唔……	\\E!!…… mm…… mm……… mm……
+\\E！！哇啊！哥哥不好啦！已经这个点了！	\\E!! Waaah! Big brother, this is bad! It's already this hour!
+\\E！！！！！唔………！…………	\\E!!!!! mm………!…………
+\\E（惊！	\\E(startled!
+\\E？？	\\E??
+\\Eｰ｡｣ｬﾔ酲ﾏｺﾃ｡ｪ｡ｪｸ邵	\\Eｰ｡｣ｬﾔ酲ﾏｺﾃ｡ｪ｡ｪｸ邵
+\\Eﾒｻﾆｴﾁﾋﾉ霻ｹｶｯｻｭ｡｣\nﾊﾇｸ獸	\\Eﾒｻﾆｴﾁﾋﾉ霻ｹｶｯｻｭ｡｣\nﾊﾇｸ獸
+menu1	menu1
+menu2	menu2
+menu3	menu3
+ȥ 	ȥ 
+ϴͷ	ϴͷ
+…还，还不清楚呢 	…I-I'm still not sure yet 
+一个人去 	Go alone 
+一个人洗	Wash alone
+一名年轻女子 	A young woman 
+一起去 	Go together 
+不买	Don't buy
+不买 	Don't buy 
+不买　	Don't buy　
+不去 	Don't go 
+不想去 	Don't want to go 
+不是	No
+不是 	No 
+不知道 	Don't know 
+不赶快可不行 	I've got to hurry 
+两个人洗	Wash together
+买	Buy
+买 	Buy 
+买完东西回家 	Finish shopping and go home 
+什么都不做	Do nothing
+什么都不做 	Do nothing 
+什么都没有 	Nothing at all 
+今天就这样睡吧 	Let's just sleep like this today 
+今年也多关照 	Please take care of me this year too 
+住手吧	Stop it
+做家务 	Do chores
+做运动 	Exercise
+停手	Stop
+停手 	Stop 
+健康商店 	Health shop 
+偷内裤	Steal underwear
+偷内裤 	Steal underwear 
+偷看	Peek
+偷看 	Peek 
+偷看泡澡	Peek at the bath
+再多舔一些 	Lick a little more 
+再找找	Search more
+再找找 	Search more 
+冲洗背部	Rinse the back
+切断红色的线 	Cut the red wire 
+到回家时间了 	It's time to go home 
+前路还很遥远 	The road ahead is still long 
+动作快点出来吧	Hurry up and come out
+包场喽！ 	We've got the place to ourselves! 
+去偷看 	Go peek 
+去茶叶店 	Go to the tea shop 
+发射	Fire
+发射 	Fire 
+只有老头老太婆 	Only old geezers and grannies 
+否	No
+否 	No 
+否　	No　
+和妹妹一起玩 	Play with little sister 
+咖啡　　　1000円	Coffee 1,000 yen
+咖啡　　　1000円 	Coffee 1,000 yen 
+哑铃　　　　             20000円 	Dumbbell 20,000 yen 
+啊啊啊啊啊啊啊！！！！！	Aaaaaaaaah!!!!!
+啊，好像能看到内裤… 	Ah, I think I can see the underwear… 
+在家玩游戏 	Play games at home 
+在家里悠闲度过 	Relax at home 
+在附近散步 	Take a walk nearby 
+奇怪的店 	A strange shop 
+好像做爱	Seems like doing it
+好吃 	Tasty 
+安全套　           2000円 	Condoms 2,000 yen 
+安眠枕　　　             80000円 	Sleep pillow 80,000 yen 
+安眠枕　　　   80000円 	Sleep pillow 80,000 yen 
+安眠茶　　　     5000円 	Sleep tea 5,000 yen 
+安眠茶　　　    5000円 	Sleep tea 5,000 yen 
+对战游戏	Fighting game
+对战游戏 	Fighting game 
+对话	Talk
+就这样结束 	End it like this 
+已经这个时间了 	It's already this late 
+帮忙洗	Help wash
+开始交流 	Start chatting 
+开玩笑的 	Just kidding 
+悄悄放回去	Put it back quietly
+悄悄放回去 	Put it back quietly 
+想插进小穴	Want to put it in down there
+想用后面的穴	Want to use the back
+想用嘴来做	Want to do it with the mouth
+想用手来做	Want to do it with the hand
+想看！ 	I want to see! 
+憋气	Hold my breath
+我知道 	I know 
+把体力食材买回家　 3000円 	Buy stamina ingredients and bring them home 3,000 yen 
+把便当买回家　　 　2000円	Buy a bento and bring it home 2,000 yen
+把泡面买回家　	Buy instant noodles and bring them home 
+把炸弹扔远点 	Throw the bomb far away 
+把积攒的家务做完 	Finish the piled-up chores 
+把食材买回家　　　 1000円	Buy ingredients and bring them home 1,000 yen
+拔出来射在外面	Pull out and finish outside
+拿浴巾 	Get a towel 
+接着偷看	Keep peeking
+撤退	Retreat
+撸管	Rub one out
+撸管 	Rub one out 
+无关紧要的话题	Trivial talk
+无关紧要的话题 	Trivial talk 
+无所事事地度过 	Spend time doing nothing 
+春药  　          20000円 	Aphrodisiac 20,000 yen 
+春药　　　　  20000円 	Aphrodisiac 20,000 yen
+是	Yes
+是 	Yes 
+是山顶 	It's the mountain top 
+是蔬菜 	It's vegetables 
+是，是熊啊—！！！！	Y-yes, it's a bear—!!!!
+格斗游戏	Fighting game
+格斗游戏 	Fighting game 
+没事的…别担心 	It's okay… don't worry 
+没关系	It's fine
+泡澡 	Take a bath 
+泡茶 	Brew tea 
+洗身体	Wash the body
+清洗身体吧	Let's wash the body
+游戏商店 	Game shop 
+玉露　　　5000円	Gyokuro 5,000 yen
+玉露　　　5000円 	Gyokuro 5,000 yen 
+玩游戏吧 	Let's play a game 
+现在起来了… 	I'm up now… 
+生下来就好 	It's best to give birth
+电动按摩器     20000円 	Electric massager 20,000 yen 
+相信哥哥吧 	Trust big brother
+看看电视吧 	Let's watch TV 
+睡觉 	Sleep
+竞速游戏	Racing game
+竞速游戏 	Racing game 
+笨蛋w切断蓝色的线 	Idiot (lol) cut the blue wire 
+精力剂　　          15000円 	Vitality tonic 15,000 yen 
+精力剂　　  　15000円 	Vitality tonic 15,000 yen
+红茶　　　2000円 	Black tea 2,000 yen
+红茶　　　� 2000円	Black tea 2,000 yen
+网上购物 	Online shopping 
+美  女  军  团 	Beauty Legion 
+美丽的月亮 	Beautiful moon
+美少女游戏　　　    7000円 	Bishoujo game 7,000 yen 
+自己的身姿 	My own figure
+色情游戏　　　　  12000円 	Adult game 12,000 yen 
+色色的话题	Naughty talk
+色色的话题 	Naughty talk 
+茶　　　   1000円	Tea 1,000 yen
+茶　　　   1000円 	Tea 1,000 yen 
+茶店 	Tea shop 
+药店 	Pharmacy 
+菊穴转珠棒　  60000円 	Beaded toy 60,000 yen 
+被臀部夹住	Held between the backside
+要撸管吗	Want to rub one out?
+要撸管吗 	Want to rub one out? 
+观看	Watch
+角色扮演游戏	Role-playing game
+角色扮演游戏 	Role-playing game 
+讨好 	Pamper
+让她喝	Make her drink
+说话 	Talk 
+超色情RPG 　　　   3000円 	Super naughty RPG 3,000 yen 
+跳蛋  　          10000円 	Vibrating egg 10,000 yen 
+跳蛋　            10000円 	Vibrating egg 10,000 yen
+转珠棒            40000円 	Beaded rod 40,000 yen 
+进去 	Go in
+进浴池吧！	Let's get in the bath!
+避孕药　         10000円 	Birth control pills 10,000 yen 
+锻炼器械　              100000円 	Exercise equipment 100,000 yen 
+锻炼器械　        100000円 	Exercise equipment 100,000 yen
+鸡鸡	Penis
+鸡鸡伸展！ 	Penis stretch! 
+ｱﾜﾔﾐﾒｩ｡｡｡｡｡       10000υ 	ｱﾜﾔﾐﾒｩ｡｡｡｡｡       10000υ 
+ﾑﾆﾁ蝪｡｡｡｡｡｡           20000υ 	ﾑﾆﾁ蝪｡｡｡｡｡｡           20000υ 

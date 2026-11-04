@@ -1,0 +1,14 @@
+M5-E: audio mod overlays
+
+Let --mod roots override BGM/SE lookup in wolf-audio as well. Engine gains
+with_overlays, null_with_overlays and an overlays accessor; resolve searches
+newest overlay first, then the current directory, the base root and base/Data.
+Game::enable_audio passes the same overlays through, so play and capture use
+one mod set for data and audio.
+
+Tests: new wolf-audio/tests/m5_audio_overlay.rs covers overlay precedence,
+base fallback, backslash and absolute paths; m5_mod_overlay.rs checks the Game
+audio wiring. Full workspace and WOLF_DATA_ROOT=work/Data both exit 0;
+verify PASS 64/1 SKIP; verify --wolf PASS 72, 1361/1361 bytes equal.
+
+Docs: M5_BEYOND, README, docs/README, HANDOFF M0.

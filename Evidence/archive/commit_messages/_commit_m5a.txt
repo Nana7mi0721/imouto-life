@@ -1,0 +1,8 @@
+M5-A: fractional fit scaling and fullscreen
+
+Add ScaleMode (integer / fit-nearest / fit-linear) and FitScaler so the
+1024x576 canvas can fill a 16:9 window fractionally instead of being
+limited to the retail integer grid. Renderer keeps separate nearest and
+linear blit samplers, maps window points back through the active mode,
+and play gains --scale/--fullscreen plus F9/F11 controls. Docs and
+handover updated; no new dependencies.

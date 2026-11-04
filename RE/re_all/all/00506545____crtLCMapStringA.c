@@ -1,0 +1,261 @@
+
+/* WARNING: Function: __SEH_prolog replaced with injection: SEH_prolog */
+/* WARNING: Function: __chkstk replaced with injection: alloca_probe */
+/* WARNING: Function: __SEH_epilog replaced with injection: EH_epilog3 */
+/* WARNING: Unable to track spacebase fully for stack */
+/* Library Function - Single Match
+    ___crtLCMapStringA
+   
+   Library: Visual Studio 2003 Release */
+
+int __cdecl
+___crtLCMapStringA(_locale_t _Plocinfo,LPCWSTR _LocaleName,DWORD _DwMapFlag,LPCSTR _LpSrcStr,
+                  int _CchSrc,LPSTR _LpDestStr,int _CchDest,int _Code_page,BOOL _BError)
+
+{
+  bool bVar1;
+  bool bVar2;
+  int iVar3;
+  DWORD DVar4;
+  char *pcVar5;
+  int iVar6;
+  undefined1 *puVar7;
+  int iVar8;
+  size_t _Size;
+  LPCSTR pCVar9;
+  undefined1 *puVar10;
+  undefined1 *puVar11;
+  undefined1 *puVar12;
+  undefined1 *puVar13;
+  size_t *lpDestStr;
+  undefined1 uStack00000000;
+  DWORD DStackY_74;
+  undefined4 local_4c;
+  size_t local_48 [7];
+  LPCSTR local_2c;
+  undefined1 *local_24;
+  undefined1 *local_20;
+  
+  if (DAT_00a1fe40 == 0) {
+    DStackY_74 = 0x506572;
+    iVar3 = LCMapStringW(0,0x100,L"",1,(LPWSTR)0x0,0);
+    if (iVar3 == 0) {
+      DVar4 = GetLastError();
+      if (DVar4 == 0x78) {
+        DAT_00a1fe40 = 2;
+      }
+    }
+    else {
+      DAT_00a1fe40 = 1;
+    }
+  }
+  if (0 < (int)_LpSrcStr) {
+    pcVar5 = (char *)_DwMapFlag;
+    pCVar9 = _LpSrcStr;
+    do {
+      pCVar9 = pCVar9 + -1;
+      if (*pcVar5 == '\0') goto LAB_005065ab;
+      pcVar5 = pcVar5 + 1;
+    } while (pCVar9 != (LPCSTR)0x0);
+    pCVar9 = (LPCSTR)0xffffffff;
+LAB_005065ab:
+    _LpSrcStr = _LpSrcStr + (-1 - (int)pCVar9);
+  }
+  if ((DAT_00a1fe40 != 2) && (DAT_00a1fe40 != 0)) {
+    if (DAT_00a1fe40 == 1) {
+      iVar3 = 0;
+      bVar2 = false;
+      bVar1 = false;
+      if (_CchDest == 0) {
+        _CchDest = DAT_00a1fe10;
+      }
+      DStackY_74 = 0x50660b;
+      iVar6 = MultiByteToWideChar(_CchDest,(uint)(_Code_page != 0) * 8 + 1,(LPCSTR)_DwMapFlag,
+                                  (int)_LpSrcStr,(LPWSTR)0x0,0);
+      if (iVar6 != 0) {
+        puVar7 = (undefined1 *)(iVar6 * 2 + 3U & 0xfffffffc);
+        iVar8 = -(int)puVar7;
+        local_20 = (undefined1 *)((int)local_48 + iVar8 + -0x10);
+        if (local_48 + -4 == (size_t *)puVar7) {
+          *(int *)((int)local_48 + iVar8 + -0x14) = iVar6 * 2;
+          *(undefined4 *)((int)local_48 + iVar8 + -0x18) = 0x506664;
+          local_20 = _malloc(*(size_t *)((int)local_48 + iVar8 + -0x14));
+          if (local_20 == (void *)0x0) {
+            return 0;
+          }
+          bVar2 = true;
+        }
+        *(int *)((int)local_48 + iVar8 + -0x14) = iVar6;
+        *(undefined1 **)((int)local_48 + iVar8 + -0x18) = local_20;
+        *(LPCSTR *)((int)local_48 + iVar8 + -0x1c) = _LpSrcStr;
+        *(DWORD *)((int)local_48 + iVar8 + -0x20) = _DwMapFlag;
+        *(undefined4 *)((int)local_48 + iVar8 + -0x24) = 1;
+        *(int *)((int)local_48 + iVar8 + -0x28) = _CchDest;
+        puVar10 = (undefined1 *)((int)local_48 + iVar8 + -0x2c);
+        *(undefined4 *)((int)local_48 + iVar8 + -0x2c) = 0x50668c;
+        iVar8 = MultiByteToWideChar(*(UINT *)((int)local_48 + iVar8 + -0x28),
+                                    *(DWORD *)((int)local_48 + iVar8 + -0x24),
+                                    *(LPCSTR *)((int)local_48 + iVar8 + -0x20),
+                                    *(int *)((int)local_48 + iVar8 + -0x1c),
+                                    *(LPWSTR *)((int)local_48 + iVar8 + -0x18),
+                                    *(int *)((int)local_48 + iVar8 + -0x14));
+        puVar7 = puVar10;
+        if (iVar8 != 0) {
+          *(undefined4 *)(puVar10 + -4) = 0;
+          *(undefined4 *)(puVar10 + -8) = 0;
+          *(int *)(puVar10 + -0xc) = iVar6;
+          *(undefined1 **)(puVar10 + -0x10) = local_20;
+          *(LPCWSTR *)(puVar10 + -0x14) = _LocaleName;
+          *(_locale_t *)(puVar10 + -0x18) = _Plocinfo;
+          puVar11 = puVar10 + -0x1c;
+          *(undefined4 *)(puVar10 + -0x1c) = 0x5066a6;
+          iVar3 = LCMapStringW(*(LCID *)(puVar10 + -0x18),*(DWORD *)(puVar10 + -0x14),
+                               *(LPCWSTR *)(puVar10 + -0x10),*(int *)(puVar10 + -0xc),
+                               *(LPWSTR *)(puVar10 + -8),*(int *)(puVar10 + -4));
+          puVar7 = puVar11;
+          if (iVar3 != 0) {
+            if (((uint)_LocaleName & 0x400) == 0) {
+              puVar7 = (undefined1 *)(iVar3 * 2 + 3U & 0xfffffffc);
+              *(undefined4 *)(puVar11 + -4) = 0x5066fb;
+              iVar8 = -(int)puVar7;
+              local_24 = puVar11 + iVar8;
+              if (puVar11 == puVar7) {
+                *(int *)(puVar11 + iVar8 + -4) = iVar3 * 2;
+                *(undefined4 *)(puVar11 + iVar8 + -8) = 0x506732;
+                local_24 = _malloc(*(size_t *)(puVar11 + iVar8 + -4));
+                puVar7 = puVar11 + iVar8;
+                if (local_24 == (undefined1 *)0x0) goto LAB_0050677a;
+                bVar1 = true;
+              }
+              *(int *)(puVar11 + iVar8 + -4) = iVar3;
+              *(undefined1 **)(puVar11 + iVar8 + -8) = local_24;
+              *(int *)(puVar11 + iVar8 + -0xc) = iVar6;
+              *(undefined1 **)(puVar11 + iVar8 + -0x10) = local_20;
+              *(LPCWSTR *)(puVar11 + iVar8 + -0x14) = _LocaleName;
+              *(_locale_t *)(puVar11 + iVar8 + -0x18) = _Plocinfo;
+              puVar13 = puVar11 + iVar8 + -0x1c;
+              *(undefined4 *)(puVar11 + iVar8 + -0x1c) = 0x506755;
+              iVar6 = LCMapStringW(*(LCID *)(puVar11 + iVar8 + -0x18),
+                                   *(DWORD *)(puVar11 + iVar8 + -0x14),
+                                   *(LPCWSTR *)(puVar11 + iVar8 + -0x10),
+                                   *(int *)(puVar11 + iVar8 + -0xc),
+                                   *(LPWSTR *)(puVar11 + iVar8 + -8),*(int *)(puVar11 + iVar8 + -4))
+              ;
+              puVar7 = puVar13;
+              if (iVar6 != 0) {
+                *(undefined4 *)(puVar13 + -4) = 0;
+                *(undefined4 *)(puVar13 + -8) = 0;
+                if (_LpDestStr == (LPSTR)0x0) {
+                  *(undefined4 *)(puVar13 + -0xc) = 0;
+                  *(undefined4 *)(puVar13 + -0x10) = 0;
+                }
+                else {
+                  *(LPSTR *)(puVar13 + -0xc) = _LpDestStr;
+                  *(int *)(puVar13 + -0x10) = _CchSrc;
+                }
+                *(int *)(puVar13 + -0x14) = iVar3;
+                *(undefined1 **)(puVar13 + -0x18) = local_24;
+                *(undefined4 *)(puVar13 + -0x1c) = 0;
+                *(int *)(puVar13 + -0x20) = _CchDest;
+                puVar7 = puVar13 + -0x24;
+                *(undefined4 *)(puVar13 + -0x24) = 0x506778;
+                iVar3 = WideCharToMultiByte(*(UINT *)(puVar13 + -0x20),*(DWORD *)(puVar13 + -0x1c),
+                                            *(LPCWSTR *)(puVar13 + -0x18),*(int *)(puVar13 + -0x14),
+                                            *(LPSTR *)(puVar13 + -0x10),*(int *)(puVar13 + -0xc),
+                                            *(LPCSTR *)(puVar13 + -8),*(LPBOOL *)(puVar13 + -4));
+              }
+            }
+            else if ((_LpDestStr != (LPSTR)0x0) && (iVar3 <= (int)_LpDestStr)) {
+              *(LPSTR *)(puVar11 + -4) = _LpDestStr;
+              *(int *)(puVar11 + -8) = _CchSrc;
+              *(int *)(puVar11 + -0xc) = iVar6;
+              *(undefined1 **)(puVar11 + -0x10) = local_20;
+              *(LPCWSTR *)(puVar11 + -0x14) = _LocaleName;
+              *(_locale_t *)(puVar11 + -0x18) = _Plocinfo;
+              puVar12 = puVar11 + -0x1c;
+              *(undefined4 *)(puVar11 + -0x1c) = 0x5066e1;
+              LCMapStringW(*(LCID *)(puVar11 + -0x18),*(DWORD *)(puVar11 + -0x14),
+                           *(LPCWSTR *)(puVar11 + -0x10),*(int *)(puVar11 + -0xc),
+                           *(LPWSTR *)(puVar11 + -8),*(int *)(puVar11 + -4));
+              puVar7 = puVar12;
+            }
+          }
+        }
+LAB_0050677a:
+        if (bVar1) {
+          *(undefined1 **)(puVar7 + -4) = local_24;
+          *(undefined4 *)(puVar7 + -8) = 0x506787;
+          _free(*(void **)(puVar7 + -4));
+        }
+        if (bVar2) {
+          *(undefined1 **)(puVar7 + -4) = local_20;
+          *(undefined4 *)(puVar7 + -8) = 0x506795;
+          _free(*(void **)(puVar7 + -4));
+        }
+        return iVar3;
+      }
+    }
+    return 0;
+  }
+  local_2c = (LPCSTR)0x0;
+  lpDestStr = (size_t *)0x0;
+  bVar1 = false;
+  if (_Plocinfo == (_locale_t)0x0) {
+    _Plocinfo = DAT_00a1fe00;
+  }
+  if (_CchDest == 0) {
+    _CchDest = DAT_00a1fe10;
+  }
+  iVar3 = ___ansicp();
+  if (iVar3 == -1) {
+    return 0;
+  }
+  if (iVar3 == _CchDest) {
+    DStackY_74 = 0x5068e6;
+    local_4c = LCMapStringA((LCID)_Plocinfo,(DWORD)_LocaleName,(LPCSTR)_DwMapFlag,(int)_LpSrcStr,
+                            (LPSTR)_CchSrc,(int)_LpDestStr);
+    goto LAB_005068e8;
+  }
+  DStackY_74 = 0x5067f2;
+  local_2c = (LPCSTR)___convertcp();
+  if (local_2c == (LPCSTR)0x0) {
+    return 0;
+  }
+  DStackY_74 = 0x50680e;
+  _Size = LCMapStringA((LCID)_Plocinfo,(DWORD)_LocaleName,local_2c,(int)_LpSrcStr,(LPSTR)0x0,0);
+  if (_Size != 0) {
+    lpDestStr = local_48 + -4;
+    _memset(local_48 + -4,0,_Size);
+    if (&uStack00000000 == (undefined1 *)0x58) {
+      lpDestStr = _malloc(_Size);
+      if (lpDestStr != (size_t *)0x0) {
+        _memset(lpDestStr,0,_Size);
+        bVar1 = true;
+        goto LAB_00506879;
+      }
+    }
+    else {
+LAB_00506879:
+      DStackY_74 = 0x50688f;
+      iVar3 = LCMapStringA((LCID)_Plocinfo,(DWORD)_LocaleName,local_2c,(int)_LpSrcStr,
+                           (LPSTR)lpDestStr,_Size);
+      if (iVar3 != 0) {
+        DStackY_74 = 0x5068b0;
+        iVar3 = ___convertcp();
+        local_4c = (uint)(iVar3 != 0);
+        goto LAB_005068c0;
+      }
+    }
+    local_4c = 0;
+  }
+LAB_005068c0:
+  if (bVar1) {
+    _free(lpDestStr);
+  }
+LAB_005068e8:
+  if (local_2c != (LPCSTR)0x0) {
+    _free(local_2c);
+  }
+  return local_4c;
+}
+

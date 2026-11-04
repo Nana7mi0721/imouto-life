@@ -1,0 +1,7 @@
+M4: resolve opcode 140 SystemDB sound entries
+
+- Host::sound_db hook; sound-type 0 resolves SystemDB BGM/BGS/SE rows
+- Databases::sound_entry reads file name and volume from SysDatabase
+- keep 0x00FFFF00 BGM stop and 0xFFFFFFxx FreeAll as stops
+- VM unit tests plus real-data m4_db_sound integration
+- docs: close M4_PARITY audio leftover, add HANDOFF progress

@@ -1,0 +1,11 @@
+M5-D: side-car translation catalogs for messages and choices
+
+- add wolf-game translate module (UTF-8 TSV, exact-match, escapes, line-numbered errors)
+- Game: translator state plus load_translation_file/set_translator/translation_len
+- GameHost applies the catalog to opcode 101 messages and opcode 102 choices
+- CLI: --translation FILE for play, capture and capture --map/--map-run; F12 reloads it
+- docs/translations: en.tsv/ja.tsv sample catalogs and format README; M5/README/HANDOFF updates
+
+Verified: cargo fmt --all --check; cargo test -q --workspace; WOLF_DATA_ROOT=work/Data
+cargo test -q --workspace; verify PASS 64/1 SKIP. Capture night menu with en/ja catalogs:
+90.4% non-black, 0 warning.

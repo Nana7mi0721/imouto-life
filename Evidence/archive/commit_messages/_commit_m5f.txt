@@ -1,0 +1,6 @@
+M5-F: message transcript overlay (F4)
+
+Keep the last 200 translated messages in Game::history and clear it on
+title/load. F4 opens a modal transcript page in play; PgUp/PgDn page through
+18 messages at a time, game text and input are suppressed while it is open,
+and F12 still restarts. No save format change, no new dependencies.

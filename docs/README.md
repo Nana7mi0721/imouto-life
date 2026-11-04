@@ -12,6 +12,7 @@
 | [HANDOFF_PROGRESS.md](HANDOFF_PROGRESS.md) | 现行 · 查史 | 完整进度日志（M0–M7 与 C 任务逐步的改动、验证数字、坑），由 HANDOFF §11 拆出 |
 | [../AGENTS.md](../AGENTS.md) | **现行 · 必读** | 协作约定：并行/写作用域、bash 开头、数据与测试、提交、清理、内容安全 |
 | [../README.md](../README.md) | 现行 | 仓库总览、当前状态、快速开始、目录结构 |
+| [PROJECT_ASSETS.md](PROJECT_ASSETS.md) | 现行 · 资产盘点 | 停止重构后的清理记录与可复用资产清单（源码/数据/文档/逆向/证据） |
 
 ## 2. 基线
 
@@ -100,9 +101,9 @@
 | `tools/package.sh` / `package.ps1` / `package/` | 打包脚本与模板 |
 | [../tools/re/wolfpe.py](../tools/re/wolfpe.py) | 只读 PE 探针（facts/strings/xref/disasm） |
 | [../tools/re/ghidra/README.md](../tools/re/ghidra/README.md) | Ghidra headless 反编译脚本（DumpAll/DumpByAnchor） |
-| `work/Data` | 解包后的本作数据，175 MB，**gitignore**，测试必需 |
+| `work/Data` | 解包后的本作数据，176 MB，**gitignore**，测试必需 |
 | `work/out/re_all/` | 4,375 个 ≥64B 函数的 Ghidra C 伪码 + index.tsv（27 MB，未入库，复核用） |
-| `work/out/ghidra/` | Ghidra 项目（166 MB，未入库，重跑 import 约 4 分钟） |
+| `work/out/ghidra/` | 已于 2026-11-04 清理（166 MB）；需要时用 `tools/re/ghidra` 从原版 `Game.exe` 重新 import（约 4 分钟） |
 | `work/out/_archive/` | 历史提交信息（`commit_messages/`）与一次性探针脚本（`scripts/`）归档，未入库 |
 | `work/out/shot_metrics/` | 截图度量脚本与标注图（未入库，SCREENSHOT_METRICS 的复现材料） |
 

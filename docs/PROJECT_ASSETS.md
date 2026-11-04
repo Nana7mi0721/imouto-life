@@ -95,6 +95,11 @@
 - `docs/BASELINE.json`：本作自己的 verify 期望值（25 个 Game.dat 参数、350 公共事件、地图事件、tileset/文件版本、1,361 条 archive）。
 - `Cargo.lock` 已锁定依赖；`rust-toolchain.toml` 固定 Rust 版本。
 
+### 3.7 远程解包产物仓库
+- 远程仓库：`https://github.com/Nana7mi0721/imouto-life.git`（私有）。`master` 放源码，`assets` 分支专放解包产物与逆向资料。
+- `assets` 分支首次导入 commit `2acd665`：**5,974 个文件、235 MB**（Git 压缩后约 165 MiB），包含 `Data/`（1,364 文件、176 MB）、`RE/`（4,401 文件、28 MB）、`Screenshots/reference/`（34 张、17 MB）、`Evidence/`（110 文件、14 MB）、`Docs/`（63 文件、1.2 MB）与 `MANIFEST.tsv`（全量 SHA-256，618 KB）。
+- 只取资产：`git clone --single-branch --branch assets --depth 1 https://github.com/Nana7mi0721/imouto-life.git imouto-life-assets`。
+
 ---
 
 ## 4. 资产价值判断（建议）

@@ -774,3 +774,9 @@ M0–M7 与 C 任务每一步的改动、验证数字与踩过的坑。它只记
   * **打包**：新增 `tools/package-playable.sh` 与 `tools/package/PLAYABLE_README.txt`；`cargo build --release -p wolf-cli -p imouto-launcher`（1m38s）→ 输出 `D:\program\Imouto Life\`：`Imouto Life.exe` 236,544 B、`runtime\wolf-cli.exe` 12,469,248 B、`Data\` 全量 176 MB（含 Save）、`README.txt`、`checksums.txt`；目录 188 MB。zip 用 Windows bsdtar 生成：`work/out/dist/Imouto Life-0.1.0-playable.zip` 153 MB，1,387 条目，解压后 UTF-8 文件名正确、`sha256sum -c` 全 OK。
   * **验证**：用假引擎探针确认启动器参数为 `play --root <pkg>\Data --audio` 且 cwd 正确；包内 release 引擎 `verify --root` PASS 64/1 SKIP；`--audio capture --menu-only --frames 5` 渲染 1024x576、499,899/589,824 非黑、exit0。未替用户启动 GUI 窗口（避免抢前台）。
   * **文档**：`docs/PACKAGING.md` 新增 §7；发布包中文说明见 `tools/package/PLAYABLE_README.txt`。
+* 2026-11-07（资料集九册交付）——用户 m10366"参考《资料集通用编写要求》，借鉴imoto life的形式编写资料集和游戏"：
+  * **交付**：新建 `docs/攻略/妹生活_资料集/` 八册（按编写要求本作无战斗/迷宫/DLC，故不设"06 战斗与敌人"册）：00_总索引(7.3KB)/01_系统与数值/02_物品/03_事件/04_角色/05_日程与结局/06_收集与CG/99_内部ID与校验附录，共约 44KB。全量剧透、S/T/G/U 证据分级、成人内容中性技术表述；每册末尾"数据缺口与待核"节。
+  * **口径对齐定稿层**：三版本口径分列（引擎 ver2.22 / 数据世代 2.00 / 副标题 Ver2.03）；相册改"16 资产=15 解锁格+album_000 背景框"（订正 #8）；结局表按订正 #13 重写——怀孕 HAPPYEND 的 v12 是社会人职业门（CE258@1425）+ 分支信赖门 v20>=100（@1427），真正标记 v200（@1594）；BADEND 着床链改 v122→v127→v96（CE258@1076/1078/1087），v10..13 标注为四职业标志（订正 #1）；补 4 条 BADEND（再见了哥哥/妹妹爆发/熊头/着床）；Grand End 维持 v197>=15 ∧ v202==1。
+  * **QA**：禁词 grep 0 命中（原"姊妹作副本/姊妹作式"2 处已中性化）；内部链接 8 条全通；旧口径残留 0；99 §5 汇总 16 项 U。
+  * **索引登记**：docs/README.md §6.1 正文表后新增"资料集（百科层）"节，与 guide/数据定稿 01–12、guide/妹生活超详细攻略_正文.md 互为补充（百科查表 vs 叙述攻略）；资料集 00/99 增加到定稿层的互链。
+  * **说明**：guide/ 体系的 11 个数据定稿 + 14 章正文已于 2026-11-06 完成（见 00_说明与口径.md §7）；本轮资料集是用户指定目录/结构（docs/攻略/ + 九册制）下的百科层交付，数字口径与定稿层一致。

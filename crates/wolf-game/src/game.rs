@@ -27,7 +27,7 @@ use wolf_format::mps::Map;
 use wolf_format::tileset::TileSetData;
 use wolf_vm::{
     ChoiceReply, DbOp, DbValue, Host, LogLevel, PictureCmd, Program, ProgramSet, SaveOp,
-    SaveTarget, SoundCmd, StepReport, Vm, WolfRng,
+    SaveTarget, SoundAction, SoundChannel, SoundCmd, StepReport, Vm, WaitState, WolfRng,
 };
 
 use crate::assets::Assets;
@@ -36,7 +36,7 @@ use crate::auto_events::AutoEvents;
 use crate::db::Databases;
 use crate::map_runtime::MapRuntime;
 use crate::overlay::{OverlayLayer, ScreenOverlay};
-use crate::picture::{PictureKind, Screen, ANCHOR_CENTRE, SCREEN_H, SCREEN_W};
+use crate::picture::{PictureKind, Screen, SCREEN_H, SCREEN_W};
 use crate::tilemap::TileMap;
 use crate::tint::ScreenTint;
 use crate::transition::ScreenTransition;
@@ -73,6 +73,14 @@ pub const ENGINE_ALWAYS: &[u32] = &[
     214, // 応援会話リコ
     216, // 性興味監視
 ];
+/// Run-condition-3 events that are re-entered after they end.
+///
+/// 48/261/269 are one-shot initialisers: re-running them resets system variables
+/// and the HUD every frame. 270 (message display), 271 (auto-skip), 214 (support
+/// dialogue) and 216 (interest monitor) are per-frame passes that terminate
+/// themselves and must be restarted, which is what 常時作動 means in WOLF.
+pub const ENGINE_RESTART: &[u32] = &[270];
+
 // 271 is the balloon-message library's initiator: it calls event 98, which registers 19
 // window pictures (10225..10248). It used to be left out, because starting it alone
 // moved retail title parity from mean abs 0.012 to 0.130 at max 255: those widgets
@@ -109,6 +117,12 @@ pub struct Message {
 /// already advanced past is gone. Keeping the last two hundred is enough for a full
 /// in-game day of conversation while bounding memory at one short string per line.
 pub const HISTORY_LIMIT: usize = 200;
+
+/// Frames a mouse press edge waits for a script key poll before it is dropped.
+///
+/// A quarter of a second is longer than any engine wait that does not poll keys, and
+/// short enough that a click cannot surprise a menu that opens much later.
+const PENDING_MOUSE_TTL: u32 = 15;
 
 /// A pending choice prompt.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -392,6 +406,11 @@ pub struct Game {
     repeat_bits: u32,
     /// Sounds requested during the current frame.
     pub sounds: Vec<SoundCmd>,
+    /// The BGM the save should record: file and volume (0..100).
+    ///
+    /// WOLF stores the running track in SavePart2; keeping the last Play command here
+    /// lets `save_to` write it and `apply` restart it instead of loading into silence.
+    pub current_bgm: Option<(String, i32)>,
     /// M4 audio output. `None` keeps the pure-logic and test paths silent and
     /// allocation-free; [`Self::enable_audio`] installs a real engine.
     pub audio: Option<wolf_audio::Engine>,
@@ -405,6 +424,11 @@ pub struct Game {
     pub stats: GameStats,
     /// Deduplicated diagnostics, keyed by message, valued by hit count.
     pub diagnostics: BTreeMap<String, u64>,
+    /// Opcode 175 (`EndGame`) ran: the title's おわる option asks the process to exit.
+    ///
+    /// A port must not close a window from inside the interpreter; the front-end
+    /// polls this flag after the frame and quits its own event loop.
+    pub quit_requested: bool,
     /// Queued answers for choice prompts (front is delivered first).
     pub replies: std::collections::VecDeque<ChoiceReply>,
     /// When true, messages dismiss immediately.
@@ -460,6 +484,20 @@ pub struct Game {
     previous_keys: u32,
     /// Mouse buttons held on the previous frame, so a press can be told from a hold.
     previous_mouse_buttons: u32,
+    /// Press edges not yet consumed by a script key poll, in `key` bits.
+    ///
+    /// A front-end can only report the press for the frame it happened in, but the VM
+    /// often sits inside an opcode that does not poll keys for several frames (a timer
+    /// wait, a transition). Keeping the edge here until a poll runs is what makes a
+    /// quick click during such a wait register instead of vanishing.
+    pending_mouse: u32,
+    /// Frames the pending edge has waited without a poll; dropped after the TTL so a
+    /// click can never fire a menu that appears much later.
+    pending_mouse_age: u32,
+    /// Set when this frame either polled keys or consumed the click itself (message
+    /// dismissal, choice row). The pending edge is then spent and is cleared at the
+    /// end of the frame instead of surviving into the next one.
+    mouse_consumed: bool,
     /// Mouse position on the previous frame, so a hover only follows the cursor when the
     /// pointer actually moved. Without this the highlight would snap back under a parked
     /// cursor and fight the keyboard up/down navigation.
@@ -588,12 +626,14 @@ impl Game {
             databases,
             key_bits: 0,
             sounds: Vec::new(),
+            current_bgm: None,
             audio: None,
             messages: Vec::new(),
             history: Vec::new(),
             choices: None,
             stats: GameStats::default(),
             diagnostics: BTreeMap::new(),
+            quit_requested: false,
             replies: std::collections::VecDeque::new(),
             auto_advance: false,
             auto_choice: false,
@@ -617,6 +657,9 @@ impl Game {
             previous_title_cursor: None,
             previous_keys: 0,
             previous_mouse_buttons: 0,
+            pending_mouse: 0,
+            pending_mouse_age: 0,
+            mouse_consumed: false,
             previous_mouse: [-1, -1],
             engine_always: None,
             engine_events_started: false,
@@ -641,6 +684,14 @@ impl Game {
         // Nothing else in the common events initialises them: CE48 does not touch them
         // and CE132 only rewrites them when its reset row is chosen.
         game.seed_live_settings();
+        // WOLF publishes the logical screen geometry through Sys115..117. CE261
+        // (the balloon library's coordinate constants) only uses Sys116/117 when
+        // Sys115 == 220; otherwise it falls back to a 320x240/640x480/800x600 table
+        // and every balloon/text position is computed for the wrong screen. CE48
+        // also divides Sys116/117 by 32/24 to derive the coordinate scale.
+        game.vm.vars.set_sys(115, 220);
+        game.vm.vars.set_sys(116, screen.0 as i32);
+        game.vm.vars.set_sys(117, screen.1 as i32);
         Ok(game)
     }
 
@@ -976,6 +1027,17 @@ impl Game {
         part2.vars3_21[0] = self.playtime_frames;
         part2.vars3_21[9] = self.vm.vars.get_sys(3) as u32;
         part2.vars3_21[10] = self.vm.vars.get_sys(4) as u32;
+        // SavePart2 carries the running BGM. Leave the template's bytes alone while the
+        // track is unchanged (byte fidelity), but record a new track and its volume.
+        if let (Some((file, volume)), Some(bgm)) = (&self.current_bgm, part2.bgm.as_mut()) {
+            let (current, _bad) = wolf_format::gbk::decode(crate::savegame::strip_nul(&bgm.path1));
+            if current != *file {
+                let mut body = wolf_format::gbk::encode(file);
+                body.push(0);
+                bgm.path1 = body;
+            }
+            bgm.vars75_77[0] = (*volume).clamp(0, 100) as u32;
+        }
         save.set_part2(&part2)
             .map_err(|err| format!("220 SaveLoad: cannot encode part2: {err}"))?;
 
@@ -999,24 +1061,48 @@ impl Game {
             }
         }
 
+        // Fold live coroutines into the durable banks first: a menu or daily-loop event
+        // can be running while the player saves, and its latest writes must be included.
+        self.vm.capture_common_self();
         let mut part3 = save.part3.clone();
         for index in 0..800 {
             let _ = part3.set_normal_var(index, self.vm.vars.get(index));
         }
-        for instance in self.vm.instances() {
-            if instance.program.self_base != wolf_vm::program::COMMON_SELF_BASE {
+        // mds1 is the string counterpart of the normal-variable row. Keep the original
+        // bytes while the text is unchanged; only encode when a script wrote a new value.
+        for index in 0..part3.mds1.len() {
+            let text = self.vm.vars.get_str(index);
+            let (current, _bad) =
+                wolf_format::gbk::decode(crate::savegame::strip_nul(&part3.mds1[index]));
+            if current == text {
                 continue;
             }
-            let event = instance.event;
-            for slot in 0..100 {
-                let value = instance.self_vars.get(instance.program.self_base + slot);
-                let _ = part3.set_self_var(event, slot, value);
+            let mut body = wolf_format::gbk::encode(text);
+            body.push(0);
+            part3.mds1[index] = body;
+        }
+        for event in 0..part3.list_counts.len() {
+            let Some(bank) = self.vm.vars.common_self.get(&(event as u32)) else {
+                continue;
+            };
+            for slot in 0..wolf_vm::vars::EVENT_SELF_SLOTS {
+                let _ = part3.set_self_var(event as u32, slot, bank.get(slot));
             }
-            for slot in 0..5 {
-                let text = instance
-                    .self_vars
-                    .get_str(instance.program.self_base + 5 + slot);
-                let _ = part3.set_self_string(event, slot, text);
+            for slot in 0..wolf_vm::vars::EVENT_SELF_STRINGS {
+                let text = bank.get_str(slot);
+                let unchanged = part3
+                    .self_string_bytes(event as u32, slot)
+                    .is_some_and(|bytes| {
+                        let (current, _bad) =
+                            wolf_format::gbk::decode(crate::savegame::strip_nul(bytes));
+                        current == text
+                    });
+                if unchanged {
+                    continue;
+                }
+                let mut body = wolf_format::gbk::encode(text);
+                body.push(0);
+                let _ = part3.set_self_string_bytes(event as u32, slot, &body);
             }
         }
         save.set_part3(&part3)
@@ -1092,6 +1178,38 @@ impl Game {
         // (only event 38 in this game); `Game::frame` keeps them in sync afterwards.
         self.auto_events.sync(&mut self.vm);
         started
+    }
+
+    /// Restarts run_condition==3 coroutines that ended.
+    ///
+    /// WOLF calls these "常時作動" (always running): unlike the conditional
+    /// scheduler, the engine re-enters the event whenever its previous pass
+    /// terminates. Event 270 is the message-display pass: it parses the visible
+    /// text and draws the balloon/name plate, then ends, so without this restart
+    /// the balloon/name layer never appears even though CE245/CE264 configured
+    /// it. Events 48/269/271 wait for a long time and are therefore already
+    /// resident; the "no live instance" test leaves them untouched.
+    fn restart_always_events(&mut self) {
+        if !self.engine_events_started {
+            return;
+        }
+        let ids = match &self.engine_always {
+            Some(ids) => ids.clone(),
+            None => ENGINE_ALWAYS.to_vec(),
+        };
+        for id in ids {
+            if !ENGINE_RESTART.contains(&id) {
+                continue;
+            }
+            if !self
+                .vm
+                .instances()
+                .iter()
+                .any(|instance| instance.event == id)
+            {
+                self.start_event(id);
+            }
+        }
     }
 
     /// Runs the one-shot engine initialisation before a save is loaded.
@@ -1178,6 +1296,14 @@ impl Game {
     }
 
     fn install_map(&mut self, map: &Map, skip: Option<u32>) {
+        // Retire the previous map's coroutines before replacing the runtime that
+        // owns them. `switch_map` already did this for a scripted teleport, but
+        // `resume_loaded_map` used to swap the runtime without retiring the title
+        // map's event 2. That orphan kept its whole call chain (CE549 -> CE42 ->
+        // CE14 -> CE131) alive after a load, so the save grid still owned the
+        // pointer and every map icon click was ignored (BUG-08). Stopping the map
+        // event also stops its descendants through `Vm::stop_instance`.
+        self.runtime.stop_all(&mut self.vm);
         self.boot_map_active = false;
         self.tilemap = match &self.tilesets {
             Some(sets) => sets
@@ -1486,8 +1612,10 @@ impl Game {
             None
         };
         // The frame is an ordinary window-type draw (common event 63, picture slot
-        // 19500), so when it is live its own right edge is the wrap box; the fallback
-        // in `Vars::wrap_width` is the screen edge, the documented hard cap.
+        // 19500), so when it is live its own box decides the wrap width. The text
+        // origin sits one inset inside the frame's left edge (Sys1 = frame.x + 32 in
+        // the measured layout), and the same inset is reserved on the right; ending at
+        // the frame's right edge made long rows touch the border.
         let width = self
             .screen
             .get(crate::message::FRAME_PICTURE)
@@ -1497,7 +1625,9 @@ impl Game {
                     return None;
                 }
                 let rect = frame.destination(window_w as f32, window_h.max(0) as f32);
-                Some((rect[0] + rect[2] - sys(1) as f32).max(0.0))
+                let text_x = sys(1) as f32;
+                let right_inset = (text_x - rect[0]).max(0.0);
+                Some((rect[0] + rect[2] - text_x - right_inset).max(0.0))
             });
         crate::message::Vars {
             x: sys(1) as f32,
@@ -1917,6 +2047,33 @@ impl Game {
         }
     }
 
+    /// Stops the title/save-menu call chain that requested a successful `220` load.
+    ///
+    /// A load is not a submenu that returns: the loaded save replaces the running
+    /// session, and WOLF does not keep the load screen alive after it. This port
+    /// drives `220` from CE131, so without an explicit retirement the grid would
+    /// stay blocked in its poll loop forever and keep claiming the pointer.
+    fn retire_load_ui_chain(&mut self) {
+        // 95/132 are the settings screens; they are part of the same UI family and
+        // must not survive a load either. 14 dispatches the menu, 131 is the grid,
+        // and 42/BOOT_EVENT are the two ways the title chain can start.
+        let doomed: Vec<u32> = self
+            .vm
+            .instances()
+            .iter()
+            .filter(|instance| {
+                matches!(
+                    instance.event,
+                    BOOT_EVENT | TITLE_EVENT | 14 | 95 | 131 | 132
+                )
+            })
+            .map(|instance| instance.id)
+            .collect();
+        for id in doomed {
+            self.vm.stop_instance(id);
+        }
+    }
+
     pub fn set_choice_cursor(&mut self, index: usize) {
         self.choice_cursor = index;
     }
@@ -1974,6 +2131,7 @@ impl Game {
         }
         if let Some(id) = self.runtime.action_key_at(&mut self.vm, x, y) {
             self.last_action_event = Some(id);
+            self.mouse_consumed = true;
         }
     }
 
@@ -1986,7 +2144,10 @@ impl Game {
     /// instructions and then waiting forever.
     fn handle_choice_input(&mut self) {
         let Some(count) = self.choices.as_ref().map(|choices| choices.options.len()) else {
-            self.choice_cursor = 0;
+            // No prompt is open. Keep the cursor: `set_choice_cursor` is how a headless
+            // capture or test preselects a branch before `boot()`, and the title prompt
+            // may appear one frame later than the caller expected. Resetting here threw
+            // that preseed away and silently took the first option.
             return;
         };
         if count == 0 {
@@ -1997,7 +2158,20 @@ impl Game {
         let clicked = self.mouse_buttons & 1 != 0 && self.previous_mouse_buttons & 1 == 0;
         if clicked {
             if let Some(row) = self.choice_row_at(self.mouse[0], self.mouse[1]) {
+                // The prompt owns the click: it must not also reach a script poll later.
+                self.mouse_consumed = true;
                 self.reply(ChoiceReply::Index(self.choice_source_index(row)));
+                self.choice_cursor = 0;
+                return;
+            }
+            // A click outside the panel used to be swallowed and ignored, which felt
+            // like a dead prompt. When the script allows cancelling (opcode 102 has a
+            // 421 cancel marker) treat the outside click as cancel, just like a right
+            // click; when it does not, leave the edge unconsumed so a parallel event
+            // can still see it rather than having its input silently eaten.
+            if self.choice_cancel_allowed() {
+                self.mouse_consumed = true;
+                self.reply(ChoiceReply::Cancel);
                 self.choice_cursor = 0;
                 return;
             }
@@ -2008,6 +2182,7 @@ impl Game {
         // keyboard, only a fresh press edge counts, not a held button.
         let right_clicked = self.mouse_buttons & 2 != 0 && self.previous_mouse_buttons & 2 == 0;
         if right_clicked {
+            self.mouse_consumed = true;
             self.reply(ChoiceReply::Cancel);
             self.choice_cursor = 0;
             return;
@@ -2035,10 +2210,30 @@ impl Game {
                 self.choice_source_index(self.choice_cursor),
             ));
             self.choice_cursor = 0;
+            // The same press must not also dismiss the first message the chosen
+            // branch shows in this frame. A choice answer consumes the confirm
+            // edge; the player's next press is a new intent.
+            self.key_bits &= !crate::key::OK;
         } else if pressed & crate::key::CANCEL != 0 {
             self.reply(ChoiceReply::Cancel);
             self.choice_cursor = 0;
+            self.key_bits &= !crate::key::CANCEL;
         }
+    }
+
+    /// True when the prompt on screen was opened by an opcode 102 that has a 421
+    /// cancel marker, i.e. the script offers a real "back" answer.
+    fn choice_cancel_allowed(&self) -> bool {
+        self.vm.instances().iter().any(|instance| {
+            let WaitState::Choice { block } = instance.wait else {
+                return false;
+            };
+            instance
+                .program
+                .blocks
+                .get(block)
+                .is_some_and(|block| block.cancel_pc.is_some())
+        })
     }
 
     /// Turns this frame's mouse-wheel notches into a menu step.
@@ -2089,9 +2284,115 @@ impl Game {
             .any(|instance| instance.event == 131)
     }
 
+    /// Put the save/load grid's highlight under the pointer.
+    ///
+    /// CE131's slot list is keyboard-driven: it polls opcode 123 with the four
+    /// directions and keeps the selected slot in self10 (`%` slots-per-page) and the
+    /// page in self11 (`/` slots-per-page). A mouse click therefore always confirmed
+    /// slot 0, because the click only supplies the decide code. CE94 draws the slot
+    /// windows as pictures 12050, 12070, ... (20 apart), so their rendered rectangles
+    /// are the authoritative hit boxes; hovering or clicking one writes self10 before
+    /// the VM runs, and the next redraw moves the cursor there.
+    fn sync_save_grid_cursor(&mut self) {
+        let clicked = self.mouse_buttons & 1 != 0 && self.previous_mouse_buttons & 1 == 0;
+        let moved = self.mouse != self.previous_mouse;
+        if !clicked && !moved {
+            return;
+        }
+        let (x, y) = (self.mouse[0], self.mouse[1]);
+        if x < 0
+            || y < 0
+            || x >= crate::picture::SCREEN_W as i32
+            || y >= crate::picture::SCREEN_H as i32
+        {
+            return;
+        }
+        let Some((id, slots)) = self
+            .vm
+            .instances()
+            .iter()
+            .find(|instance| instance.event == 131)
+            .map(|instance| (instance.id, instance.self_vars.get(627)))
+        else {
+            return;
+        };
+        let slots = slots.clamp(1, 10);
+        let mut slot = None;
+        {
+            let screen = &self.screen;
+            let assets = &mut self.assets;
+            for index in 0..slots {
+                // CE94's per-slot window block: 50 = base + 10 (frame), +20 per slot.
+                let Some(rect) =
+                    screen.picture_rect(12050 + 20 * index, |file| assets.texture_size(file))
+                else {
+                    continue;
+                };
+                if (x as f32) >= rect[0]
+                    && (x as f32) < rect[0] + rect[2]
+                    && (y as f32) >= rect[1]
+                    && (y as f32) < rect[1] + rect[3]
+                {
+                    slot = Some(index);
+                    break;
+                }
+            }
+        }
+        if let Some(slot) = slot {
+            if let Some(instance) = self.vm.instance_mut(id) {
+                instance.self_vars.set(610, slot);
+            }
+        }
+    }
+
+    /// Records the last BGM command of this frame for save/load.
+    fn track_bgm(&mut self) {
+        for cmd in &self.sounds {
+            if cmd.channel != SoundChannel::Bgm {
+                continue;
+            }
+            match cmd.action {
+                SoundAction::Play if !cmd.file.is_empty() => {
+                    self.current_bgm = Some((cmd.file.clone(), cmd.volume));
+                }
+                SoundAction::Stop => {
+                    // The retail engine represents "no BGM" with the silent file
+                    // BGM/none.mp3 (every shipped save uses it), so record that
+                    // instead of leaving the template's old track in the save.
+                    self.current_bgm = Some(("BGM/none.mp3".to_owned(), 0));
+                }
+                SoundAction::Play => {}
+            }
+        }
+    }
+
+    /// Ends the frame's click bookkeeping: a delivered click is spent, an undelivered
+    /// one waits for a poll but is dropped after [`PENDING_MOUSE_TTL`] frames.
+    fn settle_pending_mouse(&mut self) {
+        if self.mouse_consumed {
+            self.pending_mouse = 0;
+            self.pending_mouse_age = 0;
+        } else if self.pending_mouse != 0 {
+            self.pending_mouse_age += 1;
+            if self.pending_mouse_age > PENDING_MOUSE_TTL {
+                self.pending_mouse = 0;
+                self.pending_mouse_age = 0;
+            }
+        }
+        self.mouse_consumed = false;
+    }
+
     /// Advances one frame at 1/60 s.
     pub fn frame(&mut self) -> FrameOutcome {
         self.sounds.clear();
+        // Carry a press edge that arrives while no script poll runs. The front-end only
+        // reports the button for the frame it went down, so without this a click during
+        // a timer wait or a transition would be forgotten before opcode 123 sees it.
+        let fresh_mouse = crate::key::mouse_bits(self.mouse_buttons, self.previous_mouse_buttons);
+        if fresh_mouse != 0 {
+            self.pending_mouse |= fresh_mouse;
+            self.pending_mouse_age = 0;
+        }
         // Wheel input must land before the key-repeat pass: the save grid polls
         // opcode 123 with the wait bit, and that path only reports `repeat_bits`.
         let wheel_bits = self.apply_wheel();
@@ -2109,6 +2410,12 @@ impl Game {
             .is_some_and(|choices| crate::choice::is_title_image_menu(&choices.options));
         self.auto_events.set_title_menu_active(title_menu_active);
         self.auto_events.sync(&mut self.vm);
+        self.restart_always_events();
+        // A prompt that was on screen at the start of this frame holds the cursor
+        // that answered it. Once it closes (keyboard, mouse, or auto_choice), the
+        // next prompt starts at row 0; leaving the old index behind made a scripted
+        // title-load leave cursor 1 for the night menu's first row.
+        let had_choice = self.choices.is_some();
         self.handle_choice_input();
         // Mirror the choice cursor into system variable 20 so the conditional title event
         // 43 can paint the matching Picture/menu*_a.png button (Sys20 == 0/1/2 selects the
@@ -2135,6 +2442,9 @@ impl Game {
         // A fresh press can also be an action-key activation of the map event under
         // the pointer. Run it before the VM step so the started page executes this
         // same frame, exactly like an automatic page restarted at the frame's end.
+        // The save grid maps the pointer onto its slot windows first, so a click
+        // confirms the slot under the cursor instead of the keyboard-highlighted one.
+        self.sync_save_grid_cursor();
         self.handle_action_key_input();
         let mut report = self.vm.step_frame(&mut GameHost {
             screen: &mut self.screen,
@@ -2152,6 +2462,7 @@ impl Game {
             diagnostics: &mut self.diagnostics,
             stats: &mut self.stats,
             key_bits: self.key_bits,
+            previous_keys: self.previous_keys,
             repeat_bits: self.repeat_bits,
             raw_keys: &self.raw_keys,
             raw_pad_keys: &self.raw_pad_keys,
@@ -2162,10 +2473,19 @@ impl Game {
             mouse: self.mouse,
             mouse_buttons: self.mouse_buttons,
             previous_mouse_buttons: self.previous_mouse_buttons,
+            pending_mouse: &mut self.pending_mouse,
+            mouse_consumed: &mut self.mouse_consumed,
             root: &self.root,
             save_requests: &mut self.save_requests,
             map_requests: &mut self.map_requests,
+            quit: &mut self.quit_requested,
         });
+        if had_choice && self.choices.is_none() {
+            self.choice_cursor = 0;
+        }
+        // Record BGM before applying queued saves: a load that arrives this frame must
+        // win over a track the script started earlier in the same frame.
+        self.track_bgm();
         // A `220` load replaces the picture layer and the normal variables, so it runs
         // as soon as the VM step that requested it has released its borrow of `Game`.
         let mut loaded_save = false;
@@ -2179,6 +2499,17 @@ impl Game {
                             // A loaded game is gameplay, not the boot/title flow, even
                             // when the load was requested from the title load screen.
                             self.boot_map_active = false;
+                            // A successful 220 starts a different session: the
+                            // common-event stack that drove the title and the save
+                            // screen is not part of the loaded game. The title map's
+                            // event 2 is the root of the whole chain but was started
+                            // directly by `boot`, not through the map runtime, so the
+                            // runtime stop in `install_map` cannot see it. Stop the
+                            // roots by id; `Vm::stop_instance` also retires their
+                            // descendants (CE549 -> CE42 -> CE14 -> CE131). Without
+                            // this the grid stays alive and owns the pointer, so the
+                            // loaded bedroom's icon clicks are ignored (BUG-08).
+                            self.retire_load_ui_chain();
                             self.diagnostics.insert(
                                 format!(
                                     "220 SaveLoad: loaded {} picture(s), {} variable(s)",
@@ -2317,6 +2648,13 @@ impl Game {
         self.vm
             .vars
             .set_sys(12, i32::from(!self.messages.is_empty()));
+        // SysStr25 (magic 9_900_025) is WOLF's current-message buffer. The third-party balloon library
+        // (CE270) watches Sys12 and copies this string into its own CSelf6 before
+        // drawing the balloon; without it the interface events run but the balloon
+        // never opens (BUG-02's visible half). Publish it alongside Sys12.
+        if let Some(message) = self.messages.first() {
+            self.vm.vars.set_sys_str(900_025, &message.text);
+        }
         // Drop the one-frame wheel key so it is not seen as held next frame. The
         // host's next `set_input` overwrites the field anyway; this also keeps the
         // pure `Game::frame` loops (tests, wolf-cli) honest.
@@ -2325,6 +2663,7 @@ impl Game {
         // Automatic pages are restarted here, i.e. at the end of a frame, so a
         // parallel page that just ended comes back on the next tick.
         self.runtime.start_pending(&mut self.vm);
+        self.settle_pending_mouse();
         self.previous_mouse_buttons = self.mouse_buttons;
         self.previous_mouse = self.mouse;
         self.stats.frames += 1;
@@ -2644,6 +2983,8 @@ struct GameHost<'a> {
     diagnostics: &'a mut BTreeMap<String, u64>,
     stats: &'a mut GameStats,
     key_bits: u32,
+    /// Keys held on the previous frame, so message dismissal is edge-triggered.
+    previous_keys: u32,
     /// Keys the engine key repeat allows this frame (wait polls only).
     repeat_bits: u32,
     /// Raw keyboard codes held this frame (scancode+100), for the device polls of
@@ -2658,9 +2999,15 @@ struct GameHost<'a> {
     mouse: [i32; 2],
     mouse_buttons: u32,
     previous_mouse_buttons: u32,
+    /// Press edges carried from earlier frames (see `Game::pending_mouse`).
+    pending_mouse: &'a mut u32,
+    /// Set when the host consumes the click (message dismissal or a key poll).
+    mouse_consumed: &'a mut bool,
     root: &'a Path,
     save_requests: &'a mut Vec<crate::savegame::SaveRequest>,
     map_requests: &'a mut Vec<MapRequest>,
+    /// Set by opcode 175; the front-end polls [`Game::quit_requested`].
+    quit: &'a mut bool,
 }
 
 impl GameHost<'_> {
@@ -2694,37 +3041,29 @@ impl GameHost<'_> {
     /// The test is a plain axis-aligned box that includes transparent pixels, as the
     /// engine documentation says: a picture hit area is its rectangle, not its alpha.
     fn hover(&mut self, number: i32) -> i32 {
-        let Some(picture) = self.screen.get(number) else {
+        if self.screen.get(number).is_none() {
+            return -1;
+        }
+        // The hit box is the same rectangle the renderer draws: text metrics, window
+        // box / native texture size, anchor, independent X/Y scale, the running 290
+        // shift/shake and the tenths UI block scale. Sharing `picture_rect` keeps a
+        // click and the pixels it lands on in one law. In particular a negative slot
+        // is *not* automatically a full-screen layer: picture -7 is the 48x48 album
+        // icon, and giving it the viewport as its box stole clicks from the data icon.
+        let screen = &self.screen;
+        let assets = &mut self.assets;
+        let Some(dst) = screen.picture_rect(number, |file| assets.texture_size(file)) else {
             return -1;
         };
-        let scale = f32::from(picture.scale.max(1) as i16) / 100.0;
-        let size = match picture.window {
-            Some((width, height))
-                if width > crate::window::MIN_BOX && height > crate::window::MIN_BOX =>
-            {
-                (width as f32 * scale, height as f32 * scale)
-            }
-            _ if picture.is_screen_layer() => (SCREEN_W as f32, SCREEN_H as f32),
-            _ => {
-                let Some((width, height)) = self.assets.texture_size(&picture.file) else {
-                    return -1;
-                };
-                (width as f32 * scale, height as f32 * scale)
-            }
-        };
-        let mut left = picture.x as f32;
-        let mut top = picture.y as f32;
-        if picture.anchor == ANCHOR_CENTRE {
-            left -= size.0 / 2.0;
-            top -= size.1 / 2.0;
-        }
+        let (left, top) = (dst[0], dst[1]);
+        let (size_x, size_y) = (dst[2], dst[3]);
         let (px, py) = (self.mouse[0] as f32, self.mouse[1] as f32);
         let inside_screen = self.mouse[0] >= 0
             && self.mouse[1] >= 0
             && px < SCREEN_W as f32
             && py < SCREEN_H as f32;
         let over =
-            inside_screen && px >= left && px < left + size.0 && py >= top && py < top + size.1;
+            inside_screen && px >= left && px < left + size_x && py >= top && py < top + size_y;
         i32::from(over)
     }
 
@@ -2732,8 +3071,12 @@ impl GameHost<'_> {
     ///
     /// Only a press edge counts (see crate::key::mouse_bits); a held button looks
     /// like nothing so a menu polled every frame fires exactly once.
-    fn mouse_key_bits(&self) -> u32 {
-        crate::key::mouse_bits(self.mouse_buttons, self.previous_mouse_buttons)
+    fn mouse_key_bits(&mut self) -> u32 {
+        // The poll consumes the click, so a carried-over edge is delivered exactly once
+        // and cleared at the end of the frame. The edge from this frame joins it.
+        let pending = *self.pending_mouse;
+        *self.mouse_consumed = true;
+        crate::key::mouse_bits(self.mouse_buttons, self.previous_mouse_buttons) | pending
     }
 }
 
@@ -2774,13 +3117,20 @@ impl Host for GameHost<'_> {
     }
 
     fn message_dismissed(&mut self) -> bool {
-        // A human dismisses messages with the confirm key or a left click. The click is
-        // edge-triggered: a held button must not run through a whole conversation, and
-        // the front-end latches a click that was released between two physics ticks.
-        let clicked = self.mouse_buttons & 1 != 0 && self.previous_mouse_buttons & 1 == 0;
+        // A human dismisses messages with the confirm key or a left click. Both are
+        // edges: a held button/key must not run through a whole conversation. The
+        // confirm key used to be level-triggered, so holding Enter skipped every
+        // consecutive line the moment it appeared.
+        let clicked = self.mouse_buttons & 1 != 0
+            && self.previous_mouse_buttons & 1 == 0
+            && !*self.mouse_consumed;
+        let confirmed = self.key_bits & !self.previous_keys & crate::key::OK != 0;
+        if clicked {
+            *self.mouse_consumed = true;
+        }
         // A headless run dismisses them immediately so a scripted capture can walk
         // through a conversation.
-        self.auto_advance || self.key_bits & crate::key::OK != 0 || clicked
+        self.auto_advance || confirmed || clicked
     }
 
     fn close_message(&mut self) {
@@ -2893,6 +3243,43 @@ impl Host for GameHost<'_> {
                     .row_exists(container, db_type, row)
                     .then(|| self.databases.num(container, db_type, row, column))
                     .flatten()
+            })
+    }
+
+    fn database_string(
+        &mut self,
+        container: wolf_vm::DbContainer,
+        db_type: i32,
+        row: i32,
+        column: i32,
+    ) -> Option<String> {
+        // `\cdb[...]`-style escapes address the same cells as opcode 250. The
+        // engine cell layer wins over the static table, exactly like a numeric
+        // read, so a save that rewrote the player name is what the dialogue shows.
+        let container = crate::db::Container::from(container);
+        self.databases
+            .engine_text(container, db_type, row, column)
+            .map(str::to_owned)
+            .or_else(|| {
+                self.databases
+                    .text(container, db_type, row, column)
+                    .map(str::to_owned)
+            })
+            .or_else(|| {
+                // Most cells the scripts read this way are numeric: CE242 paints
+                // `行動力\cdb[0:12:8]/\cdb[0:12:9]` and CE242's stamina twin reads
+                // columns 6/7. A numeric cell has no string value, so without this
+                // fallback the escape expands to nothing and the HUD loses its
+                // digits. This mirrors PictureCells::cdb, the renderer's own
+                // database reader.
+                self.databases
+                    .engine_num(container, db_type, row, column)
+                    .map(|value| value.to_string())
+            })
+            .or_else(|| {
+                self.databases
+                    .num(container, db_type, row, column)
+                    .map(|value| value.to_string())
             })
     }
 
@@ -3295,7 +3682,10 @@ impl Host for GameHost<'_> {
     }
 
     fn end_game(&mut self) {
-        self.note("175 EndGame: ignored (a port never closes the window from script)".to_owned());
+        // The title's third option おわる reaches this through CE42. A port must not
+        // tear down its window from inside the interpreter, so publish the intent and
+        // let the front-end quit its own loop after the frame.
+        *self.quit = true;
     }
 
     fn pro_feature(&mut self, kind: i32, ms: i32) {
@@ -3369,7 +3759,8 @@ impl Host for GameHost<'_> {
         match field {
             0 => Some(picture.x),
             1 => Some(picture.y),
-            2 | 3 => Some(picture.scale),
+            2 => Some(picture.scale),
+            3 => Some(picture.scale_y),
             4 => picture.extras.first().copied(),
             10 => Some(if PictureKind::from_code(picture.kind as u8).is_text() {
                 1
@@ -3416,6 +3807,7 @@ impl Host for GameHost<'_> {
 mod tests {
     use super::*;
     use crate::key;
+    use crate::picture::ANCHOR_CENTRE;
 
     fn data_root() -> PathBuf {
         if let Ok(value) = std::env::var("WOLF_DATA_ROOT") {
@@ -3480,6 +3872,97 @@ mod tests {
     }
 
     #[test]
+    fn a_load_restores_normal_strings_self_banks_and_bgm() {
+        let Some(root) = have_data() else { return };
+        let path = root.join("Save").join("SaveData01.sav");
+        if !path.is_file() {
+            eprintln!("skipping: no save at {}", path.display());
+            return;
+        }
+        let mut game = Game::new(&root).expect("game");
+        game.load_save(&path).expect("load");
+        // mds1[0] is the hero's display name variable; it used to stay at whatever the
+        // live session held because the loader only copied the numeric row.
+        assert_eq!(game.vm.vars.get_str(0), "强壮 ");
+        // Event 270 (the daily loop) left CSelf42 = 512 in the save's durable bank.
+        let bank = game.vm.vars.common_self.get(&270).expect("event 270 bank");
+        assert_eq!(bank.get(42), 512);
+        // The save's running track is BGM/none.mp3 at volume 70.
+        assert_eq!(game.current_bgm, Some(("BGM/none.mp3".to_owned(), 70)));
+    }
+
+    #[test]
+    fn an_event_started_after_a_load_sees_the_saved_self_variables() {
+        let Some(root) = have_data() else { return };
+        let path = root.join("Save").join("SaveData01.sav");
+        if !path.is_file() {
+            return;
+        }
+        let mut game = Game::new(&root).expect("game");
+        game.load_save(&path).expect("load");
+        let id = game.vm.start_event(270).expect("event 270 compiles");
+        let instance = game.vm.instance_mut(id).expect("instance");
+        assert_eq!(
+            instance
+                .self_vars
+                .get(wolf_vm::program::COMMON_SELF_BASE + 42),
+            512,
+            "the new invocation did not inherit the saved bank"
+        );
+    }
+
+    #[test]
+    fn a_save_records_strings_self_banks_and_the_current_track() {
+        let Some(root) = have_data() else { return };
+        let path = root.join("Save").join("SaveData01.sav");
+        if !path.is_file() {
+            return;
+        }
+        let mut game = Game::new(&root).expect("game");
+        game.load_save(&path).expect("load");
+        game.vm.vars.set_str(0, "测试名");
+        // A live coroutine's writes are folded into the durable bank by save_to.
+        let id = game.vm.start_event(270).expect("event 270 compiles");
+        game.vm
+            .instance_mut(id)
+            .expect("instance")
+            .self_vars
+            .set(wolf_vm::program::COMMON_SELF_BASE + 42, 777);
+        game.current_bgm = Some(("BGM/asa_otozure.ogg".to_owned(), 55));
+        let out = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join("target")
+            .join("test-scratch")
+            .join("savegame-strings.sav");
+        std::fs::create_dir_all(out.parent().expect("scratch")).expect("scratch dir");
+        game.save_to(&out).expect("save");
+
+        let saved = crate::savegame::read_save(&out).expect("re-read");
+        let (text, _bad) =
+            wolf_format::gbk::decode(crate::savegame::strip_nul(&saved.part3.mds1[0]));
+        assert_eq!(text, "测试名");
+        assert_eq!(saved.part3.self_var(270, 42), Some(777));
+        let bgm = saved.part2.bgm.as_ref().expect("part2 bgm");
+        let (track, _bad) = wolf_format::gbk::decode(crate::savegame::strip_nul(&bgm.path1));
+        assert_eq!(track, "BGM/asa_otozure.ogg");
+        assert_eq!(bgm.vars75_77[0], 55);
+
+        // And a fresh load sees the same state back.
+        let mut again = Game::new(&root).expect("game");
+        again.load_save(&out).expect("reload");
+        assert_eq!(again.vm.vars.get_str(0), "测试名");
+        assert_eq!(
+            again.vm.vars.common_self.get(&270).expect("bank").get(42),
+            777
+        );
+        assert_eq!(
+            again.current_bgm,
+            Some(("BGM/asa_otozure.ogg".to_owned(), 55))
+        );
+        let _ = std::fs::remove_file(&out);
+    }
+
+    #[test]
     fn a_saved_game_reloads_its_live_picture_layer() {
         let Some(root) = have_data() else { return };
         let mut template = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -3508,6 +3991,7 @@ mod tests {
                     p.y,
                     p.anchor,
                     p.scale,
+                    p.scale_y,
                     p.split,
                     p.pattern_index,
                 )
@@ -3536,6 +4020,7 @@ mod tests {
                     p.y,
                     p.anchor,
                     p.scale,
+                    p.scale_y,
                     p.split,
                     p.pattern_index,
                 )
@@ -3627,6 +4112,85 @@ mod tests {
             "diagnostics: {:?}",
             game.diagnostics
         );
+    }
+
+    #[test]
+    fn the_message_wrap_box_is_inset_from_both_frame_edges() {
+        let Some(root) = have_data() else { return };
+        let mut game = Game::new(&root).expect("game");
+        game.boot().expect("boot");
+        // This title's dialogue goes through the third-party balloon library, which
+        // deliberately leaves Sys0 at 0 so CE63 does not paint the native window.
+        // The geometry contract still belongs to the engine, so put CE63's frame in
+        // the screen explicitly instead of relying on the old misrouted template
+        // chain that used to start the native window during the opening.
+        game.screen.clear();
+        let mut frame = crate::picture::Picture::new(crate::message::FRAME_PICTURE);
+        frame.kind = PictureKind::WindowFile;
+        frame.file = "SystemFile/WindowBase.png".to_owned();
+        frame.window = Some((960, 168));
+        frame.x = 32;
+        frame.y = 408;
+        game.screen.insert(frame);
+        game.vm.vars.set_sys(1, 64);
+        game.vm.vars.set_sys(2, 410);
+        // The frame picture is 960 px wide at x = 32 and the text starts at Sys1 = 64:
+        // 992 - 64 - (64 - 32) = 896, i.e. the same 32 px inset on both sides.
+        assert_eq!(game.message_vars().width, Some(896.0));
+        // Without a native frame the engine falls back to the screen edge, which is
+        // what the balloon-routed dialogue uses.
+        game.screen.clear();
+        assert_eq!(game.message_vars().width, None);
+        assert_eq!(game.message_vars().wrap_width(), 1024.0 - 64.0);
+    }
+
+    #[test]
+    fn a_held_confirm_key_does_not_skip_a_new_message() {
+        let Some(root) = have_data() else { return };
+        let mut game = Game::new(&root).expect("game");
+        let mut host = host(&mut game);
+        host.show_message("first line", None);
+        // Enter was already down when this line appeared: the level is not a press.
+        host.key_bits = key::OK;
+        host.previous_keys = key::OK;
+        assert!(
+            !host.message_dismissed(),
+            "a held key skipped a fresh message"
+        );
+        // Releasing and pressing again does dismiss it.
+        host.previous_keys = 0;
+        assert!(host.message_dismissed());
+    }
+
+    #[test]
+    fn a_pending_click_is_delivered_by_the_next_key_poll() {
+        let Some(root) = have_data() else { return };
+        let mut game = Game::new(&root).expect("game");
+        // No physical button is down this frame: the edge was carried over from the
+        // frame it happened in, while the VM was inside a wait.
+        game.pending_mouse = key::OK;
+        {
+            let mut host = host(&mut game);
+            assert_eq!(
+                host.mouse_key_bits() & key::OK,
+                key::OK,
+                "the carried click was lost"
+            );
+        }
+        assert!(game.mouse_consumed, "the poll must spend the click");
+    }
+
+    #[test]
+    fn an_unpolled_click_expires_instead_of_haunting_a_later_menu() {
+        let Some(root) = have_data() else { return };
+        let mut game = Game::new(&root).expect("game");
+        game.pending_mouse = key::OK;
+        for _ in 0..PENDING_MOUSE_TTL {
+            game.settle_pending_mouse();
+            assert_eq!(game.pending_mouse, key::OK);
+        }
+        game.settle_pending_mouse();
+        assert_eq!(game.pending_mouse, 0, "the stale click did not expire");
     }
 
     #[test]
@@ -3877,6 +4441,7 @@ mod tests {
             diagnostics: &mut game.diagnostics,
             stats: &mut game.stats,
             key_bits: game.key_bits,
+            previous_keys: game.previous_keys,
             repeat_bits: game.repeat_bits,
             raw_keys: &game.raw_keys,
             raw_pad_keys: &game.raw_pad_keys,
@@ -3887,9 +4452,12 @@ mod tests {
             mouse: game.mouse,
             mouse_buttons: game.mouse_buttons,
             previous_mouse_buttons: game.previous_mouse_buttons,
+            pending_mouse: &mut game.pending_mouse,
+            mouse_consumed: &mut game.mouse_consumed,
             root: &game.root,
             save_requests: &mut game.save_requests,
             map_requests: &mut game.map_requests,
+            quit: &mut game.quit_requested,
         }
     }
 

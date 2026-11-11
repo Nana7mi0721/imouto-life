@@ -831,3 +831,60 @@ M0–M7 与 C 任务每一步的改动、验证数字与踩过的坑。它只记
   * **存档 fixture 坑**：玩家在游戏里保存会覆盖 `work/Data/Save/SaveData01/02.sav`（本次发现 SaveData01 变成 64-picture、带存档界面的 0:28 存档，导致 m14/hud/day_command/save_ui 基线整帧失真）。已把玩家存档备份到 `work/out/player_saves_2026-11-10/`，并用 50-picture 出货状态（`work/out/save_analysis/synth/SaveData01/02.sav`）恢复测试 fixture；`m14_visual_regression` 新增 `depends_on_save` 守卫，以后玩家再覆盖时跳过三个依赖场景而非误报。
   * **验证**：`cargo test -q --workspace` exit 0（含 m14 三场景 skip）；`WOLF_DATA_ROOT=$PWD/work/Data` 下 `m6_title_wheel` 3、`m3_title_visibility/mouse` 12、`m6_input_parity` 8、`m3_save_ui_roundtrip` 1、`m3_hud_numeric` 5、`m3_mouse_menu` 12、存档套件 2+4+9+1 全过；`wolf-cli verify` PASS 64/1 SKIP；`bash tools/smoke-godot.sh` exit 0；`bash tools/parity-godot.sh` PASS（600/1200/1800 统计一致 + 像素 **MAE 0.3680**）。未 commit。
   * **收尾清理**：删除 `work/out/nofallback*.png`、`*_after.png`、`check_save.png`、`probe_save.png`、`smoke_input*.log`、`all_text.tsv`、`godot_roundtrip.sav`、`target/debug/incremental`、`target/release` 等；玩家存档备份 `work/out/player_saves_2026-11-10/` 保留并附 README。清理后 `du -sh .` = **5.5 GB**（work 270 M；target 5.2 G，主要是 debug 测试二进制 + godot profile）。
+
+* 2026-11-11（独立审查报告 17 项缺陷修复：VM / 文本 / 图片 / 输入 / 存档 / Godot / parity）：
+  * **VM 脚本语义**：`111` 运算符改为先取 `operator & 0x0F` 再分派，17/18 不再落进 `==`，6 保持位积 `(lhs & rhs) == rhs`（实测 91 处）；`121` 的除/取模用 i64 中间值，`i32::MIN / -1` 不再溢出；`122` 按 `mode & 0xFFF0` 实现首行截取/首行复制、首字符/末字符删除、清空、替换、前后截断，来源种类支持字面量/字符串变量/数值寻址/键盘；`213 JumpLabel` 换成 `sync_loops_for_jump`：跳出循环弹栈、跳入循环按目标重建上下文（计数循环从外部进入只跑一次余量，`170/176` 无限循环保持 -1），修复 CE63 跳回主循环后 `498` 穿透、空消息框残留的实机问题。
+  * **文本与数据库转义**：`101`/`150` 解码时展开 `\cdb`/`\udb`/`\sdb`；`Host` 新增 `database_string`，`GameHost` 按 text → engine_text → num → engine_num 回退（CE242 行动力/精力是 numeric-only 单元格）；消息换行宽度改为左右各 32 px 内缩（960 px 窗框内 text origin 64，宽 896），不再贴右边框。
+  * **图片与 UI**：`150` 锚点 2..6 与 head bits 20..23 的缩放模式补齐（含别々 X/Y），`Picture.scale_y` 随存档往返；九宫格改为整体吸附，消除浮点取整造成的重叠黑缝；选项 `font_px: 0.0` 回退默认字号；`♪` 走字形回退。
+  * **输入**：鼠标短按锁存到 `123` 消费（15 帧 TTL），脚本等待期间不再丢点击；消息确认改为 Enter/左键边沿，长按不会连续跳过；失焦后的首帧电平点击屏蔽；标题取消（ESC/右键）恢复标题菜单。
+  * **存档**：Part3 `mds1` 普通字符串读回；350 个公共事件各 100 numeric + 5 string Self 池随存档往返，保存前 `capture_common_self` 折回、读档后 `restore_common_self` 推入在跑协程；BGM 路径/音量恢复；self string 支持原始 GBK 字节写回。
+  * **Godot / parity**：字体不再硬编码 `C:/Windows/Fonts`，按平台候选查找；atlas 满时在下一帧清空重打包并带 generation，去掉每帧全量拷贝；`capture --menu-only --prime` 与 parity 的 `--prime` 入口固定为「初始化后再比像素」，primed-vs-primed 600 帧 **MAE 0.7529 PASS**，600/1200/1800 统计仍逐项一致。
+  * **测试适配（忠实 Self 持久化）**：直接 `start_event` 的独立用例会继承启动/存档调用留下的 group6 实参，按需清空或播种对应事件的 Self 池：`m2_hud_events`（CE244 self0=-5）、`m3_event_inputs`（CE269）、`m3_hud_layout`/`m3_hud_numeric`/`m3_status_panel`（CE244 self0=0）、`m3_ui_screens`（CE240/241 清池、CE244=0）、`m3_visual_text`（CE264 清池）。`m3_visual_text::bedroom()` 改为真实顺序 `prime_engine()` → `load_save()`，避免读档恢复的 CE269 `self99=1` 守卫跳过消息默认值（Sys9 保持 0 会瞬显）；`on_screen_texts` 过滤 `hidden` 槽（CE264 的 16001 画完即隐藏）。
+  * **验证**：`cargo test -q --workspace` **exit 0**；`WOLF_DATA_ROOT=$PWD/work/Data cargo test -q --workspace --no-fail-fast` 102 个 target ok，仅 7 个既有姊妹作期望差异失败（auto_events 3、db 2、game title 2）；`wolf-cli verify` **PASS 64 / 1 SKIP**；`cargo fmt --all -- --check` 通过；`bash tools/smoke-godot.sh` exit 0（load_save `pictures=50 texts=14`、load_menu `74/27`、roundtrip `40/40`）；`bash tools/parity-godot.sh` **PASS**（MAE 0.7529）。
+  * **收尾清理**：删除 `target/debug/incremental`、`target/release`、`target/ver6`、`work/out/saveprobe`、临时 probe 日志；`du -sh .` = **6.9 GB**（work 297 M，其中 Data 176 M；target 6.6 G = debug 5.7 G + godot 893 M）。未 commit。
+
+* 2026-11-11（POST_DEEPSEEK 审查 19 项：18 修复 + BUG-04 判为原版设计）：
+  * **BUG-01（op250 字符串写库）**：`250` Write 的第 5 操作数按 Magic 种类分流，`3_000_000` 走 `eval_str` 写 `DbValue::Str`；CE258 pc1341/1347 的 CData 0:12:0/1 现在真正写入“强壮”等字符串，`\cdb` 与顶栏属性恢复。单测 `db_write_copies_a_string_variable_into_the_cell`。
+  * **BUG-12/19（600_100 相对事件）**：`210/211` 的 `600_000..699_999` 统一按 `caller + (raw - 600_100)` 解析（`relative_call_target`），CE264 的 600104 现在到达 CE268 而非 CE104；CE270 的 600094 回到 CE264。
+  * **BUG-02（人名栏）**：为气泡库补齐 WOLF 语义：`124` 0x3000 字段 17 = 本公共事件 id；跨事件公共 Self 地址 `15_000_000 + 100*ev + slot`（槽 5..9 为字符串）；`122` 间接字符串代入；`121` 间接数值代入（Self 槽保存 CommonSelf 地址时）。CE268 用 CE269 跨事件地址写入“妹妹”，CE270 将其画到图 36014；新增 `tests/m15_balloon_name.rs` 断言 CE269 串槽与名字牌文本。**仍开放**：气泡/名字牌的屏幕几何依赖 `character_state` 字段 6/7（地图事件坐标），当前 `GameHost` 仍返回 None，名字数据已生成但气泡可能停靠屏外；未伪造坐标。
+  * **BUG-03（UI 图层）**：gdext 的 text 包补 `number`/`z`，GameView 把 sprite 与 text 合并为按槽位排序的单栈，菜单 chrome 用 `UI_Z=1_000_000` 置顶；存档页不再被 HUD 穿透。
+  * **BUG-05/06（存档网格）**：鼠标坐标映射到 CE131 当前页槽位并写入 self610；保存请求在同帧结算，网格立即重绘。
+  * **BUG-07（负槽 hover）**：负编号背景层不再生成 1024x576 命中盒。
+  * **BUG-08/09/10/16（地图与输入锁）**：BOOT/TITLE/14/95/131/132 的陈旧 UI 链在载入后清理；`MapRuntime` 页切换不再强杀阻塞中的父事件（等调用返回后再切页），立绘/房间层清理命令得以执行，侧栏拉环不再每帧重建；菜单守卫只在真正残留实例时拦截。
+  * **BUG-11（EndGame）**：`175` 设置 `Game::quit_requested`；Godot 在 physics tick 后 `get_tree().quit()`，wolf-cli 的 event loop 轮询后 `exit()`；新增标题 menu3 退出回归。
+  * **BUG-13（213 动态标签）**：先按展开后的名字精确匹配，未命中再对含转义的 212 标签逐个展开比对；仍无法匹配时记 Warn 并执行下一条，不再腰斩协程。
+  * **BUG-14（125 自动键）**：`auto_keys` 在每帧所有协程执行完后清零（WOLF 手册“1 帧だけ有効”），菜单不再自答、存档网格不再自行决定。
+  * **BUG-15（鼠标消费）**：`pending_mouse` 在 15 帧 TTL 内投递给每个 `123` 轮询，首个消费者不再清零整个边沿；`mouse_consumed` 只用于阻止消息框重复吃点击。
+  * **BUG-17（BGS/同曲）**：mixer 增加独立 BGS voice（与 BGM 并行、独立淡入淡出），Engine 记录当前 BGM/BGS 路径，同路径重复 Play 只更新音量不重启；Godot 侧同样有 `bgs_player` 与同曲跳过；新增 `tests/bgs_and_retrigger.rs`。
+  * **BUG-18（外部点击）**：op102 面板外左键在允许取消时按 Cancel 回复，不允许时保留边沿给并行事件，不再无声吞点击。
+  * **常時作動重入**：`Game::restart_always_events` 只重入 CE270（气泡每帧显示 pass）；48/261/269 是一次性初始化（48 会重置状态/时间），214 末尾会删 200/210 支持窗（会擦掉 HUD 时钟），均不重入。`m14_visual_regression` 的 title/hud/day_command peak coroutine 基线按此重录。
+  * **验证**：`cargo test -q --workspace` **exit 0**；`WOLF_DATA_ROOT=$PWD/work/Data cargo test -q --workspace --no-fail-fast` 仅 7 个既有姊妹作期望差异（auto_events 3、db 2、game title 2），全部集成测试通过（含新增 m15、BGS、标题退出）；`wolf-cli verify` **PASS 64 / 1 SKIP**；`cargo fmt --all`；`bash tools/smoke-godot.sh` exit 0（smoke 4/4、key_map 98/0、load_save 50/14、roundtrip 38/38）；`bash tools/parity-godot.sh 600 --pixel-check=0` **PASS**（frames 600 / instructions 15,699 / pictures 4,418 / messages 15 / choices 3 / warnings 0 / sounds 3）。
+  * **收尾清理**：删除 `crates/*/examples/` 下全部未跟踪 probe/dump（62 个）、`target/debug/incremental`、`target/release`、`target/ver6`、`work/out/saveprobe` 与临时日志；`du -sh .` = **7.3 GB**（work 299 M，其中 Data 176 M；target 7.0 G = debug 6.1 G + godot 894 M）。未 commit。
+
+
+* 2026-11-11（交接：POST_DEEPSEEK 收尾文档）：
+  * 新增 `docs/HANDOFF_NEXT_AGENT.md`，面向接手 agent 汇总已完成 18 项修复、唯一未闭环的 CE270 人名牌持续可见问题、临时调试代码位置、全量验证命令/基线、文档更新与清理要求。
+  * 修正上文 BUG-02 的“屏幕几何未实现”判断：气泡是固定模式 2002，图片字段 x/y 是相对偏移，`CE270 pc2224..2230` 的 `290` kind 2 把 36000..36015 平移到 (512,536)；36014 实际屏幕位置约 (276,456)，不是屏外。名字牌问题在 CE270 跨帧状态（`self50/self55/self56/self15`），不在 `character_state`。
+  * 当前工作区故意保留临时 trace（`exec.rs` 的 DECODE/VM/CASE/LABEL/ENTER、`game.rs` 的 PIC、`m15_balloon_name` 的每帧 bank/strings/pic 输出），接手后按交接文档 §4 删除。未 commit。
+
+* 2026-11-11（BUG-02 收尾：CE270 人名栏持续可见）：
+  * **根因**：`CE270 pc92` 的 `112` 字符串条件使用 `0x11186A05`。bit 24 是字符串变量类型标志，低 24 位 `0x00186A05 = 1_600_005` 才对应 CSelf5；旧实现只剥离比较模式、保留 bit 24，`eval_str` 把操作数解码到 Self 池之外并返回空串，于是 `CSelf5 != SysStr25` 每帧都被误判为“消息变化”。测量块因此反复执行 `self56 = 0`（名字存在标志），随后进入隐藏分支，名字牌只显示一帧。不是 `character_state` 坐标或屏外问题。
+  * **修复**：`crates/wolf-vm/src/exec.rs::eval_string_condition` 的左右操作数统一按 `raw & 0x00FF_FFFF` 解码；新增单测 `string_condition_strips_the_variable_type_flag_from_cself_operands`，用 `0x0100_0000 | 1_600_005` 验证带类型标志的 CSelf5 仍能匹配“妹妹”。
+  * **回归测试**：`crates/wolf-game/tests/m15_balloon_name.rs` 从“曾经生成过名字牌”加强为：消息显示期间图 `36014` 连续可见至少 **60 帧**、文本含“妹妹”、矩形非空且完全位于 1024×576 内、`warnings == 0`；真实数据 1 passed。`CE268 → CE269 CSelf5 → CE270` 链路保持。
+  * **视觉基线**：`m14_visual_regression` 的 title 峰值协程基线校正为 **8**（首帧启动突发为 `48/270/271/216/63/2/264/265`，之后收敛到 3，不是协程泄漏）；5 个场景 5 passed，saveui 等既有重录数字不变。
+  * **已知诊断窄化**：真实数据下 `300 CallByName` 找不到 `▲┣[ｽﾞｰﾑ]イベント位置をズーム座標に`，3 个新游戏测试合计产生 18 条已记录 warning。`m1_title_load` / `m3_map_events` / `m3_newgame_persistence` 的白名单只允许该诊断的精确计数，任何其它 warning 仍失败；已确认与 BUG-02 掩码无关。缺失 helper 见 `docs/M3_EVENT_GRAPH.md` §6。
+  * **验证**：`cargo test -q --workspace` **exit 0**；`WOLF_DATA_ROOT="$PWD/work/Data" cargo test -q --workspace --no-fail-fast` 仅 7 个既有姊妹作差异（auto_events 3、db 2、game title 2），无新增失败；`wolf-cli verify` **PASS 64 / 1 SKIP**；`cargo fmt --all -- --check` 通过；`bash tools/smoke-godot.sh` exit 0（smoke `pictures=4 sprites=4`、load_save `50/14`、roundtrip `38/38`）；`bash tools/parity-godot.sh 600 --pixel-check=0` **PASS**（instructions 15,549 / pictures 4,418 / messages 15 / choices 3 / warnings 0 / sounds 3）。
+  * **清理**：删除 `target/debug/incremental`、`target/release`、`target/ver6`、`work/out/saveprobe`、`work/out/title_peak.png`、`work/out/godot_roundtrip.sav` 及本轮 trace；`du -sh .` = **7.4 GB**（work 334 M = Data 176 M + out 158 M；target 7.1 G = debug 6.2 G + godot 894 M）。未 commit。
+
+* 2026-11-11（BUG-02 交接归档）：
+  * `docs/HANDOFF_NEXT_AGENT.md` 已改为“已完成”归档：顶部标注 BUG-02 闭环、§3 标为历史排查记录并写入 op112 bit-24 根因、title peak 校正为 8、调试打印删除与全部验证/清理结果均已确认。
+  * `docs/HANDOFF_M0.md` §11.3 删除“气泡可能停靠屏外/依赖 character_state”的过时开放项，改为指向 §11.1 的已闭环说明。
+  * 本轮只改文档，未改代码、未重跑测试；上一轮全量验证结论继续有效。未 commit。
+
+* 2026-11-11（独立复核收尾：BUG-05 真实命中盒 / 回归补强 / precompile 基线）：
+  * **BUG-05 未闭环的根因**：`Screen::picture_rect` 对 window 图仍取 18x18 皮肤贴图尺寸，CE131 的可见槽位面板是 928x115.2；点击槽位中心仍落到第 1 槽，只有 1.8x1.8 的皮肤左上角碰巧命中。复核探针已验证该行为。
+  * **修复**：`picture_rect` 现在对非系统图形的 window 图先走 `Picture::window` 盒，再按 `Atlas::sprites` 同样的 tenths 规则缩放；过小（Atlas 不绘制）的窗口返回 None。新增 `m3_menu_screens::ce131_slot_hit_boxes_are_the_visible_panels_not_the_skin_texture`：断言 12090 命中盒宽高 > 900/100，鼠标移到可见中心后 CE131 self610=2，且不写任何存档。
+  * **回归补强**：`m3_hud_buttons::repeated_save_menu_cycles_do_not_lock_the_hud_icons`（连续 3 次开关 CE131 后数据图标仍响应，BUG-08）；`m3_event_page_switch::blocked_event_cleans_up_before_a_page_switch`（CE245 打开时改变 var70 选择另一页面，Event 1 不被杀，取消后 `-9` 空房间层被清除，BUG-09/16）；`m3_mouse_menu::a_left_click_outside_the_panel_cancels_the_prompt`（BUG-18）。
+  * **precompile 基线**：`dynamic_labels` 由错误的 51 修正为 3（代码注释与实测数据均为 3；仅有 CE31/63/86 三条 `213` 标签含 `\cself`）。`wolf-cli precompile` 现在 **PASS 19 / 0**。
+  * **最终验证**：默认 workspace **exit 0**；数据 workspace 105 个 target ok，仅 7 个既有姊妹作差异（auto_events 3、db 2、game title 2）；`verify` **PASS 64 / 1 SKIP**；`precompile` **PASS 19 / 0**；`m14_visual_regression` **5 passed**（title peak=8）；`cargo fmt --all -- --check` 与 `git diff --check` 通过；`smoke-godot.sh` exit 0（smoke 4/4、load_save 50/14、roundtrip 38/38）；`parity-godot.sh 600 --pixel-check=0` **PASS**（15,549 指令 / 4,418 picture / 15 message / 3 choice / 0 warning / 3 sound）。
+  * **清理**：删除 `work/out/dllprobe`、`work/out/godot_roundtrip.sav`、`target/debug/incremental`、`target/release`、`target/ver6`、`work/out/saveprobe`；`du -sh .` = **7.5 GB**（work 334 M = Data 176 M + out 159 M；target 7.1 G = debug 6.2 G + godot 894 M）。未 commit。

@@ -298,23 +298,17 @@ fn ce242_action_and_energy_follow_cdata_status_cells() {
         game.frame();
     }
     assert_eq!(game.stats.warnings, 0, "CE242 基准不应告警");
-    let raw_230 = game
-        .screen
-        .get(230)
-        .map(|p| p.text.clone())
-        .unwrap_or_default();
-    let raw_240 = game
-        .screen
-        .get(240)
-        .map(|p| p.text.clone())
-        .unwrap_or_default();
+    // The VM expands `\cdb` while decoding the picture, so the rendered quads
+    // carry the CDataBase 0:12:8/9 and 0:12:6/7 numbers directly.
+    let initial = quads_text(&game);
+    let compact_initial: String = initial.chars().filter(|c| !c.is_whitespace()).collect();
     assert!(
-        raw_230.contains(r"\cdb[0:12:8]") && raw_230.contains(r"\cdb[0:12:9]"),
-        "CE242 行动力面板应引用 CDataBase 0:12:8/9，实际 {raw_230:?}"
+        compact_initial.contains("行动力60/65"),
+        "CE242 行动力面板应显示 CDataBase 0:12:8/9，实际 {initial:?}"
     );
     assert!(
-        raw_240.contains(r"\cdb[0:12:6]") && raw_240.contains(r"\cdb[0:12:7]"),
-        "CE242 精力面板应引用 CDataBase 0:12:6/7，实际 {raw_240:?}"
+        compact_initial.contains("精力3/3"),
+        "CE242 精力面板应显示 CDataBase 0:12:6/7，实际 {initial:?}"
     );
 
     for (action, action_max, energy, energy_max) in [(42, 45, 7, 7), (11, 99, 9, 2)] {

@@ -39,9 +39,19 @@ pub enum EscapeBank {
 /// What the expander needs from the running instance.
 pub trait VarLookup {
     /// Read an integer bank slot.
-    fn lookup_num(&self, bank: EscapeBank, index: usize) -> i32;
+    fn lookup_num(&mut self, bank: EscapeBank, index: usize) -> i32;
     /// Read a string bank slot.
-    fn lookup_str(&self, bank: EscapeBank, index: usize) -> String;
+    fn lookup_str(&mut self, bank: EscapeBank, index: usize) -> String;
+    /// Read a database string cell. `None` when the host has no database.
+    fn lookup_db(
+        &mut self,
+        _container: crate::exec::DbContainer,
+        _db_type: i32,
+        _row: i32,
+        _column: i32,
+    ) -> Option<String> {
+        None
+    }
 }
 
 /// A lookup that knows nothing: every escape expands to `0`.
@@ -53,11 +63,11 @@ pub trait VarLookup {
 pub struct NoVars;
 
 impl VarLookup for NoVars {
-    fn lookup_num(&self, _bank: EscapeBank, _index: usize) -> i32 {
+    fn lookup_num(&mut self, _bank: EscapeBank, _index: usize) -> i32 {
         0
     }
 
-    fn lookup_str(&self, _bank: EscapeBank, _index: usize) -> String {
+    fn lookup_str(&mut self, _bank: EscapeBank, _index: usize) -> String {
         String::new()
     }
 }
@@ -70,7 +80,7 @@ impl VarLookup for NoVars {
 /// label such as `\cself[\cself[0]]` where slot 0 holds text is data-dependent and
 /// must never hang the interpreter).
 #[must_use]
-pub fn expand<L: VarLookup + ?Sized>(text: &str, lookup: &L) -> String {
+pub fn expand<L: VarLookup + ?Sized>(text: &str, lookup: &mut L) -> String {
     let mut out = text.to_owned();
     for _ in 0..64 {
         match expand_once(&out, lookup) {
@@ -96,7 +106,7 @@ pub fn has_escape(text: &str) -> bool {
 /// keep that numeric fallback because `\f[\cself[19]]` selects a font size; that is a
 /// numeric context, unlike a whole-label choice entry.
 #[must_use]
-pub fn expand_choice<L: VarLookup + ?Sized>(text: &str, lookup: &L) -> String {
+pub fn expand_choice<L: VarLookup + ?Sized>(text: &str, lookup: &mut L) -> String {
     let trimmed = text.trim();
     if let Some((EscapeBank::SelfVar, index)) = single_escape(trimmed) {
         return lookup.lookup_str(EscapeBank::SelfVar, index);
@@ -128,7 +138,7 @@ fn single_escape(text: &str) -> Option<(EscapeBank, usize)> {
 }
 
 /// One innermost-first substitution pass. `None` means "nothing left to expand".
-fn expand_once<L: VarLookup + ?Sized>(text: &str, lookup: &L) -> Option<String> {
+fn expand_once<L: VarLookup + ?Sized>(text: &str, lookup: &mut L) -> Option<String> {
     // Walk from the right so the *last* escape in the string is expanded first;
     // for tagged markup that is the innermost one.
     let bytes = text.as_bytes();
@@ -156,7 +166,7 @@ fn expand_once<L: VarLookup + ?Sized>(text: &str, lookup: &L) -> Option<String> 
 fn parse_escape<L: VarLookup + ?Sized>(
     text: &str,
     start: usize,
-    lookup: &L,
+    lookup: &mut L,
 ) -> Option<(usize, String)> {
     let rest = text.get(start + 1..)?;
     let bytes = rest.as_bytes();
@@ -171,6 +181,38 @@ fn parse_escape<L: VarLookup + ?Sized>(
         return None;
     }
     let name = rest.get(..j)?;
+
+    // Database references use a three-part index `[db_type:row:column]`:
+    // `\cdb` variable DB, `\udb` user DB, `\sdb` system DB. CE258 pc1348 writes
+    // `\E你是……\cdb[0:12:0]\cdb[0:12:1]哥哥。`, where 0/12 is the player-name cell
+    // (columns 0 and 1 are the two string fields). Before this branch existed the
+    // whole escape reached the screen verbatim.
+    if matches!(name, "cdb" | "udb" | "sdb") {
+        let after = rest.get(j..)?;
+        if !after.starts_with('[') {
+            return None;
+        }
+        let close = after.find(']')?;
+        let body = after.get(1..close)?;
+        let parts: Vec<&str> = body.split(':').collect();
+        if parts.len() != 3 {
+            return None;
+        }
+        let mut values = [0i32; 3];
+        for (slot, part) in parts.iter().enumerate() {
+            values[slot] = part.trim().parse().ok()?;
+        }
+        let container = match name {
+            "cdb" => crate::exec::DbContainer::CData,
+            "udb" => crate::exec::DbContainer::Data,
+            _ => crate::exec::DbContainer::Sys,
+        };
+        let replacement = lookup
+            .lookup_db(container, values[0], values[1], values[2])
+            .unwrap_or_default();
+        return Some((start + 1 + j + close + 1, replacement));
+    }
+
     let bank = match name {
         "cself" | "self" => EscapeBank::SelfVar,
         "cself_s" | "self_s" => EscapeBank::SelfVar,
@@ -227,14 +269,14 @@ fn parse_escape<L: VarLookup + ?Sized>(
 /// Shared by the interpreter and the trace host so both agree on what
 /// `-1_000_000` ("leave unchanged") and literals mean.
 #[must_use]
-pub fn eval_magic<L: VarLookup + ?Sized>(magic: Magic, lookup: &L) -> i32 {
+pub fn eval_magic<L: VarLookup + ?Sized>(magic: Magic, lookup: &mut L) -> i32 {
     match magic.kind() {
         MagicKind::Literal => magic.index() as i32,
         MagicKind::SelfVar => lookup.lookup_num(EscapeBank::SelfVar, magic.index() as usize),
         MagicKind::Var => lookup.lookup_num(EscapeBank::Var, magic.index() as usize),
         MagicKind::SysVar => lookup.lookup_num(EscapeBank::SysVar, magic.index() as usize),
         // A string bank read in an integer context is a data error; WOLF yields 0.
-        MagicKind::StrVar | MagicKind::DbCell | MagicKind::Opaque => 0,
+        MagicKind::StrVar | MagicKind::CommonSelf | MagicKind::DbCell | MagicKind::Opaque => 0,
     }
 }
 
@@ -250,7 +292,7 @@ mod tests {
     }
 
     impl VarLookup for Fixed {
-        fn lookup_num(&self, bank: EscapeBank, index: usize) -> i32 {
+        fn lookup_num(&mut self, bank: EscapeBank, index: usize) -> i32 {
             match bank {
                 EscapeBank::SelfVar => self.self_nums.get(index).copied().unwrap_or(0),
                 EscapeBank::SysVar => 99,
@@ -258,11 +300,25 @@ mod tests {
             }
         }
 
-        fn lookup_str(&self, bank: EscapeBank, index: usize) -> String {
+        fn lookup_str(&mut self, bank: EscapeBank, index: usize) -> String {
             match bank {
                 EscapeBank::SelfVar => self.self_strs.get(index).cloned().unwrap_or_default(),
                 _ => self.strs.get(index).cloned().unwrap_or_default(),
             }
+        }
+
+        fn lookup_db(
+            &mut self,
+            container: crate::exec::DbContainer,
+            db_type: i32,
+            row: i32,
+            column: i32,
+        ) -> Option<String> {
+            (container == crate::exec::DbContainer::CData
+                && db_type == 0
+                && row == 12
+                && column == 0)
+                .then(|| "英雄".to_owned())
         }
     }
 
@@ -276,18 +332,36 @@ mod tests {
     }
 
     #[test]
+    fn database_escapes_expand_to_the_named_cell() {
+        let mut f = fixed();
+        // CE258 pc1348 writes the player name this way: the two string fields of
+        // CData type 0 row 12 are columns 0 and 1.
+        let out = expand(r"\E你是……\cdb[0:12:0]哥哥。", &mut f);
+        assert_eq!(out, r"\E你是……英雄哥哥。");
+        // A cell the host does not know (or a host with no database) is empty, not
+        // the literal escape, which is what used to reach the message window.
+        assert_eq!(expand(r"\cdb[0:13:0]", &mut f), "");
+        assert_eq!(expand(r"\udb[1:2:3]", &mut f), "");
+        assert_eq!(expand(r"\sdb[1:2:3]", &mut f), "");
+        assert_eq!(
+            expand(r"before \cdb[0:12:0] after", &mut f),
+            "before 英雄 after"
+        );
+    }
+
+    #[test]
     fn no_escape_is_returned_unchanged() {
-        let f = fixed();
-        assert_eq!(expand("plain text", &f), "plain text");
+        let mut f = fixed();
+        assert_eq!(expand("plain text", &mut f), "plain text");
         assert!(!has_escape("plain text"));
     }
 
     #[test]
     fn self_variable_substitution() {
-        let f = fixed();
-        assert_eq!(expand("front\\cself[0]", &f), "front7");
-        assert_eq!(expand("a\\self[1]b", &f), "a8b");
-        assert_eq!(expand("\\cself[2]", &f), "9");
+        let mut f = fixed();
+        assert_eq!(expand("front\\cself[0]", &mut f), "front7");
+        assert_eq!(expand("a\\self[1]b", &mut f), "a8b");
+        assert_eq!(expand("\\cself[2]", &mut f), "9");
     }
 
     #[test]
@@ -296,9 +370,9 @@ mod tests {
         // \cself[5] must draw the label, not the slot.
         let mut f = fixed();
         f.self_strs[5] = "学习会".into();
-        assert_eq!(expand(r"\cself[5]", &f), "学习会");
+        assert_eq!(expand(r"\cself[5]", &mut f), "学习会");
         // With no string written, the numeric fallback still drives font sizes.
-        assert_eq!(expand(r"\cself[1]", &f), "8");
+        assert_eq!(expand(r"\cself[1]", &mut f), "8");
     }
 
     #[test]
@@ -306,44 +380,44 @@ mod tests {
         let mut f = fixed();
         // A bare \cself[n] option is a label slot, not a number: when the branch did
         // not fill it the menu must paint no row at all (the retail five-row menu).
-        assert_eq!(expand_choice(r"\cself[1]", &f), "");
+        assert_eq!(expand_choice(r"\cself[1]", &mut f), "");
         f.self_strs[5] = "想做爱".into();
-        assert_eq!(expand_choice(r"\cself[5]", &f), "想做爱");
+        assert_eq!(expand_choice(r"\cself[5]", &mut f), "想做爱");
         // Only the whole-label shape is special; embedded escapes keep the numeric
         // fallback that font-size markup relies on.
-        assert_eq!(expand_choice(r"label \cself[1]", &f), "label 8");
+        assert_eq!(expand_choice(r"label \cself[1]", &mut f), "label 8");
     }
 
     #[test]
     fn other_banks() {
-        let f = fixed();
-        assert_eq!(expand("\\v[1]", &f), "200");
-        assert_eq!(expand("\\s[0]", &f), "sfx");
-        assert_eq!(expand("\\sys[3]", &f), "99");
+        let mut f = fixed();
+        assert_eq!(expand("\\v[1]", &mut f), "200");
+        assert_eq!(expand("\\s[0]", &mut f), "sfx");
+        assert_eq!(expand("\\sys[3]", &mut f), "99");
     }
 
     #[test]
     fn nested_escapes_expand_innermost_first() {
         // \cself[\cself[0]] with slot 0 = 7 -> \cself[7] -> 0 (slot 7 unwritten)
-        let f = fixed();
-        assert_eq!(expand("\\cself[\\cself[0]]", &f), "0");
+        let mut f = fixed();
+        assert_eq!(expand("\\cself[\\cself[0]]", &mut f), "0");
     }
 
     #[test]
     fn display_markup_is_left_alone() {
-        let f = fixed();
+        let mut f = fixed();
         // These are messagetext's job; corrupting them would break filenames.
         for raw in ["\\c[6]text\\c[0]", "line\\nbreak", "@2 face", "\\>{}"] {
-            assert_eq!(expand(raw, &f), raw, "raw: {raw}");
+            assert_eq!(expand(raw, &mut f), raw, "raw: {raw}");
         }
         // Inside display markup the *markup* survives but a variable escape is
         // still a variable escape — the engine evaluates it before laying out.
-        assert_eq!(expand("\\>{\\cself[0]}", &f), "\\>{7}");
+        assert_eq!(expand("\\>{\\cself[0]}", &mut f), "\\>{7}");
     }
 
     #[test]
     fn malformed_escapes_never_panic() {
-        let f = fixed();
+        let mut f = fixed();
         for raw in [
             "\\",
             "\\[0]",
@@ -352,7 +426,7 @@ mod tests {
             "\\cself[x]",
             "\\cself[-1]",
         ] {
-            let _ = expand(raw, &f);
+            let _ = expand(raw, &mut f);
         }
     }
 
@@ -360,27 +434,28 @@ mod tests {
     fn self_referential_escape_terminates() {
         struct Loop;
         impl VarLookup for Loop {
-            fn lookup_num(&self, _bank: EscapeBank, _index: usize) -> i32 {
+            fn lookup_num(&mut self, _bank: EscapeBank, _index: usize) -> i32 {
                 // Always produces text that expands again.
                 0
             }
-            fn lookup_str(&self, _bank: EscapeBank, _index: usize) -> String {
+            fn lookup_str(&mut self, _bank: EscapeBank, _index: usize) -> String {
                 "\\cself[0]".into()
             }
         }
         // Bounded at 64 passes; must return rather than hang.
-        let out = expand("\\s[0]", &Loop);
+        let mut lookup = Loop;
+        let out = expand("\\s[0]", &mut lookup);
         assert!(!out.is_empty());
     }
 
     #[test]
     fn eval_magic_covers_every_bank() {
-        let f = fixed();
-        assert_eq!(eval_magic(Magic::decode(42), &f), 42);
-        assert_eq!(eval_magic(Magic::decode(2_000_001), &f), 200);
-        assert_eq!(eval_magic(Magic::decode(1_000_001), &f), 8);
-        assert_eq!(eval_magic(Magic::decode(9_000_000), &f), 99);
+        let mut f = fixed();
+        assert_eq!(eval_magic(Magic::decode(42), &mut f), 42);
+        assert_eq!(eval_magic(Magic::decode(2_000_001), &mut f), 200);
+        assert_eq!(eval_magic(Magic::decode(1_000_001), &mut f), 8);
+        assert_eq!(eval_magic(Magic::decode(9_000_000), &mut f), 99);
         // Opaque sentinels read as 0, never as a bogus slot.
-        assert_eq!(eval_magic(Magic::decode(-1_000_000), &f), 0);
+        assert_eq!(eval_magic(Magic::decode(-1_000_000), &mut f), 0);
     }
 }

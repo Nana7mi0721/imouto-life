@@ -26,8 +26,10 @@
 //!   the manual only says X characters per second, and no frame-exact sample exists.
 //! * [已实测] The pause cursor is drawn by the ENGINE at (Sys1 + Sys5, Sys2 + Sys6) =
 //!   (576, 554), which is inside the frame, bottom right of the text origin.
-//! * [未实测] The right padding of the wrap box: wrapping uses the frame right edge
-//!   (the screen edge, 1024) minus the text origin, which is the documented hard cap.
+//! * [已实测] The right padding of the wrap box mirrors the left one: the frame
+//!   picture (slot 19500, 960x168 centred at Sys3/Sys4) covers x 32..992, the text
+//!   origin is x 64, so the wrap width is 896 and a long row stops 32 px before the
+//!   frame's right edge.
 //! * [已实测] A bare LF byte is the line break; 3,915 of them exist in real messages.
 
 use crate::choice;

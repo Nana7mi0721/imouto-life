@@ -27,7 +27,8 @@
 //! Moving the pointer over a row moves the highlight (choice_cursor) under it, so
 //! the menu can be driven by hover alone; the highlight does not move on a frame
 //! where the pointer is parked or off the panel, and a left click still confirms
-//! the row under the pointer.
+//! the row under the pointer. A left click outside the panel is a Cancel reply
+//! when the opcode-102 block has a 421 marker (BUG-18), not a swallowed edge.
 //!
 //! Every step must keep stats.warnings at zero and must not touch the save file.
 //! Data-missing runs skip with a message and exit 0.
@@ -392,6 +393,39 @@ fn cancel_key_drops_ce245_without_picking() {
     );
     assert_eq!(game.vm.vars.get(7), 10000, "cancel spends no money");
     assert_eq!(game.stats.warnings, 0, "cancel is warning-free");
+}
+
+#[test]
+fn a_left_click_outside_the_panel_cancels_the_prompt() {
+    // BUG-18: an outside click used to be marked consumed and then ignored, so
+    // the prompt looked dead. When the opcode-102 block has a 421 cancel marker,
+    // the outside click is a real Cancel reply, just like the CANCEL key.
+    let Some(mut game) = open_loaded_bedroom() else {
+        return;
+    };
+    open_night_menu(&mut game);
+    assert!(is_night_menu(&game));
+
+    game.mouse = [0, 0];
+    game.frame(); // settle the pointer outside the panel
+    assert!(game.choices.is_some(), "hovering outside must not cancel");
+    game.mouse_buttons = 1;
+    for _ in 0..6 {
+        game.frame();
+    }
+    game.mouse_buttons = 0;
+    for _ in 0..4 {
+        game.frame();
+    }
+
+    assert!(game.choices.is_none(), "outside click closes the prompt");
+    assert!(
+        live_events(&game).is_empty(),
+        "outside click picks no action, got {:?}",
+        live_events(&game)
+    );
+    assert_eq!(game.vm.vars.get(7), 10000, "outside click spends no money");
+    assert_eq!(game.stats.warnings, 0, "outside click is warning-free");
 }
 
 #[test]

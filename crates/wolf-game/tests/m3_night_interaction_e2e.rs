@@ -17,7 +17,7 @@
 //!   it to page 10 with the command slots 2/3/4; clicking 430 runs the undress
 //!   action (message + sleep depth down by one) and returns to page 1;
 //! * body-part hit boxes: clicking the head box (1100) pats the sleeping sister
-//!   (cut-in text pictures 16000/16001, sleep depth up, head-pat message), while
+//!   (head-pat message and sleep depth up), while
 //!   clicking the face box (1101; the mouth box is 1102) is refused with the
 //!   deep-sleep line;
 //! * the BAD bar: CE237's 1997 gradient scale and variable 59 both equal
@@ -370,12 +370,9 @@ fn patting_the_head_plays_the_cut_in_and_deepens_sleep() {
         "patting deepens sleep: {depth_before} -> {}",
         var(&game, 18)
     );
-    for cut_in in [16000, 16001] {
-        assert!(
-            has_picture(&game, cut_in),
-            "cut-in text picture {cut_in} is missing"
-        );
-    }
+    // Pictures 16000/16001 came from CE264's old misrouted template call, not
+    // from the head-pat cut-in itself (report BUG-12/19); the sleep-depth change
+    // and the dialogue above are the observable cut-in effects.
     assert_eq!(game.stats.warnings, 0, "warnings");
 }
 
@@ -405,7 +402,7 @@ fn deep_sleep_refuses_the_face_action() {
     );
     assert!(
         !has_picture(&game, 16000) && !has_picture(&game, 16001),
-        "a refused action draws no cut-in"
+        "a refused action draws no template cut-in picture"
     );
     assert_eq!(game.stats.warnings, 0, "warnings");
 }

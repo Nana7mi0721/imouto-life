@@ -295,7 +295,23 @@ if [ "$PIXEL_CHECK" != "0" ]; then
         tail -n 30 "$GODOT_PIXEL_LOG" >&2 || true
         exit 1
     fi
-    RUST_PNG="$OUT/rust_$PIXEL_CHECK.png"
+    if [ -n "$SAVE_WIN" ]; then
+        RUST_PNG="$OUT/rust_$PIXEL_CHECK.png"
+    else
+        # The Godot window primes CE48/CE63 before the title, so the pixel pair
+        # must use the same history. The stats capture above is the unprimed
+        # menu entry; reusing it would compare two different RNG sequences and
+        # message-window states (the new-game money is a random draw).
+        RUST_PNG="$OUT/rust_prime_$PIXEL_CHECK.png"
+        RUST_PIXEL_LOG="$OUT/rust_${PIXEL_CHECK}_prime.log"
+        echo "parity: rust primed capture frames=$PIXEL_CHECK -> $RUST_PNG"
+        if ! "$CLI" --root "$DATA_ROOT" capture --menu-only --prime --answer 0 \
+            --frames "$PIXEL_CHECK" --out "$RUST_PNG" >"$RUST_PIXEL_LOG" 2>&1; then
+            echo "parity: primed wolf-cli capture failed (frames=$PIXEL_CHECK), see $RUST_PIXEL_LOG" >&2
+            tail -n 20 "$RUST_PIXEL_LOG" >&2 || true
+            exit 1
+        fi
+    fi
     if [ ! -f "$RUST_PNG" ]; then
         echo "parity: no rust PNG for pixel check: $RUST_PNG" >&2
         exit 1

@@ -237,7 +237,7 @@
     "loops": 935,
     "labels": 267,
     "label_jumps": 612,
-    "dynamic_labels": 51,
+    "dynamic_labels": 3,
     "malformed_conditions": 0,
     "cases": 7562,
     "else_cases": 1012,

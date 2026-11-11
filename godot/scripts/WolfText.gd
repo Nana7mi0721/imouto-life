@@ -29,7 +29,7 @@ extends RefCounted
 ##     (1.25 - (A + D)) / 2 + A = 1.023193
 ##
 ## glyphon rounds `line_y` per line, so the reference baseline is the rounded
-## product.  Godot instead puts the first baseline at `FontFile.get_ascent()`,
+## product.  Godot instead puts the first baseline at `Font.get_ascent()`,
 ## which is `ceil(A * size)` for this face (`MSYH` hhea ascent 2167/2048):
 ##
 ##     size 14 -> ascent 15, 16 -> 17, 18 -> 20, 20 -> 22, 24 -> 26, 32 -> 34
@@ -99,7 +99,7 @@ const WIDTH_SLACK_PX := 2.0
 ## Fallback font size for an item without `font_px`, matching GameView.
 const DEFAULT_FONT_PX := 20.0
 
-## Measured shift `round(size * RUST_BASELINE_RATIO) - FontFile.get_ascent(size)`
+## Measured shift `round(size * RUST_BASELINE_RATIO) - Font.get_ascent(size)`
 ## for every size this game uses.  Kept as data so the formula can be audited
 ## against the ruler capture; `baseline_shift()` recomputes it at runtime and
 ## agrees with this table for all entries.
@@ -117,7 +117,7 @@ const BASELINE_SHIFT := {
 ## Integer y offset to add to `round(rect.y)` so the first baseline matches the
 ## Rust reference.  `size` is the item's float `font_px`; the ascent is looked up
 ## at the same integer size the paragraph is shaped with.
-static func baseline_shift(font: FontFile, size: float) -> int:
+static func baseline_shift(font: Font, size: float) -> int:
 	var px := maxi(1, int(round(size)))
 	var ascent := int(round(font.get_ascent(px)))
 	return int(round(float(px) * RUST_BASELINE_RATIO)) - ascent
@@ -131,7 +131,7 @@ static func line_pitch(size: float) -> float:
 ## `line_spacing` that turns Godot's `ascent + descent` line height into
 ## [`line_pitch`].  Negative values are valid and used: at 20 px the face is
 ## 22 + 6 = 28 px tall, while cosmic-text's pitch is 25 px.
-static func line_spacing(font: FontFile, size: float) -> float:
+static func line_spacing(font: Font, size: float) -> float:
 	var px := maxi(1, int(round(size)))
 	return line_pitch(size) - font.get_height(px)
 
@@ -140,12 +140,12 @@ static func line_spacing(font: FontFile, size: float) -> float:
 ## `GameView._draw_text` (text / rect / alpha / colour / outline / weight) and
 ## returns false when the item cannot produce pixels.
 static func draw_text(
-	canvas: CanvasItem, item: Dictionary, bold_font: FontFile, regular_font: FontFile
+	canvas: CanvasItem, item: Dictionary, bold_font: Font, regular_font: Font
 ) -> bool:
 	var text: String = item.get("text", "")
 	if text.is_empty():
 		return false
-	var font: FontFile = bold_font
+	var font: Font = bold_font
 	if int(item.get("weight", 700)) < 600:
 		font = regular_font
 	if font == null:
@@ -166,6 +166,11 @@ static func draw_text(
 	paragraph.width = rect.size.x + WIDTH_SLACK_PX
 	paragraph.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	paragraph.line_spacing = line_spacing(font, size)
+	# TextParagraph hands the font's whole RID chain (including `Font.fallbacks`)
+	# to the shaper, so a character the primary face lacks -- U+266A in Microsoft
+	# YaHei -- is shaped from the symbol fallback without splitting the string.
+	# Glyph advances therefore stay one run, while the baseline still comes from
+	# the primary face's ascent above.
 	paragraph.add_string(text, font, px)
 
 	# Rust rounds the item origin; Godot truncates it, so round explicitly.

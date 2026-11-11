@@ -40,7 +40,7 @@ use crate::magic::{Magic, MagicKind};
 use crate::program::{arg, argc, BlockKind, Control, Program, ProgramSet, NO_RETURN_VALUE};
 use crate::rng::WolfRng;
 use crate::text::{self, EscapeBank, VarLookup};
-use crate::vars::{SelfVars, Variables};
+use crate::vars::{EventSelfVars, SelfVars, Variables};
 
 /// Identifies an event (a `CommonEvent.dat` row).
 pub type EventId = u32;
@@ -173,14 +173,14 @@ impl Instance {
 /// (see [`crate::program::COMMON_SELF_BASE`]). The file spells the same slots
 /// absolutely as magic `1_600_000 + n`, so only the escape needs this offset.
 impl VarLookup for Instance {
-    fn lookup_num(&self, bank: EscapeBank, index: usize) -> i32 {
+    fn lookup_num(&mut self, bank: EscapeBank, index: usize) -> i32 {
         match bank {
             EscapeBank::SelfVar => self.self_vars.get(self.program.self_base + index),
             _ => 0,
         }
     }
 
-    fn lookup_str(&self, bank: EscapeBank, index: usize) -> String {
+    fn lookup_str(&mut self, bank: EscapeBank, index: usize) -> String {
         match bank {
             EscapeBank::SelfVar => self
                 .self_vars
@@ -195,10 +195,13 @@ impl VarLookup for Instance {
 struct Lookup<'a> {
     inst: &'a Instance,
     vars: &'a Variables,
+    /// Database access for `\cdb`/`\udb`/`\sdb`. `None` keeps tooling that has no
+    /// host working; escapes then expand to an empty string.
+    host: Option<&'a mut dyn Host>,
 }
 
 impl VarLookup for Lookup<'_> {
-    fn lookup_num(&self, bank: EscapeBank, index: usize) -> i32 {
+    fn lookup_num(&mut self, bank: EscapeBank, index: usize) -> i32 {
         match bank {
             EscapeBank::SelfVar => self.inst.self_vars.get(self.inst.program.self_base + index),
             EscapeBank::Var => self.vars.get(index),
@@ -208,7 +211,7 @@ impl VarLookup for Lookup<'_> {
         }
     }
 
-    fn lookup_str(&self, bank: EscapeBank, index: usize) -> String {
+    fn lookup_str(&mut self, bank: EscapeBank, index: usize) -> String {
         match bank {
             EscapeBank::SelfVar => self
                 .inst
@@ -219,6 +222,18 @@ impl VarLookup for Lookup<'_> {
             EscapeBank::StrVar => self.vars.get_str(index).to_owned(),
             EscapeBank::SysVar => self.vars.get_sys_str(index).to_owned(),
         }
+    }
+
+    fn lookup_db(
+        &mut self,
+        container: crate::exec::DbContainer,
+        db_type: i32,
+        row: i32,
+        column: i32,
+    ) -> Option<String> {
+        self.host
+            .as_mut()
+            .and_then(|host| host.database_string(container, db_type, row, column))
     }
 }
 
@@ -237,9 +252,13 @@ pub struct PictureCmd {
     pub text: String,
     /// x, y, scale-x, scale-y, opacity, rotation, blend, and the remaining slots.
     pub args: Vec<i32>,
-    /// Where args measures x/y from: 0 = top-left corner, 1 = centre (bit 0x1000 of the
-    /// head word). See crates/wolf-game/src/picture.rs for the measurement behind this.
+    /// Where args measures x/y from: see the anchor table in
+    /// crates/wolf-game/src/picture.rs.
     pub anchor: u8,
+    /// Scaling mode from head bits 20..23. Mode 3 is `別々` (independent X/Y): the
+    /// horizontal percentage is the normal scale slot and the vertical one is the
+    /// eighteenth argument. Every other mode scales both axes by the same word.
+    pub scale_mode: u8,
     /// Trailing animation slots for the long form (docs/OPCODE_SPEC.md §5.31).
     pub animate: Vec<i32>,
     /// Bit 0x400000 of the head word asks the draw to inherit the slot's existing
@@ -281,6 +300,9 @@ pub enum PictureAction {
 pub enum SoundChannel {
     /// Background music.
     Bgm,
+    /// Background sound / ambience. WOLF keeps this on its own loop bus so rain or
+    /// wind sits under the music instead of replacing it.
+    Bgs,
     /// Sound effect.
     Se,
 }
@@ -288,7 +310,7 @@ pub enum SoundChannel {
 /// A decoded `140 PlaySound` instruction.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SoundCmd {
-    /// BGM or SE.
+    /// BGM, BGS or SE.
     pub channel: SoundChannel,
     /// Play or stop.
     pub action: SoundAction,
@@ -591,6 +613,23 @@ pub trait Host {
         row: i32,
         column: i32,
     ) -> Option<i32> {
+        let _ = (container, db_type, row, column);
+        None
+    }
+
+    /// Reads one database cell as text, for the `\cdb`/`\udb`/`\sdb` escapes
+    /// inside `101` messages and `150` text pictures.
+    ///
+    /// Kept separate from [`Host::database_cell`] because the text expander runs
+    /// while an instruction is decoded and only ever needs the display string.
+    /// The default `None` leaves such an escape rendering as an empty string.
+    fn database_string(
+        &mut self,
+        container: DbContainer,
+        db_type: i32,
+        row: i32,
+        column: i32,
+    ) -> Option<String> {
         let _ = (container, db_type, row, column);
         None
     }
@@ -991,6 +1030,85 @@ impl Vm {
         self.instances.iter_mut().find(|i| i.id == id)
     }
 
+    /// Copies a common event's durable bank into a freshly created coroutine.
+    ///
+    /// Map-event pages keep their bank in the map runtime and are handed in through
+    /// [Vm::start_program_with_self], so only common-event programs are seeded here.
+    fn seed_common_self(&self, inst: &mut Instance) {
+        if inst.program.self_base != crate::program::COMMON_SELF_BASE {
+            return;
+        }
+        let Some(bank) = self.vars.common_self.get(&inst.event) else {
+            return;
+        };
+        let base = crate::program::COMMON_SELF_BASE;
+        for slot in 0..crate::vars::EVENT_SELF_SLOTS {
+            inst.self_vars.set(base + slot, bank.get(slot));
+        }
+        for slot in 0..crate::vars::EVENT_SELF_STRINGS {
+            inst.self_vars.set_str(base + 5 + slot, bank.get_str(slot));
+        }
+    }
+
+    /// Snapshot of one common-event coroutine's self variables, `None` for a map page.
+    fn bank_from(inst: &Instance) -> Option<(EventId, EventSelfVars)> {
+        if inst.program.self_base != crate::program::COMMON_SELF_BASE {
+            return None;
+        }
+        let mut bank = EventSelfVars::new();
+        let base = crate::program::COMMON_SELF_BASE;
+        for slot in 0..crate::vars::EVENT_SELF_SLOTS {
+            bank.set(slot, inst.self_vars.get(base + slot));
+        }
+        for slot in 0..crate::vars::EVENT_SELF_STRINGS {
+            bank.set_str(slot, inst.self_vars.get_str(base + 5 + slot));
+        }
+        Some((inst.event, bank))
+    }
+
+    /// Copies one instance's self variables back into its event's durable bank.
+    fn save_common_self(&mut self, inst: &Instance) {
+        if let Some((event, bank)) = Self::bank_from(inst) {
+            self.vars.common_self.insert(event, bank);
+        }
+    }
+
+    /// Pushes the durable banks into every live common-event coroutine.
+    ///
+    /// Called after a load. A coroutine that was already running when the save was
+    /// restored would otherwise keep its pre-load self variables and write them back
+    /// over the loaded bank when it ends.
+    pub fn restore_common_self(&mut self) {
+        let base = crate::program::COMMON_SELF_BASE;
+        for inst in &mut self.instances {
+            if inst.program.self_base != base {
+                continue;
+            }
+            let Some(bank) = self.vars.common_self.get(&inst.event) else {
+                continue;
+            };
+            for slot in 0..crate::vars::EVENT_SELF_SLOTS {
+                inst.self_vars.set(base + slot, bank.get(slot));
+            }
+            for slot in 0..crate::vars::EVENT_SELF_STRINGS {
+                inst.self_vars.set_str(base + 5 + slot, bank.get_str(slot));
+            }
+        }
+    }
+
+    /// Folds every live common-event coroutine into its durable bank.
+    ///
+    /// A frame can be saved while a menu or a daily-loop coroutine is still running;
+    /// without this the save would miss the changes that coroutine made since it
+    /// started.
+    pub fn capture_common_self(&mut self) {
+        let banks: Vec<(EventId, EventSelfVars)> =
+            self.instances.iter().filter_map(Self::bank_from).collect();
+        for (event, bank) in banks {
+            self.vars.common_self.insert(event, bank);
+        }
+    }
+
     /// Load an event into a fresh coroutine. Returns `None` when the id is unknown.
     pub fn start_event(&mut self, event: EventId) -> Option<InstanceId> {
         self.start_event_with(event, None)
@@ -1009,6 +1127,7 @@ impl Vm {
         let id = self.next_id;
         self.next_id += 1;
         let mut inst = Instance::new(id, None, program);
+        self.seed_common_self(&mut inst);
         inst.return_to = return_to;
         self.instances.push(inst);
         self.started_events.insert(event);
@@ -1110,6 +1229,15 @@ impl Vm {
                 }
             }
         }
+        let banks: Vec<(EventId, EventSelfVars)> = self
+            .instances
+            .iter()
+            .filter(|instance| doomed.contains(&instance.id))
+            .filter_map(Self::bank_from)
+            .collect();
+        for (event, bank) in banks {
+            self.vars.common_self.insert(event, bank);
+        }
         self.instances
             .retain(|instance| !doomed.contains(&instance.id));
         true
@@ -1133,6 +1261,12 @@ impl Vm {
         self.poll_waits(host);
         self.run_instances(host, &mut budget, &mut report);
         self.reap_finished(host);
+        // 125 自動入力 injects a key for exactly one frame ("1フレームだけ有効" in the
+        // official manual). Keeping it made every later 123 poll read a held key for
+        // the rest of the session: menus answered themselves, CE131's save grid
+        // decided on its own, and the map input guard eventually locked the pointer.
+        // The reset lives here, after every coroutine has had this frame to see it.
+        self.input.auto_keys = 0;
 
         report.steps = self.budget - budget.min(self.budget);
         report.running = self.instances.len();
@@ -1321,6 +1455,7 @@ impl Vm {
         let id = self.next_id;
         self.next_id += 1;
         let mut child = Instance::new(id, Some(self.instances[caller].id), program);
+        self.seed_common_self(&mut child);
         // Arguments land in self variable group 6 (magic 1_600_000 + i), not in
         // group 0 - see magic::SELF_ARG_BASE for the measurement. Getting this
         // wrong is invisible on the title screen but wedges every story script
@@ -1367,6 +1502,7 @@ impl Vm {
                 continue;
             };
             let mut inst = self.instances.remove(pos);
+            self.save_common_self(&inst);
             let parent = inst.parent.and_then(|pid| {
                 let idx = self.instances.iter().position(|i| i.id == pid)?;
                 if self.instances[idx].wait == WaitState::Child(inst.id) {
@@ -1423,6 +1559,18 @@ fn return_slot(program: &Program) -> Option<usize> {
     Some(slot.index() as usize)
 }
 
+/// Resolve the `600_000..=699_999` relative call target of opcode 210/211.
+///
+/// In WOLF this range names a common event *relative to the caller*: 600_100 means
+/// offset zero, so `caller + (raw - 600_100)`. The message-window plugin in this game
+/// relies on it heavily - CE264 calls 600101..600104 to reach CE265..CE268 and CE270
+/// calls 600094..600098 to reach its own siblings - and interpreting the range as an
+/// absolute `raw - 600_000` routed those calls to unrelated menu events. There are 31
+/// such call sites in the shipped data (CE75/CE137/CE262 recursive calls included).
+fn relative_call_target(raw: i32, caller: EventId) -> EventId {
+    (i64::from(caller) + (i64::from(raw) - 600_100)).max(0) as EventId
+}
+
 /// Read one magic operand.
 fn eval_num(raw: i32, inst: &Instance, vars: &Variables) -> i32 {
     let magic = Magic::decode(raw);
@@ -1431,6 +1579,11 @@ fn eval_num(raw: i32, inst: &Instance, vars: &Variables) -> i32 {
         MagicKind::SelfVar => inst.self_vars.get(magic.index() as usize),
         MagicKind::Var => vars.get(magic.index() as usize),
         MagicKind::SysVar => vars.get_sys(magic.index() as usize),
+        // 15_000_000+... is the address of a cross-event string cell and is also
+        // used as a plain base constant in arithmetic (CE265-270 compute their
+        // target as 15_000_000 + 100*id + slot). Only the string paths dereference
+        // it; numeric reads keep the raw value, as the plugin expects.
+        MagicKind::CommonSelf => raw,
         // A string bank read as a number is 0 (the editor never does this).
         MagicKind::StrVar => 0,
         // Database cells need a host to read; callers that can resolve them use
@@ -1521,6 +1674,16 @@ fn eval_str(raw: i32, inst: &Instance, vars: &Variables) -> String {
         MagicKind::StrVar => vars.get_str(magic.index() as usize).to_owned(),
         MagicKind::SelfVar => inst.self_vars.get_str(magic.index() as usize).to_owned(),
         MagicKind::SysVar => vars.get_sys_str(magic.index() as usize).to_owned(),
+        MagicKind::CommonSelf => {
+            let slot = magic.common_slot();
+            if (5..=9).contains(&slot) {
+                vars.common_self
+                    .get(&magic.common_event())
+                    .map_or_else(String::new, |bank| bank.get_str(slot - 5).to_owned())
+            } else {
+                String::new()
+            }
+        }
         // A numeric bank read as text yields the decimal form, which is what the
         // editor's `cself[n]` expansion does.
         MagicKind::Literal => magic.index().to_string(),
@@ -1536,9 +1699,55 @@ fn store_num(inst: &mut Instance, vars: &mut Variables, raw: i32, value: i32) {
         MagicKind::SelfVar => inst.self_vars.set(magic.index() as usize, value),
         MagicKind::Var => vars.set(magic.index() as usize, value),
         MagicKind::SysVar => vars.set_sys(magic.index() as usize, value),
+        MagicKind::CommonSelf => vars
+            .common_self
+            .entry(magic.common_event())
+            .or_default()
+            .set(magic.common_slot(), value),
         // Writing to a literal or a sentinel is a no-op in every WOLF build.
         MagicKind::Literal | MagicKind::StrVar | MagicKind::DbCell | MagicKind::Opaque => {}
     }
+}
+
+/// Resolve a `121` destination that is itself a variable holding a bank address.
+///
+/// The balloon library first computes e.g. `15_000_000 + 100*270 + 11` into its
+/// own self10, then uses self10 as the destination of the next assignment. WOLF
+/// dereferences a self variable that already holds a cross-event address; writing
+/// straight into self10 corrupted the pointer and left CE270's window position
+/// unset. Only the `15_000_000+...` bank appears in this pattern, so the resolver
+/// stays narrow instead of treating every bank-valued number as a pointer.
+fn resolve_numeric_target(raw: i32, inst: &Instance) -> i32 {
+    let magic = Magic::decode(raw);
+    if matches!(magic.kind(), MagicKind::SelfVar) && !(5..=9).contains(&(magic.index() % 100)) {
+        let value = inst.self_vars.get(magic.index() as usize);
+        if matches!(Magic::decode(value).kind(), MagicKind::CommonSelf) {
+            return value;
+        }
+    }
+    raw
+}
+
+/// Resolve a `122` destination that is itself a variable holding a string address.
+///
+/// WOLF's 文字列操作 lets the editor pick "代入先を変数で指定": the numeric
+/// destination contains a string-variable address such as `3_000_000+n` or a
+/// cross-event `15_000_000+...` cell. CE268 pc14 and CE270 pc2000 use this form
+/// with a self variable that was computed one instruction earlier. Slots CSelf5..9
+/// are the event's real string slots and stay direct, so only the numeric self
+/// slots are dereferenced here.
+fn resolve_string_target(raw: i32, inst: &Instance) -> i32 {
+    let magic = Magic::decode(raw);
+    if matches!(magic.kind(), MagicKind::SelfVar) && !(5..=9).contains(&(magic.index() % 100)) {
+        let address = inst.self_vars.get(magic.index() as usize);
+        if matches!(
+            Magic::decode(address).kind(),
+            MagicKind::StrVar | MagicKind::SysVar | MagicKind::CommonSelf
+        ) {
+            return address;
+        }
+    }
+    raw
 }
 
 /// Write one magic operand as a string.
@@ -1548,14 +1757,83 @@ fn store_str(inst: &mut Instance, vars: &mut Variables, raw: i32, value: &str) {
         MagicKind::StrVar => vars.set_str(magic.index() as usize, value),
         MagicKind::SelfVar => inst.self_vars.set_str(magic.index() as usize, value),
         MagicKind::SysVar => vars.set_sys_str(magic.index() as usize, value),
+        MagicKind::CommonSelf => {
+            let slot = magic.common_slot();
+            if (5..=9).contains(&slot) {
+                vars.common_self
+                    .entry(magic.common_event())
+                    .or_default()
+                    .set_str(slot - 5, value);
+            }
+        }
         MagicKind::Literal | MagicKind::Var | MagicKind::DbCell | MagicKind::Opaque => {}
     }
 }
 
-/// Expand escapes in a string using the instance and the globals.
-fn expand(raw: &str, inst: &Instance, vars: &Variables) -> String {
-    let lookup = Lookup { inst, vars };
-    text::expand(raw, &lookup)
+/// Splits the first line off `text`, dropping the newline that ended it.
+fn split_first_line(text: &str) -> (&str, &str) {
+    match text.find('\n') {
+        Some(at) => (&text[..at], &text[at + 1..]),
+        None => (text, ""),
+    }
+}
+
+/// Length of one display unit at the start of `text`.
+///
+/// WOLF's `122` cut modes treat a control escape as one character so removing
+/// "one character" never leaves half a `\c[1]` behind. Plain text is one UTF-8
+/// scalar; a backslash escape runs through its bracketed argument when present.
+fn first_unit_len(text: &str) -> usize {
+    let mut chars = text.char_indices();
+    let Some((_, first)) = chars.next() else {
+        return 0;
+    };
+    if first != '\\' {
+        return first.len_utf8();
+    }
+    // `\name[...]`: consume the letters and the first balanced-looking bracket.
+    let rest = &text[1..];
+    let mut name_end = 0;
+    for (at, ch) in rest.char_indices() {
+        if ch.is_ascii_alphabetic() {
+            name_end = at + ch.len_utf8();
+        } else {
+            break;
+        }
+    }
+    if name_end == 0 {
+        return first.len_utf8();
+    }
+    let after = &rest[name_end..];
+    if let Some(close) = after.find(']') {
+        // `after` starts with '[' for the normal escape form; a stray `]` in
+        // plain text must not swallow the rest of the string.
+        if after.starts_with('[') {
+            return 1 + name_end + close + 1;
+        }
+    }
+    1 + name_end
+}
+
+/// Byte offset where the last display unit of `text` starts.
+fn last_unit_start(text: &str) -> usize {
+    let mut end = 0;
+    let mut last = 0;
+    while end < text.len() {
+        last = end;
+        end += first_unit_len(&text[end..]);
+    }
+    last
+}
+
+/// Expand escapes in a string using the instance, the globals and the host's database.
+fn expand(raw: &str, inst: &Instance, vars: &Variables, host: &mut dyn Host) -> String {
+    let mut lookup = Lookup {
+        inst,
+        vars,
+        host: Some(host),
+    };
+    text::expand(raw, &mut lookup)
 }
 
 /// Expand one opcode 102 option label.
@@ -1565,9 +1843,13 @@ fn expand(raw: &str, inst: &Instance, vars: &Variables) -> String {
 /// fallback would turn the empty label into `0` and paint a phantom sixth row (the
 /// retail five-row night menu has exactly this shape). Choice labels therefore use
 /// the string-only expansion, while every other escape keeps the normal rules.
-fn expand_choice(raw: &str, inst: &Instance, vars: &Variables) -> String {
-    let lookup = Lookup { inst, vars };
-    text::expand_choice(raw, &lookup)
+fn expand_choice(raw: &str, inst: &Instance, vars: &Variables, host: &mut dyn Host) -> String {
+    let mut lookup = Lookup {
+        inst,
+        vars,
+        host: Some(host),
+    };
+    text::expand_choice(raw, &mut lookup)
 }
 
 /// Split the `@n` speaker prefix off a message (docs/OPCODE_SPEC.md §5.3).
@@ -1644,14 +1926,15 @@ fn compound(kind: i32, current: i32, value: i32) -> i32 {
             if value == 0 {
                 current
             } else {
-                current / value
+                // `i32::MIN / -1` overflows; WOLF wraps instead of panicking.
+                current.wrapping_div(value)
             }
         }
         0x500 => {
             if value == 0 {
                 current
             } else {
-                current % value
+                current.wrapping_rem(value)
             }
         }
         // 0x600/0x700 are the two clamps, not assignments. CE132's volume rows
@@ -1684,18 +1967,28 @@ fn compound(kind: i32, current: i32, value: i32) -> i32 {
 }
 
 /// `111` comparison operators, docs/OPCODE_SPEC.md §3.3.
+///
+/// Bit 4 of the operator word is a condition-list flag, not part of the comparison.
+/// The retail data pins this: CE249 pc3521 compares a variable against `230`, `200`
+/// and `0` in that order with operators 1, 1, 17. Reading 17 as equality would turn
+/// the final catch-all (`>= 0`) into `== 0`, so the whole 0..199 band would fall into
+/// the else branch. Masking the flag leaves `>=`, the reading the thresholds imply.
+/// Every other flagged site uses 18 (`0x10 | ==`), where masking is a no-op.
 fn compare(lhs: i32, rhs: i32, operator: i32) -> bool {
-    match operator {
+    match operator & 0x0F {
         0 => lhs > rhs,
         1 => lhs >= rhs,
         2 => lhs == rhs,
         3 => lhs <= rhs,
         4 => lhs < rhs,
         5 => lhs != rhs,
-        6 => (lhs & rhs) != 0,
-        // 17/18/19 occur 44x and are undocumented; equality is the least
-        // surprising reading and matches the single-condition branches they
-        // appear in.
+        // Manual 条件分岐（変数）: the branch fires when `(value & compare) ==
+        // compare`, i.e. the value covers every bit the compare operand asks for
+        // (a compare of 0 therefore always matches). `!= 0` accepted partial
+        // overlaps and made 91 shipped sites branch too early.
+        6 => (lhs & rhs) == rhs,
+        // 7 is not a documented comparison; equality is the least surprising
+        // reading for a value the data never uses.
         _ => lhs == rhs,
     }
 }
@@ -1764,8 +2057,8 @@ fn execute(
                 // done by enter_block() / poll_waits() through case_target(),
                 // which resume one slot PAST the marker. Getting this wrong makes
                 // the title menu run every option at once (docs/M1_CLOSURE.md Q1).
-                let block = &program.blocks[block];
-                inst.pc = block.end_target(program.len());
+                let block_ref = &program.blocks[block];
+                inst.pc = block_ref.end_target(program.len());
                 continue;
             }
             Control::LoopEnd { block } => {
@@ -1773,15 +2066,46 @@ fn execute(
                 continue;
             }
             Control::LabelJump => {
-                let name = expand(cmd.strings.first().map_or("", String::as_str), inst, vars);
+                let name = expand(
+                    cmd.strings.first().map_or("", String::as_str),
+                    inst,
+                    vars,
+                    host,
+                );
                 match program.labels.get(&name) {
-                    Some(target) => inst.pc = *target,
+                    Some(target) => {
+                        sync_loops_for_jump(&program, inst, *target);
+                        inst.pc = *target;
+                    }
                     None => {
-                        host.log(
-                            LogLevel::Warn,
-                            &format!("213 JumpLabel: label `{name}` not found; skipping event"),
-                        );
-                        inst.pc = program.len();
+                        // A 212 label may itself carry an escape (`戻り先\cself[n]`):
+                        // comparing the expanded jump against the raw label map would
+                        // miss it. The shipped data happens to use static labels with
+                        // dynamic jumps, but the reverse is legal WOLF and would have
+                        // killed the whole coroutine. Expand the candidates only on a
+                        // miss, so the normal path pays nothing.
+                        let dynamic = program.labels.iter().find_map(|(label, target)| {
+                            label
+                                .contains('\\')
+                                .then(|| expand(label, inst, vars, host) == name)
+                                .filter(|matched| *matched)
+                                .map(|_| *target)
+                        });
+                        if let Some(target) = dynamic {
+                            sync_loops_for_jump(&program, inst, target);
+                            inst.pc = target;
+                        } else {
+                            // A malformed jump is a script bug, not a reason to kill the
+                            // whole coroutine (BUG-13): report it and continue after the
+                            // 213 so the rest of the event can still finish.
+                            host.log(
+                                LogLevel::Warn,
+                                &format!(
+                                    "213 JumpLabel: label `{name}` not found; continuing after it"
+                                ),
+                            );
+                            inst.pc += 1;
+                        }
                     }
                 }
                 continue;
@@ -1801,7 +2125,7 @@ fn execute(
             }
             101 => {
                 let raw = cmd.strings.first().map_or("", String::as_str);
-                let expanded = expand(raw, inst, vars);
+                let expanded = expand(raw, inst, vars, host);
                 let (face, text) = split_face(&expanded);
                 // `@n` is the per-message face override; the message-window coroutine
                 // (common event 63) reads Sys0 to pick the face picture, so publish it
@@ -1818,7 +2142,7 @@ fn execute(
                 let options: Vec<String> = cmd
                     .strings
                     .iter()
-                    .map(|option| expand_choice(option, inst, vars))
+                    .map(|option| expand_choice(option, inst, vars, host))
                     .collect();
                 let block = match program.control.get(pc) {
                     Some(Control::Block(index)) => *index,
@@ -1848,7 +2172,12 @@ fn execute(
                 None
             }
             106 => {
-                let text = expand(cmd.strings.first().map_or("", String::as_str), inst, vars);
+                let text = expand(
+                    cmd.strings.first().map_or("", String::as_str),
+                    inst,
+                    vars,
+                    host,
+                );
                 host.debug_message(&text);
                 inst.pc += 1;
                 None
@@ -1864,11 +2193,11 @@ fn execute(
                 None
             }
             112 => {
-                inst.pc = eval_string_condition(inst, vars, cmd);
+                inst.pc = eval_string_condition(inst, vars, cmd, host);
                 None
             }
             121 => {
-                let target = arg(cmd, 0);
+                let target = resolve_numeric_target(arg(cmd, 0), inst);
                 // A bare 1_000_000 is a literal multiplier in the data (CE79
                 // pc41 and CE94 pc323/pc331 multiply an id by one million to
                 // build a database address). The magic decoder would otherwise
@@ -1922,30 +2251,150 @@ fn execute(
                 }
             }
             122 => {
-                // 122 SetString has three forms that the data actually uses
-                // (docs/OPCODE_122.md). The second operand selects the form:
-                //   * 1 with a third operand - copy a value out of a string
-                //     variable (CE94 pc394 copies the hero name self[6] -> self[5]).
-                //   * bit 0x100 (256) set - append the literal string to whatever
-                //     the destination already holds. CE94 builds the play-time
-                //     " H:MM" prefix and then appends the minutes with this form,
-                //     and the save-slot label appends the slot number to the term.
-                //   * otherwise - plain assignment.
-                let target = arg(cmd, 0);
+                // 122 SetString. The mode word is a bitfield: the operation is
+                // `mode & 0xFFF0` and the low nibble selects the right-hand operand
+                // (0 literal, 1 string variable, 2 string variable addressed by a
+                // numeric variable, 3 keyboard input). Note the first-line cut is
+                // operation 0x0010, so masking with 0xFF00 would fold 17/18 into the
+                // plain-assignment operation 0; the manual lists 上1行切り取り as its
+                // own operation and CE268 uses mode 17 for exactly that.
+                let target = resolve_string_target(arg(cmd, 0), inst);
                 let mode = arg(cmd, 1);
-                if mode == 1 && argc(cmd) >= 3 {
-                    let value = eval_str(arg(cmd, 2), inst, vars);
-                    store_str(inst, vars, target, &value);
-                } else {
-                    let value = cmd
-                        .strings
+                let source = arg(cmd, 2);
+                let operation = mode & 0xFFF0;
+                let source_kind = mode & 0x0F;
+                let mut literal = |cmd: &Command| {
+                    cmd.strings
                         .first()
-                        .map_or(String::new(), |raw| expand(raw, inst, vars));
-                    if mode & 0x100 != 0 {
+                        .map_or(String::new(), |raw| expand(raw, inst, vars, host))
+                };
+                // A non-literal right-hand side resolves to one string-variable
+                // address. Kind 2 is the manual's "read the position from a
+                // variable": the numeric operand holds a `3_000_000+n` string code.
+                let string_source: Option<i32> = match (source_kind, argc(cmd) >= 3) {
+                    (1, true) => Some(source),
+                    (2, true) => {
+                        let address = eval_num(source, inst, vars);
+                        matches!(
+                            Magic::decode(address).kind(),
+                            MagicKind::StrVar | MagicKind::SysVar | MagicKind::CommonSelf
+                        )
+                        .then_some(address)
+                    }
+                    _ => None,
+                };
+                // Reads the right-hand operand for the operations that take one.
+                let mut read_source = || match string_source {
+                    Some(address) => eval_str(address, inst, vars),
+                    None => literal(cmd),
+                };
+                // Writes the shortened text back into the source variable, which is
+                // what makes the "cut" half of an operation work. A literal or
+                // keyboard source has nowhere to go and is simply ignored.
+                let write_back = |inst: &mut Instance, vars: &mut Variables, text: &str| {
+                    if let Some(address) = string_source {
+                        store_str(inst, vars, address, text);
+                    }
+                };
+                match operation {
+                    // Assignment: `=`, `= string var`, `= number`.
+                    0x0000 => {
+                        let value = read_source();
+                        store_str(inst, vars, target, &value);
+                    }
+                    // Append (`+=`): the existing destination is kept.
+                    0x0100 => {
+                        let value = read_source();
                         let mut combined = eval_str(target, inst, vars);
                         combined.push_str(&value);
                         store_str(inst, vars, target, &combined);
-                    } else {
+                    }
+                    // `上1行切り取り`: move the first line to the destination and
+                    // remove it (plus its newline) from the source.
+                    0x0010 => {
+                        let text = read_source();
+                        let (line, rest) = split_first_line(&text);
+                        store_str(inst, vars, target, line);
+                        write_back(inst, vars, rest);
+                    }
+                    // `上1行コピー`: same split, source untouched.
+                    0x0300 => {
+                        let text = read_source();
+                        let (line, _) = split_first_line(&text);
+                        store_str(inst, vars, target, line);
+                    }
+                    // `に↓から1文字切り出し`: move one character (a whole escape
+                    // unit) from the front of the source into the destination. The
+                    // manual is explicit that the source loses that character; the
+                    // typewriter in CE212 cuts the next glyph into self9 this way.
+                    0x0400 => {
+                        let text = read_source();
+                        let count = first_unit_len(&text);
+                        let (cut, rest) = text.split_at(count);
+                        store_str(inst, vars, target, cut);
+                        write_back(inst, vars, rest);
+                    }
+                    // `に↓から最後1文字切り出し`: move the last character (or escape
+                    // unit) into the destination and remove it from the source.
+                    0x0500 => {
+                        let text = read_source();
+                        let at = last_unit_start(&text);
+                        let (rest, cut) = text.split_at(at);
+                        store_str(inst, vars, target, cut);
+                        write_back(inst, vars, rest);
+                    }
+                    // `から↓の文字列を全消去`: delete every occurrence.
+                    0x0800 => {
+                        let needle = literal(cmd);
+                        let mut text = eval_str(target, inst, vars);
+                        if !needle.is_empty() {
+                            text = text.replace(&needle, "");
+                        }
+                        store_str(inst, vars, target, &text);
+                    }
+                    // `から以下の文字列を置換`: two string operands.
+                    0x0900 => {
+                        let from = cmd
+                            .strings
+                            .first()
+                            .map_or(String::new(), |raw| expand(raw, inst, vars, host));
+                        let to = cmd
+                            .strings
+                            .get(1)
+                            .map_or(String::new(), |raw| expand(raw, inst, vars, host));
+                        let text = eval_str(target, inst, vars);
+                        let replaced = if from.is_empty() {
+                            text
+                        } else {
+                            text.replace(&from, &to)
+                        };
+                        store_str(inst, vars, target, &replaced);
+                    }
+                    // `から指定文字まで切り出し`: keep the text before the first
+                    // marker. The manual specifies `<<NotFound>>` for a miss.
+                    0x0A00 => {
+                        let marker = literal(cmd);
+                        let text = eval_str(target, inst, vars);
+                        let value = match text.find(&marker) {
+                            Some(at) if !marker.is_empty() => text[..at].to_owned(),
+                            _ => "<<NotFound>>".to_owned(),
+                        };
+                        store_str(inst, vars, target, &value);
+                    }
+                    // `の指定文字以降を切り出し`: keep the text after the first marker.
+                    0x0B00 => {
+                        let marker = literal(cmd);
+                        let text = eval_str(target, inst, vars);
+                        let value = match text.find(&marker) {
+                            Some(at) if !marker.is_empty() => text[at + marker.len()..].to_owned(),
+                            _ => "<<NotFound>>".to_owned(),
+                        };
+                        store_str(inst, vars, target, &value);
+                    }
+                    // Unknown operation: keep the old plain-assignment behaviour
+                    // rather than silently blanking the destination.
+                    _ => {
+                        let value = read_source();
                         store_str(inst, vars, target, &value);
                     }
                 }
@@ -1995,10 +2444,22 @@ fn execute(
                 };
                 let value = match sub {
                     0x3000 => {
-                        // field 18 is "the event being processed", which only the
-                        // interpreter knows; common events report id + 500000.
-                        if field == 18 {
-                            Some(inst.event as i32 + 500_000)
+                        // Fields 17/18 name the running event, which only the
+                        // interpreter knows. 17 is "this common-event id" (-1 for a
+                        // map event); 18 is "the event being processed", with
+                        // +500000 for common events (manual 04ev_valuenext §7).
+                        // The balloon library writes its state through
+                        // 15_000_000 + 100*this_id + slot, so field 17 is not
+                        // optional: without it every child addressed CE1's bank.
+                        let common = inst.program.self_base == crate::program::COMMON_SELF_BASE;
+                        if field == 17 {
+                            Some(if common { inst.event as i32 } else { -1 })
+                        } else if field == 18 {
+                            Some(if common {
+                                inst.event as i32 + 500_000
+                            } else {
+                                inst.event as i32
+                            })
                         } else {
                             host.engine_state(field)
                         }
@@ -2103,10 +2564,12 @@ fn execute(
                 // system-db SE ids is a separate follow-up, not a per-voice stop.
                 let bits = arg(cmd, 0);
                 // options high nibble 2 = SE; BGS (1) shares the BGM bus in this mixer.
-                let channel = if bits & 0x20 != 0 {
-                    SoundChannel::Se
-                } else {
-                    SoundChannel::Bgm
+                // options high nibble: 0 BGM, 1 BGS, 2 SE. BGS is its own ambience bus in
+                // WOLF; folding it into BGM made rain/wind stop or restart the music.
+                let channel = match bits & 0xF0 {
+                    0x10 => SoundChannel::Bgs,
+                    0x20 => SoundChannel::Se,
+                    _ => SoundChannel::Bgm,
                 };
                 // The sound-type byte and the 16-bit SystemDB row are packed above the
                 // options byte. Sound-type 0 with row 0xFFFF is the BGM stop sentinel,
@@ -2136,8 +2599,12 @@ fn execute(
                         };
                         (file, volume)
                     } else {
-                        let file =
-                            expand(cmd.strings.first().map_or("", String::as_str), inst, vars);
+                        let file = expand(
+                            cmd.strings.first().map_or("", String::as_str),
+                            inst,
+                            vars,
+                            host,
+                        );
                         let volume = if argc(cmd) >= 6 { arg(cmd, 4) } else { 100 };
                         (file, volume)
                     };
@@ -2166,7 +2633,8 @@ fn execute(
                 None
             }
             150 => {
-                host.picture(&decode_picture(inst, vars, cmd));
+                let decoded = decode_picture(inst, vars, cmd, host);
+                host.picture(&decoded);
                 inst.pc += 1;
                 None
             }
@@ -2256,7 +2724,14 @@ fn execute(
                 }
                 let target = match raw {
                     500_000..=599_999 => Some((raw - 500_000) as EventId),
-                    600_000..=699_999 => Some((raw - 600_000) as EventId),
+                    // 600_000..=699_999 is a call relative to the caller: the message
+                    // plugins in this game use 600_100 as offset 0 and address their
+                    // siblings as caller + (raw - 600_100). CE264 (the message window
+                    // interface) calls 600101..600104 for CE265..CE268, and CE270 calls
+                    // 600094..600098 for CE264..CE268; the old `raw - 600_000` sent every
+                    // one of those calls to an unrelated event (600104 became CE104,
+                    // the protagonist menu setup). 31 sites use this form.
+                    600_000..=699_999 => Some(relative_call_target(raw, inst.event)),
                     _ => None,
                 };
                 let Some(target) = target else {
@@ -2286,7 +2761,7 @@ fn execute(
                 }
                 let target = match raw {
                     500_000..=599_999 => (raw - 500_000) as EventId,
-                    600_000..=699_999 => (raw - 600_000) as EventId,
+                    600_000..=699_999 => relative_call_target(raw, inst.event),
                     _ => raw.max(0) as EventId,
                 };
                 host.reserve(target);
@@ -2354,7 +2829,20 @@ fn execute(
                     }
                 }
                 inst.pc += 1;
-                None
+                // A save cannot be written while the interpreter is inside the host
+                // call, so the game queues it and flushes at frame end. CE131 then
+                // redraws the slot grid in the *same* command stream (pc 82), and the
+                // grid's 221 existence probe still saw the old file: the just-saved
+                // slot kept reading 没有数据 until the player left and re-entered.
+                // Blocking the saver for one frame lets the flush land before the
+                // redraw. The script already waits 16+9 frames around the save, so
+                // the extra tick is invisible.
+                if opcode == 220 && op.mode == 0 {
+                    inst.wait = WaitState::Frames(1);
+                    Some(Signal::Blocked)
+                } else {
+                    None
+                }
             }
             250 => {
                 // 250 DatabaseAccess addresses one cell of one of the three
@@ -2383,14 +2871,25 @@ fn execute(
                     DbDirection::Read if argc(cmd) >= 5 => (Some(arg(cmd, 4)), None),
                     DbDirection::Read => (None, None),
                     DbDirection::Write if argc(cmd) >= 5 => {
-                        (None, Some(DbValue::Num(eval_num(arg(cmd, 4), inst, vars))))
+                        // The fifth operand is a magic value, and the bank decides the
+                        // cell kind. CE258 pc1341/1347 write self[30] - a *string*
+                        // variable (3_000_000) - into CData 0:12:0/1 for the player's
+                        // trait name; evaluating it as a number stored the address and
+                        // left the cell empty, so "你是……\cdb[...]哥哥。" lost the
+                        // selected traits and the HUD printed no attributes.
+                        let raw = arg(cmd, 4);
+                        if matches!(Magic::decode(raw).kind(), MagicKind::StrVar) {
+                            (None, Some(DbValue::Str(eval_str(raw, inst, vars))))
+                        } else {
+                            (None, Some(DbValue::Num(eval_num(raw, inst, vars))))
+                        }
                     }
                     DbDirection::Write => (
                         None,
                         Some(DbValue::Str(
                             cmd.strings
                                 .first()
-                                .map_or(String::new(), |raw| expand(raw, inst, vars)),
+                                .map_or(String::new(), |raw| expand(raw, inst, vars, host)),
                         )),
                     ),
                 };
@@ -2446,7 +2945,12 @@ fn execute(
                 None
             }
             300 => {
-                let name = expand(cmd.strings.first().map_or("", String::as_str), inst, vars);
+                let name = expand(
+                    cmd.strings.first().map_or("", String::as_str),
+                    inst,
+                    vars,
+                    host,
+                );
                 let (args, strings, return_to) = call_arguments(cmd, inst, vars);
                 inst.pc += 1;
                 Some(Signal::CallByName {
@@ -2538,7 +3042,7 @@ fn enter_block(
                 // The string flavour branches through the very same case table;
                 // only the comparison differs, so it reuses the block stack instead of
                 // duplicating the enter/close discipline.
-                inst.pc = eval_string_condition(inst, vars, cmd);
+                inst.pc = eval_string_condition(inst, vars, cmd, host);
                 return None;
             }
             let head = arg(cmd, 0);
@@ -2575,7 +3079,7 @@ fn enter_block(
             let options: Vec<String> = cmd
                 .strings
                 .iter()
-                .map(|option| expand_choice(option, inst, vars))
+                .map(|option| expand_choice(option, inst, vars, host))
                 .collect();
             host.show_choices(&options);
             inst.wait = WaitState::Choice { block: block_index };
@@ -2586,6 +3090,46 @@ fn enter_block(
             })
         }
     }
+}
+
+/// Rebuild the loop stack around a `213 JumpLabel` target.
+///
+/// WOLF's loop contexts are lexical: a jump out of a loop body has left that
+/// loop, and a jump *into* a loop body (common event 63's message-window
+/// subroutine does this to return to its main loop) is inside it again. Only
+/// contexts whose block body contains `target` may stay; missing enclosing loops
+/// are added. The official manual says entering a counted loop from outside does
+/// not carry its configured count: the remainder runs once, while the endless
+/// `170`/`176` forms keep looping.
+fn sync_loops_for_jump(program: &Program, inst: &mut Instance, target: usize) {
+    let mut enclosing: Vec<usize> = program
+        .blocks
+        .iter()
+        .enumerate()
+        .filter(|(_, block)| {
+            block.kind == BlockKind::Loop && target > block.head && target <= block.end_pc
+        })
+        .map(|(index, _)| index)
+        .collect();
+    enclosing.sort_by_key(|index| program.blocks[*index].head);
+    let mut rebuilt = Vec::with_capacity(enclosing.len());
+    for index in enclosing {
+        if let Some(ctx) = inst.loops.iter().find(|ctx| ctx.block == index) {
+            rebuilt.push(*ctx);
+            continue;
+        }
+        let head = program.blocks[index].head;
+        let remaining = if program.slots[head].opcode() == 179 {
+            1
+        } else {
+            -1
+        };
+        rebuilt.push(LoopCtx {
+            block: index,
+            remaining,
+        });
+    }
+    inst.loops = rebuilt;
 }
 
 /// `498`: count the loop down and close it, or jump back to the body.
@@ -2615,13 +3159,18 @@ fn close_loop(inst: &mut Instance, block_index: usize) {
     }
 }
 
-/// `112`: string conditional branch (文字列条件分岐). Layout per
-/// docs/OPCODE_SPEC.md §5.10: one string variable and one compared string per
-/// condition (`argc == 1 + (head & 0x0F)`, `strc == 4`), the same 401/420/499
-/// skeleton as `111`, and equality is the only comparison the opcode offers.
-/// The game really does use it: 123 sites in the common events and 21 in the map
-/// pages, which is why it has to share the block stack (see `from_slots`).
-fn eval_string_condition(inst: &mut Instance, vars: &mut Variables, cmd: &Command) -> usize {
+/// `112`: string conditional branch (文字列条件分岐). `argc == 1 + (head & 0x0F)`
+/// stores literal right-hand strings in `cmd.strings`; the extra-word layout used
+/// by CE270 stores a pair of string-variable operands per condition. The same
+/// 401/420/499 block skeleton as `111` is shared by both. The game really does
+/// use it: 123 sites in the common events and 21 in the map pages, which is why
+/// it has to share the block stack (see `from_slots`).
+fn eval_string_condition(
+    inst: &mut Instance,
+    vars: &mut Variables,
+    cmd: &Command,
+    host: &mut dyn Host,
+) -> usize {
     let head = arg(cmd, 0);
     let count = (head & 0x0F) as usize;
     let use_else = head & 0x10 != 0;
@@ -2632,14 +3181,36 @@ fn eval_string_condition(inst: &mut Instance, vars: &mut Variables, cmd: &Comman
     let block = inst.program.blocks[block_index].clone();
     let len = inst.program.len();
     let mut matched = None;
+    // The operand word packs the comparison mode in the top nibble, a variable-type
+    // flag in bit 24, and the string variable in the remaining bits:
+    // 0x11186A05 is "CSelf5, not equal". Masking 0x00FF_FFFF leaves the actual
+    // string magic; leaving bit 24 in place makes Magic::decode look past the end
+    // of the self bank and return an empty string. A command with no literal for
+    // this condition carries the right-hand string variable as the next argument
+    // (CE270 compares CSelf5 with SysStr25 to detect a new message).
+    // Two layouts share this opcode. With only `1 + count` words the compared
+    // strings are the command's string table; with extra words each condition is a
+    // pair of string-variable operands (CE270 compares CSelf5 with SysStr25 to spot
+    // a new message). The argument count, not the presence of an empty literal,
+    // distinguishes them.
+    let rhs_variables = argc(cmd) > 1 + count;
     for i in 0..count {
-        let var = arg(cmd, 1 + i);
-        let lhs = eval_str(var, inst, vars);
-        let rhs = cmd
-            .strings
-            .get(i)
-            .map_or(String::new(), |raw| expand(raw, inst, vars));
-        if lhs == rhs {
+        let raw = arg(cmd, if rhs_variables { 1 + i * 2 } else { 1 + i });
+        let mode = ((raw as u32) >> 28) & 0x0F;
+        let lhs = eval_str(raw & 0x00FF_FFFF, inst, vars);
+        let rhs = if rhs_variables {
+            let right = arg(cmd, 2 + i * 2);
+            eval_str(right & 0x00FF_FFFF, inst, vars)
+        } else {
+            cmd.strings
+                .get(i)
+                .map_or(String::new(), |raw| expand(raw, inst, vars, host))
+        };
+        let equal = lhs == rhs;
+        // Mode 1 is WOLF's "異なる" (not equal); modes we have not identified keep
+        // the historical equality test rather than inventing a comparison.
+        let hit = if mode == 1 { !equal } else { equal };
+        if hit {
             matched = Some((i + 1) as i32);
             break;
         }
@@ -2749,7 +3320,12 @@ fn picture_string_ref(cmd: &Command, inst: &Instance, vars: &Variables) -> Strin
     }
 }
 
-fn decode_picture(inst: &Instance, vars: &Variables, cmd: &Command) -> PictureCmd {
+fn decode_picture(
+    inst: &Instance,
+    vars: &Variables,
+    cmd: &Command,
+    host: &mut dyn Host,
+) -> PictureCmd {
     let head = arg(cmd, 0);
     let kind = ((head >> 4) & 0x07) as u8;
     // Bits 12..14 of the head word anchor the picture: 0 means x/y is the top-left corner,
@@ -2757,6 +3333,10 @@ fn decode_picture(inst: &Instance, vars: &Variables, cmd: &Command) -> PictureCm
     // group sits on x=512 / y=288 (the logical screen centre), and the retail title hint
     // banner only lines up when its 606x35 image is centred on (512, 520).
     let anchor = ((head >> 12) & 0x07) as u8;
+    // Bits 20..23 select the scaling mode. Mode 0 is uniform (`ScaleX == ScaleY`),
+    // mode 3 is the editor's `別々` (independent X/Y, with the vertical percentage in
+    // raw argument 18), mode 4 is free-transform and keeps the uniform fallback here.
+    let scale_mode = ((head >> 20) & 0x0F) as u8;
     // Bit 22 asks the redraw to keep the slot's current draw-coordinate shift. It is
     // common on moving/drawing commands (188 of 5,433 retail op150s) and the settings
     // screen's help text depends on it.
@@ -2771,7 +3351,7 @@ fn decode_picture(inst: &Instance, vars: &Variables, cmd: &Command) -> PictureCm
     };
     let number = eval_num(arg(cmd, 1), inst, vars);
     let raw = cmd.strings.first().map_or("", String::as_str);
-    let expanded = expand(raw, inst, vars);
+    let expanded = expand(raw, inst, vars, host);
     let (file, text) = match kind {
         0 | 3 => (expanded, String::new()),
         2 => (String::new(), expanded),
@@ -2805,6 +3385,7 @@ fn decode_picture(inst: &Instance, vars: &Variables, cmd: &Command) -> PictureCm
         text,
         args,
         anchor,
+        scale_mode,
         animate,
         keep_shift,
         relative,
@@ -2877,6 +3458,73 @@ mod tests {
         };
         data.events.sort_by_key(|e| e.id);
         Vm::new(ProgramSet::from_common_events(&data))
+    }
+
+    #[test]
+    fn op122_advanced_modes_move_the_right_text_and_keep_the_manual_direction() {
+        // Manual (文字列操作): 上1行切り取り / コピー take the source's first line;
+        // に↓から1文字切り出し takes the source's first character into the destination
+        // and deletes it from the source, and the 最後 variant does the same from the
+        // end. から指定文字まで/以降 keep the text before/after the marker.
+        let ev = event(
+            9,
+            "string ops",
+            vec![
+                cmd(122, &[3_000_000], &["abc"]),
+                // First char: s1 <- "a", s0 becomes "bc".
+                cmd(122, &[3_000_001, 0x0401, 3_000_000], &[]),
+                // Last char: s2 <- "c", s0 becomes "b".
+                cmd(122, &[3_000_002, 0x0501, 3_000_000], &[]),
+                cmd(122, &[3_000_006, 1, 3_000_000], &[]),
+                cmd(
+                    122,
+                    &[3_000_000],
+                    &["one
+two"],
+                ),
+                cmd(122, &[3_000_003, 0x0011, 3_000_000], &[]),
+                cmd(122, &[3_000_007, 1, 3_000_000], &[]),
+                cmd(
+                    122,
+                    &[3_000_000],
+                    &["one
+two"],
+                ),
+                cmd(122, &[3_000_004, 0x0301, 3_000_000], &[]),
+                cmd(122, &[3_000_000], &["aXbXc"]),
+                cmd(122, &[3_000_000, 0x0800], &["X"]),
+                cmd(122, &[3_000_000], &["a,b,c"]),
+                cmd(122, &[3_000_000, 0x0900], &[",", "Y"]),
+                cmd(122, &[3_000_000], &["あいうえお"]),
+                cmd(122, &[3_000_000, 0x0A00], &["う"]),
+                cmd(122, &[3_000_000], &["あいうえお"]),
+                cmd(122, &[3_000_000, 0x0B00], &["う"]),
+            ],
+        );
+        let mut vm = vm_with(vec![ev]);
+        vm.start_event(9).unwrap();
+        vm.step_frame(&mut Recorder::default());
+        assert_eq!(vm.vars.get_str(1), "a");
+        assert_eq!(vm.vars.get_str(2), "c");
+        assert_eq!(vm.vars.get_str(6), "b");
+        assert_eq!(vm.vars.get_str(3), "one");
+        assert_eq!(vm.vars.get_str(7), "two");
+        assert_eq!(vm.vars.get_str(4), "one");
+        assert_eq!(vm.vars.get_str(0), "えお");
+    }
+
+    #[test]
+    fn comparison_operators_match_the_manual() {
+        // 条件分岐（変数）orders the seven comparisons >, >=, ==, <=, <, !=, bit
+        // product. Bit 4 is a condition-list flag, not part of the comparison.
+        assert!(compare(3, 3, 1));
+        assert!(compare(3, 3, 17), "17 is >= with the flag bit set");
+        assert!(!compare(2, 3, 17));
+        // Bit product is `(value & compare) == compare`, not a non-zero overlap:
+        // 5 (101) covers 1 (001) but not 3 (011).
+        assert!(compare(5, 1, 6));
+        assert!(!compare(5, 3, 6));
+        assert!(compare(5, 0, 6), "a zero compare always matches");
     }
 
     #[derive(Default)]
@@ -3366,6 +4014,83 @@ mod tests {
     }
 
     #[test]
+    fn label_jump_out_of_a_loop_pops_the_loop_context() {
+        // 213 jumps to a label after the matching 171. The loop stack must be
+        // unwound too; otherwise the abandoned context keeps the event "inside" a
+        // loop it already left and the next 171 breaks the wrong frame.
+        let e = event(
+            1,
+            "jump out",
+            vec![
+                cmd(170, &[], &[]),
+                cmd(213, &[], &["out"]),
+                cmd(498, &[], &[]),
+                cmd(212, &[], &["out"]),
+                cmd(123, &[2_000_000, 0x91], &[]),
+            ],
+        );
+        let mut vm = vm_with(vec![e]);
+        vm.start_event(1).unwrap();
+        vm.step_frame(&mut Recorder::default());
+        let inst = vm.instances().first().expect("parked on the key poll");
+        assert!(
+            inst.loops.is_empty(),
+            "the jump left loop contexts behind: {:?}",
+            inst.loops
+        );
+    }
+
+    #[test]
+    fn label_jump_into_an_endless_loop_restores_its_context() {
+        // CE63 jumps out of its message loop to set Sys1/2 and a dynamic return
+        // label then jumps back into the middle of the loop body. Without a
+        // context the closing 498 falls through and the whole message engine
+        // ends; entering the body must put the endless loop back on the stack.
+        let e = event(
+            1,
+            "jump in endless",
+            vec![
+                cmd(213, &[], &["in"]),
+                cmd(170, &[], &[]),
+                cmd(212, &[], &["in"]),
+                cmd(180, &[1], &[]),
+                cmd(498, &[], &[]),
+                cmd(123, &[2_000_000, 0x91], &[]),
+            ],
+        );
+        let mut vm = vm_with(vec![e]);
+        vm.start_event(1).unwrap();
+        vm.step_frame(&mut Recorder::default());
+        let inst = vm.instances().first().expect("parked on the wait");
+        let ctx = inst.loops.last().expect("loop context was not restored");
+        assert_eq!(ctx.remaining, -1, "170 loops endlessly");
+    }
+
+    #[test]
+    fn label_jump_into_a_counted_loop_runs_one_remainder() {
+        // Manual ラベル処理: entering a 回数付きループ from outside does not
+        // apply its configured count; the body runs once and the 498 exits.
+        let e = event(
+            1,
+            "jump in counted",
+            vec![
+                cmd(213, &[], &["in"]),
+                cmd(179, &[5], &[]),
+                cmd(212, &[], &["in"]),
+                cmd(180, &[1], &[]),
+                cmd(498, &[], &[]),
+                cmd(123, &[2_000_000, 0x91], &[]),
+            ],
+        );
+        let mut vm = vm_with(vec![e]);
+        vm.start_event(1).unwrap();
+        vm.step_frame(&mut Recorder::default());
+        let inst = vm.instances().first().expect("parked on the wait");
+        let ctx = inst.loops.last().expect("loop context was not restored");
+        assert_eq!(ctx.remaining, 1, "an outside entry runs one remainder");
+    }
+
+    #[test]
     fn wait_one_blocks_exactly_one_frame() {
         let e = event(
             1,
@@ -3790,6 +4515,34 @@ mod tests {
     }
 
     #[test]
+    fn string_condition_strips_the_variable_type_flag_from_cself_operands() {
+        // CE270 pc92 compares 0x11186A05 (CSelf5, not equal) with SysStr25.
+        // The 0x0100_0000 bit is a variable-type flag, not part of the self
+        // address: masking only the comparison nibble turned CSelf5 into an
+        // out-of-bank operand, so eval_str returned "" and every frame looked
+        // like a new message.
+        let ev = event(
+            1,
+            "flagged string condition",
+            vec![
+                cmd(122, &[1_600_005, 0], &["妹妹"]),
+                cmd(112, &[0x11, 0x0100_0000 | 1_600_005], &["妹妹"]),
+                cmd(401, &[1], &[]),
+                cmd(121, &[2_000_000, 1, 0, 0], &[]),
+                cmd(499, &[], &[]),
+                cmd(499, &[], &[]),
+                cmd(172, &[], &[]),
+            ],
+        );
+        let mut vm = vm_with(vec![ev]);
+        let mut host = Recorder::default();
+        vm.start_event(1).unwrap();
+        vm.step_frame(&mut host);
+        assert_eq!(vm.vars.get(0), 1, "flagged CSelf5 compared as \"妹妹\"");
+        assert_eq!(vm.instances().len(), 0);
+    }
+
+    #[test]
     fn db_op_decode_splits_container_direction_and_operation() {
         // Real sites: ev63 pc25 [18,0,24,0x51200,self9] reads the user database,
         // ev63 pc119 [24,self49,0,0x51100,self8] reads the system database (only bit 8
@@ -4023,6 +4776,59 @@ mod tests {
     }
 
     #[test]
+    fn db_write_copies_a_string_variable_into_the_cell() {
+        // CE258 pc1341/1347 write self[30] (a string variable) into CData 0:12:0/1.
+        // The source operand's bank decides the cell kind; reading it as a number used
+        // to store the magic address and leave the cell empty.
+        let ev = event(
+            7,
+            "db string write",
+            vec![cmd(250, &[0, 12, 0, 0x50004, 3_000_000], &["", "", "", ""])],
+        );
+        let mut vm = vm_with(vec![ev]);
+        vm.vars.set_str(0, "强壮");
+        vm.start_event(7).unwrap();
+        let mut host = Recorder::default();
+        vm.step_frame(&mut host);
+        let write = &host.databases[0];
+        assert_eq!(write.direction, DbDirection::Write);
+        assert_eq!(write.source, Some(DbValue::Str("强壮".to_owned())));
+    }
+
+    #[test]
+    fn a_string_cut_writes_through_a_computed_cross_event_address() {
+        // CE268 pc11-14: compute CE269's string slot 5 into self10, then write the
+        // first line of self5 through it. The target is indirect ("代入先を変数で
+        // 指定") and the address uses the 15_000_000+100*event+slot bank.
+        let e = event(
+            268,
+            "name",
+            vec![
+                cmd(121, &[1_600_010, 15_000_000, 26_905, 260], &[]),
+                cmd(122, &[1_600_010, 17, 1_600_005], &[]),
+            ],
+        );
+        let mut vm = vm_with(vec![e]);
+        let id = vm.start_event(268).unwrap();
+        vm.instance_mut(id).unwrap().self_vars.set_str(605, "妹妹");
+        let mut host = Recorder::default();
+        vm.step_frame(&mut host);
+        assert_eq!(
+            vm.vars.common_self.get(&269).map(|b| b.get_str(0)),
+            Some("妹妹")
+        );
+    }
+
+    #[test]
+    fn relative_600k_calls_are_offsets_from_the_caller() {
+        // The message library addresses its siblings as 600_100 + offset:
+        // CE264's 600104 is CE268, CE270's 600094 is CE264.
+        assert_eq!(relative_call_target(600_104, 264), 268);
+        assert_eq!(relative_call_target(600_094, 270), 264);
+        assert_eq!(relative_call_target(600_100, 264), 264);
+    }
+
+    #[test]
     fn label_jump_lands_on_the_set_label() {
         let e = event(
             1,
@@ -4043,22 +4849,30 @@ mod tests {
     }
 
     #[test]
-    fn unknown_label_ends_the_event_instead_of_looping() {
+    fn unknown_label_warns_and_execution_continues() {
+        // BUG-13: the old fallback set pc = program.len(), which killed events such as
+        // CE63 whenever a dynamic label failed to match. A bad jump must be reported and
+        // skipped, not fatal.
         let e = event(
             1,
             "badlabel",
             vec![
                 cmd(213, &[], &["nowhere"]),
                 cmd(121, &[2_000_000, 1, 0, 0], &[]),
+                cmd(180, &[10], &[]),
             ],
         );
         let mut vm = vm_with(vec![e]);
         let mut host = Recorder::default();
         vm.start_event(1).unwrap();
         vm.step_frame(&mut host);
-        assert_eq!(vm.vars.get(0), 0);
+        assert_eq!(
+            vm.vars.get(0),
+            1,
+            "the instruction after 213 must still run"
+        );
         assert!(host.logs.iter().any(|(l, _)| *l == LogLevel::Warn));
-        assert_eq!(vm.instances().len(), 0);
+        assert_eq!(vm.instances().len(), 1, "the coroutine must stay alive");
     }
 
     #[test]

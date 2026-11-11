@@ -383,26 +383,57 @@ fn save_ui_writes_slot3_then_loads_it_back() {
         "save screen must not expose a choice list"
     );
 
-    // Cursor starts on slot 1 (top-left); one DOWN moves to the bottom row,
-    // where slot 3 lives, then OK confirms.
-    // The grid is a four-row list; slot 3 is row 2. Hold until the cursor is there
-    // (the engine's repeat makes one hold walk several rows).
-    hold_until(&mut game, wolf_game::key::DOWN, 80, |g| {
-        grid_cursor(g).map(|(row, _)| row) == Some(2)
-    });
+    // Cursor starts on slot 1 (top-left). BUG-05: click the middle of the visible
+    // slot-3 panel. Using the 18x18 skin texture as the hit box would miss this
+    // point and leave the cursor on slot 1, so the save would land in SaveData01.
+    let rect = {
+        let screen = &game.screen;
+        let assets = &mut game.assets;
+        screen
+            .picture_rect(12090, |file| assets.texture_size(file))
+            .expect("slot 3 has a visible panel")
+    };
+    assert!(
+        rect[2] > 900.0 && rect[3] > 100.0,
+        "slot 3 hit box must cover the visible panel, got {rect:?}"
+    );
+    game.mouse = [
+        (rect[0] + rect[2] * 0.5) as i32,
+        (rect[1] + rect[3] * 0.5) as i32,
+    ];
+    game.mouse_buttons = 1;
+    for _ in 0..6 {
+        game.frame();
+    }
+    game.mouse_buttons = 0;
+    for _ in 0..6 {
+        game.frame();
+    }
     assert!(
         is_running(&game, 131),
-        "save UI closed after moving the cursor"
+        "save UI closed after clicking the slot"
     );
 
-    hold_until(&mut game, wolf_game::key::OK, 80, |_| {
-        save_file(SLOT).exists()
-    });
+    for _ in 0..80 {
+        if save_file(SLOT).exists() {
+            break;
+        }
+        game.frame();
+    }
 
     for _ in 0..60 {
         game.frame();
     }
 
+    assert!(
+        is_running(&game, 131),
+        "the save grid must stay open after writing a slot"
+    );
+    assert_ne!(
+        text_at(&game, 12093),
+        "没有数据",
+        "BUG-06: the saved slot must refresh without leaving the grid"
+    );
     assert!(
         save_file(SLOT).is_file(),
         "CE131 did not create {}",

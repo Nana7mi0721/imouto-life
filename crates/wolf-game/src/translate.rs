@@ -385,7 +385,8 @@ impl SourceScan {
         // `expand` with a lookup that knows nothing replaces variable escapes with
         // `0`/empty; when it changes the string the site is value-dependent. Display
         // markup (`\c[6]`, `\n`, `@1`) passes through untouched.
-        let expanded = wolf_vm::text::expand(raw, &wolf_vm::text::NoVars);
+        let mut lookup = wolf_vm::text::NoVars;
+        let expanded = wolf_vm::text::expand(raw, &mut lookup);
         let dynamic = expanded != raw;
         let text = if context == Context::Message {
             strip_face(&expanded).to_owned()

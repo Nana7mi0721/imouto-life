@@ -33,6 +33,10 @@ pub struct Engine {
     overlays: Vec<PathBuf>,
     _stream: Option<Stream>,
     warned: HashSet<String>,
+    /// Path of the track currently on the BGM bus (for same-track no-restart).
+    bgm_file: Option<String>,
+    /// Path of the track currently on the BGS bus.
+    bgs_file: Option<String>,
 }
 
 impl Engine {
@@ -95,6 +99,8 @@ impl Engine {
             overlays,
             _stream: None,
             warned: HashSet::new(),
+            bgm_file: None,
+            bgs_file: None,
         }
     }
 
@@ -124,6 +130,8 @@ impl Engine {
             overlays,
             _stream: Some(stream),
             warned: HashSet::new(),
+            bgm_file: None,
+            bgs_file: None,
         })
     }
 
@@ -171,14 +179,25 @@ impl Engine {
         looping: bool,
         volume: f32,
     ) -> Result<(), AudioError> {
+        // Retail scripts re-issue the same BGM command from several update branches.
+        // Restarting the voice each time produced an audible retrigger (BUG-17); only a
+        // genuinely different track replaces the current one. Volume-only repeats still
+        // take effect.
+        if self.mixer.lock().unwrap().bgm_playing() && self.bgm_file.as_deref() == Some(file) {
+            self.lock().set_bgm_volume(volume);
+            return Ok(());
+        }
         let audio = self.load(file)?;
         self.lock().play_bgm(audio, looping, volume);
+        self.bgm_file = Some(file.to_owned());
         Ok(())
     }
 
     /// Play an already-decoded BGM buffer.
     pub fn play_bgm_audio(&mut self, audio: DecodedAudio, looping: bool, volume: f32) {
         self.lock().play_bgm(audio, looping, volume);
+        // A decoded buffer has no path to compare against; force the next path play.
+        self.bgm_file = None;
     }
 
     /// Start (replace) the BGM from a path with a linear fade-in of `fade_frames` game frames
@@ -190,9 +209,14 @@ impl Engine {
         volume: f32,
         fade_frames: u32,
     ) -> Result<(), AudioError> {
+        if self.mixer.lock().unwrap().bgm_playing() && self.bgm_file.as_deref() == Some(file) {
+            self.lock().set_bgm_volume(volume);
+            return Ok(());
+        }
         let audio = self.load(file)?;
         self.lock()
             .play_bgm_with_fade(audio, looping, volume, fade_frames);
+        self.bgm_file = Some(file.to_owned());
         Ok(())
     }
 
@@ -206,15 +230,43 @@ impl Engine {
     ) {
         self.lock()
             .play_bgm_with_fade(audio, looping, volume, fade_frames);
+        self.bgm_file = None;
     }
 
     /// Stop the BGM. `fade_frames` is in game frames (60 fps); 0 stops immediately.
     pub fn stop_bgm(&mut self, fade_frames: u32) {
         self.lock().stop_bgm(fade_frames);
+        self.bgm_file = None;
     }
 
     pub fn set_bgm_volume(&mut self, volume: f32) {
         self.lock().set_bgm_volume(volume);
+    }
+
+    // --- BGS ----------------------------------------------------------------
+
+    /// Start (replace) the BGS ambience from a path with an optional linear fade-in.
+    pub fn play_bgs_with_fade(
+        &mut self,
+        file: &str,
+        looping: bool,
+        volume: f32,
+        fade_frames: u32,
+    ) -> Result<(), AudioError> {
+        if self.mixer.lock().unwrap().bgs_playing() && self.bgs_file.as_deref() == Some(file) {
+            return Ok(());
+        }
+        let audio = self.load(file)?;
+        self.lock()
+            .play_bgs_with_fade(audio, looping, volume, fade_frames);
+        self.bgs_file = Some(file.to_owned());
+        Ok(())
+    }
+
+    /// Stop the BGS. `fade_frames` is in game frames (60 fps); 0 stops immediately.
+    pub fn stop_bgs(&mut self, fade_frames: u32) {
+        self.lock().stop_bgs(fade_frames);
+        self.bgs_file = None;
     }
 
     // --- SE ----------------------------------------------------------------
@@ -308,6 +360,14 @@ impl Engine {
             }
             (SoundChannel::Bgm, SoundAction::Stop) => {
                 self.stop_bgm(frames);
+            }
+            (SoundChannel::Bgs, SoundAction::Play) => {
+                if let Err(err) = self.play_bgs_with_fade(&cmd.file, true, volume, frames) {
+                    self.warn_once(&cmd.file, &err);
+                }
+            }
+            (SoundChannel::Bgs, SoundAction::Stop) => {
+                self.stop_bgs(frames);
             }
             (SoundChannel::Se, SoundAction::Play) => {
                 if let Err(err) = self.play_se_with_delay(&cmd.file, volume, frames) {

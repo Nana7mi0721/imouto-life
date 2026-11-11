@@ -68,9 +68,19 @@ fn loaded_game() -> Option<Game> {
     game.auto_choice = true;
     game.auto_choice_delay = 2;
     game.boot().expect("the title map has its autorun event");
+    let mut load_confirmed = false;
     for _ in 0..1600 {
+        let grid = game.vm.instances().iter().any(|inst| inst.event == 131);
+        if grid {
+            game.key_bits = wolf_game::key::OK;
+            load_confirmed = true;
+        } else if load_confirmed {
+            game.key_bits = 0;
+            load_confirmed = false;
+        }
         game.frame();
     }
+    game.key_bits = 0;
     Some(game)
 }
 
@@ -339,7 +349,9 @@ fn morning_opens_first_day_menu() {
         "末条应为行动提示, got {:?}",
         seen.last()
     );
-    assert_eq!(game.stats.pictures, 74, "应绘制 74 张图片");
+    // 46：见 m2_daily_loop 的同名断言。旧 74 把 CE264 的相对调用误跑了
+    // CE101..CE104 的菜单绘制，多出 28 张图。
+    assert_eq!(game.stats.pictures, 46, "应绘制 46 张图片");
     assert_eq!(game.stats.sounds, 6, "应触发 6 个音效");
     assert_eq!((var(&game, 4), var(&game, 5)), (8, 30), "时间应到 08:30");
     assert_eq!(var(&game, 99), 1, "进入第 1 天");

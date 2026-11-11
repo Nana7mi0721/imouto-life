@@ -1,10 +1,12 @@
 //! M3-AJ：numeric cell 渲染回归。
 //!
-//! 背景（task-19/task-24）：表达式图片的 \cdb[a:b:c] / \udb[a:b:c] 宏展开由
-//! crates/wolf-game/src/game.rs:1611 的 PictureCells 负责。修复前它只查
-//! Databases::text(...)，而本作的行动力/精力（CDataBase 0:12:6..9）等单元是
-//! numeric-only（text=None，num=Some），于是 CE242 重绘槽 230/240 后数字渲染为空。
-//! task-24 增加了 numeric 兜底（text 为空则回退 num.to_string()）。
+//! 背景（task-19/task-24）：表达式图片的 \cdb[a:b:c] / \udb[a:b:c] 宏展开原先由
+//! crates/wolf-game/src/game.rs 的 PictureCells 负责；现在 VM 在解码图片时就用
+//! GameHost::database_string 展开并写入图片文本，PictureCells 仍保留同样的 numeric
+//! 兜底供直接渲染路径使用。修复前它只查 Databases::text(...)，而本作的行动力/精力
+//! （CDataBase 0:12:6..9）等单元是 numeric-only（text=None，num=Some），于是 CE242
+//! 重绘槽 230/240 后数字渲染为空。task-24 增加了 numeric 兜底（text 为空则回退
+//! num.to_string()）。
 //!
 //! 本文件是修复后的端到端回归：直接驱动事件，再用 Game::text_quads() 取真实排版结果
 //! （TextQuad.text 已是 \cdb 展开后的可见文本），断言这些 numeric 单元以数字出现。
@@ -208,6 +210,14 @@ fn ce244_status_panel_numeric_slots_still_render() {
     let Some(mut game) = open_loaded(1) else {
         return;
     };
+    // CE244 takes its delta from self slot 0; the durable bank keeps the last
+    // real caller's value, so seed this isolated call with a zero change.
+    game.vm
+        .vars
+        .common_self
+        .entry(244)
+        .or_insert_with(Default::default)
+        .set(0, 0);
     run_event(&mut game, 244, 20);
 
     // 槽 110：\f[14]\E+0，正常应展开为 "+0"（不受 numeric 兜底影响）。
@@ -226,6 +236,41 @@ fn ce244_status_panel_numeric_slots_still_render() {
     );
 }
 
+/// Picture commands of `event` whose source text references a database cell,
+/// keyed by picture slot. The VM expands those escapes while decoding the
+/// picture, so the runtime screen no longer carries the `\cdb` spelling; the
+/// program strings are the stable place to enumerate the references.
+fn program_cell_refs(game: &Game, event: u32) -> Vec<(i32, Vec<(bool, i32, i32, i32)>)> {
+    let Some(program) = game.vm.programs.event(event) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for slot in &program.slots {
+        let wolf_format::command::Slot::Command(cmd) = slot else {
+            continue;
+        };
+        if cmd.opcode != 150 {
+            continue;
+        }
+        let Some(raw) = cmd.strings.first() else {
+            continue;
+        };
+        let refs = cell_refs(raw);
+        if refs.is_empty() {
+            continue;
+        }
+        let params: Vec<i32> = cmd
+            .params
+            .chunks_exact(4)
+            .map(|b| i32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+            .collect();
+        if let Some(number) = params.get(1) {
+            out.push((*number, refs));
+        }
+    }
+    out
+}
+
 #[test]
 fn every_referenced_numeric_cell_renders_a_digit_not_empty() {
     // 扫 CE242 / CE238 里所有被图片引用的 \cdb/\udb 单元；凡 numeric-only 的，
@@ -234,16 +279,16 @@ fn every_referenced_numeric_cell_renders_a_digit_not_empty() {
         let Some(mut game) = open_loaded(1) else {
             return;
         };
+        let refs_by_picture = program_cell_refs(&game, event);
         run_event(&mut game, event, 20);
 
         let mut checked = 0usize;
-        for picture in game.screen.iter() {
-            let refs = cell_refs(&picture.text);
-            if refs.is_empty() {
-                continue;
+        for (number, refs) in &refs_by_picture {
+            if game.screen.get(*number).is_none() {
+                continue; // this branch was not painted by the event
             }
-            let rendered = quads_for(&game, picture.number);
-            for &(is_udb, ty, row, column) in &refs {
+            let rendered = quads_for(&game, *number);
+            for &(is_udb, ty, row, column) in refs {
                 let (expected, numeric_only) = expected_display(&game, is_udb, ty, row, column);
                 if !numeric_only || expected.is_empty() {
                     continue;
@@ -251,8 +296,7 @@ fn every_referenced_numeric_cell_renders_a_digit_not_empty() {
                 checked += 1;
                 assert!(
                     rendered.contains(&expected),
-                    "CE{event} 槽 {} 的 numeric 单元 ({is_udb}:{ty}:{row}:{column}) 应渲染出 {expected:?}，实际排版 {rendered:?}",
-                    picture.number
+                    "CE{event} 槽 {number} 的 numeric 单元 ({is_udb}:{ty}:{row}:{column}) 应渲染出 {expected:?}，实际排版 {rendered:?}"
                 );
             }
         }

@@ -218,6 +218,13 @@ fn run_one_input(id: u32, frames_budget: u32, cap: Duration) -> Result<InputRepo
 
     let before: Vec<u32> = game.vm.instances().iter().map(|inst| inst.id).collect();
     let mut report = InputReport::default();
+    // WOLF keeps a common event's self variables between invocations, so the
+    // engine already started CE269 during `start_engine_events` and left its
+    // self99 = 1 "already initialised" guard in the bank. Starting the event a
+    // second time then parks on the 999999-frame wait and says nothing, which is
+    // the correct runtime behaviour but not the standalone first-run audit this
+    // test performs. Drop the bank so each event is observed from its boot state.
+    game.vm.vars.common_self.remove(&id);
     report.started = game.start_event(id);
     if !report.started {
         return Ok(report);

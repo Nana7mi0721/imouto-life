@@ -256,6 +256,10 @@ impl WolfGame {
         };
 
         let outcome = game.frame();
+        // Drop a page that filled up on a previous frame before rebuilding the draw
+        // list: the entries a long session accumulated may all be off-screen now, while
+        // the pictures this frame needs still fit.
+        atlas.begin_frame();
         let freeze = game.take_freeze_request();
         let choice_options = game
             .choices
@@ -292,7 +296,9 @@ impl WolfGame {
                 font_px,
             ) {
                 for quad in panel {
-                    let sprite = sprite_dict(&quad, atlas.size());
+                    let mut sprite = sprite_dict(&quad, atlas.size());
+                    // The engine's own menu chrome sits above every picture slot.
+                    sprite.set("z", UI_Z);
                     sprites.push(&sprite);
                 }
                 choice_texts = rows;
@@ -326,7 +332,8 @@ impl WolfGame {
                 dst,
                 1.0,
             ) {
-                let sprite = sprite_dict(&quad, atlas.size());
+                let mut sprite = sprite_dict(&quad, atlas.size());
+                sprite.set("z", UI_Z);
                 sprites.push(&sprite);
             }
         }
@@ -337,7 +344,8 @@ impl WolfGame {
             texts.push(&text);
         }
         for text in choice_texts {
-            let text = text_dict(&text);
+            let mut text = text_dict(&text);
+            text.set("z", UI_Z);
             texts.push(&text);
         }
         if let Some(layout) = game.message_layout() {
@@ -371,6 +379,7 @@ impl WolfGame {
                 "channel",
                 match cmd.channel {
                     SoundChannel::Bgm => "bgm",
+                    SoundChannel::Bgs => "bgs",
                     SoundChannel::Se => "se",
                 },
             );
@@ -408,6 +417,9 @@ impl WolfGame {
         packet.set("transition_active", game.screen_transition.is_active());
         packet.set("pictures", outcome.pictures as i64);
         packet.set("idle", outcome.idle);
+        // Opcode 175 (title → おわる) asks the process to exit; the front-end owns the
+        // window, so it polls this instead of the engine calling exit() mid-frame.
+        packet.set("quit", game.quit_requested);
         packet.set("diagnostics", &diagnostics);
         let mut stats = VarDictionary::new();
         stats.set("frames", game.stats.frames as i64);
@@ -431,11 +443,13 @@ impl WolfGame {
         packet
     }
 
-    /// Number of packed atlas entries. Changes when new artwork was uploaded, which is
-    /// the scene's cue to pull `atlas_pixels()` again.
+    /// Atlas content revision. Changes when artwork was added or the page was reset,
+    /// which is the scene's cue to pull `atlas_pixels()` again. The entry count alone
+    /// was not enough: a reset can repack the same number of entries with different
+    /// pixels.
     #[func]
     fn atlas_len(&self) -> i64 {
-        self.atlas.len() as i64
+        self.atlas.revision() as i64
     }
 
     /// Atlas dimensions in pixels (always the packed 4096x4096 surface for now).
@@ -532,6 +546,7 @@ impl WolfGame {
 fn sprite_dict(quad: &SpriteQuad, atlas_size: [u32; 2]) -> VarDictionary {
     let mut dict = VarDictionary::new();
     dict.set("number", quad.number as i64);
+    dict.set("z", quad.number as i64);
     dict.set("rect", rect2(quad.rect));
     dict.set(
         "src",
@@ -551,6 +566,10 @@ fn sprite_dict(quad: &SpriteQuad, atlas_size: [u32; 2]) -> VarDictionary {
     dict
 }
 
+/// Draw order for the engine's own menu chrome (choice panel/text, message text and
+/// cursor). It must sit above every picture slot, including the 12xxx save grid.
+const UI_Z: i64 = 1_000_000;
+
 fn text_dict(text: &TextQuad) -> VarDictionary {
     let mut dict = VarDictionary::new();
     dict.set("text", text.text.clone());
@@ -560,6 +579,11 @@ fn text_dict(text: &TextQuad) -> VarDictionary {
     dict.set("colour", colour(text.colour));
     dict.set("outline", text.outline);
     dict.set("weight", i64::from(text.weight));
+    // The front-end composites texts and sprites in one pass; without the slot number
+    // every text was painted after every sprite, so the HUD (slots 200..252) floated on
+    // top of the 12000-range save window instead of being covered by it.
+    dict.set("number", i64::from(text.number));
+    dict.set("z", i64::from(text.number));
     dict
 }
 
@@ -578,6 +602,7 @@ fn message_run_dict(run: &MessageRun) -> VarDictionary {
     );
     dict.set("outline", run.outline);
     dict.set("weight", 700_i64);
+    dict.set("z", UI_Z);
     dict
 }
 

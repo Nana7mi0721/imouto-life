@@ -64,7 +64,12 @@ fn visible(raw: &str) -> String {
 /// `Err` when the data dump is absent so callers can skip.
 fn bedroom() -> Result<Game, String> {
     let mut game = Game::new(data_root()).map_err(|err| err.to_string())?;
-    game.start_engine_events();
+    // Load the way the retail menu does: the engine's one-shot initialisers run to
+    // completion before the save is applied (`wolf-cli play --load-save` primes the
+    // same way). Loading before they run lets the restored common-event self banks
+    // reach CE269 first, whose self99 guard then skips the message defaults and
+    // leaves Sys9 at 0 (every message would type out instantly).
+    game.prime_engine();
     let save = data_root().join("Save").join("SaveData01.sav");
     game.load_save(&save)?;
     for _ in 0..5 {
@@ -83,17 +88,24 @@ fn bedroom() -> Result<Game, String> {
 fn on_screen_texts(game: &Game) -> Vec<(i32, String)> {
     game.screen
         .iter()
-        .filter(|p| p.kind.is_text() && !visible(&p.text).is_empty())
+        // A hidden slot keeps its text so a later redraw can restore it; it is not on
+        // screen. CE264 draws its number popup (16001) and hides it again.
+        .filter(|p| !p.hidden && p.kind.is_text() && !visible(&p.text).is_empty())
         .map(|p| (p.number, visible(&p.text)))
         .collect()
 }
 
 // ---------------------------------------------------------------------------
-// CE264: message-window interface — paints the window frame plus the value
-// readouts (HP/SP) and a small number popup. Deterministic against SaveData01.
+// CE264: message-window interface — configures the balloon-message library.
+//
+// CE264 calls its sibling library events through 600101..600104. The old
+// relative-call mapping subtracted 600_000 instead of 600_100, so those calls
+// landed on template events CE101..104 and painted an item-use window (pictures
+// 12000/12001/16000 plus HP/SP readouts) even when nobody had set the interface
+// arguments. Correct routing calls CE265..CE268 and draws nothing by itself.
 // ---------------------------------------------------------------------------
 #[test]
-fn message_window_interface_paints_frame_and_text() {
+fn message_window_interface_routes_to_the_balloon_library() {
     let mut game = match bedroom() {
         Ok(game) => game,
         Err(err) => {
@@ -103,79 +115,33 @@ fn message_window_interface_paints_frame_and_text() {
     };
     let warnings_before = game.stats.warnings;
     game.screen.clear();
+    game.vm.vars.common_self.remove(&264);
     assert!(game.start_event(264), "CE264 should start");
     for _ in 0..30 {
         game.frame();
     }
 
-    let mut numbers: Vec<i32> = game
+    // CE264 must not run template CE101's item-use drawing. Those pictures are
+    // the fingerprint of the old relative-address bug: with `raw - 600_000`,
+    // 600101..600104 resolved to CE101..104, and CE101 sets the window base to
+    // 16000. The library children can start and end inside one VM step, so the
+    // pictures they would have painted are the stable observable.
+    let numbers: Vec<i32> = game
         .screen
         .iter()
         .filter(|p| p.number > 0)
         .map(|p| p.number)
         .collect();
-    numbers.sort_unstable();
-    assert_eq!(
-        numbers.len(),
-        13,
-        "CE264 should paint 13 pictures, got {numbers:?}"
-    );
-    for expected in [12000, 12001, 12010, 12014, 12018, 16000, 16001] {
+    for stray in [12000, 12001, 12010, 12014, 12018, 16000] {
         assert!(
-            numbers.contains(&expected),
-            "CE264 missing picture {expected} in {numbers:?}"
+            !numbers.contains(&stray),
+            "CE264 must not run the template CE101 drawing; got {numbers:?}"
         );
     }
-
-    let frame = game
-        .screen
-        .iter()
-        .find(|p| p.number == 12001)
-        .expect("window frame picture 12001");
     assert!(
-        frame.file.contains("WindowBase_amania"),
-        "window frame should use WindowBase_amania, got {:?}",
-        frame.file
+        numbers.is_empty(),
+        "CE264 only configures the message library; got {numbers:?}"
     );
-
-    let texts = on_screen_texts(&game);
-    assert_eq!(
-        texts.len(),
-        3,
-        "CE264 should paint exactly 3 text pictures, got {texts:?}"
-    );
-    let text_of = |number: i32| {
-        texts
-            .iter()
-            .find(|(n, _)| *n == number)
-            .map(|(_, t)| t.clone())
-            .unwrap_or_default()
-    };
-    assert_eq!(text_of(12010).trim(), "1", "number popup 12010");
-    let hp = text_of(12014);
-    assert!(
-        hp.contains("HP") && hp.contains("/50"),
-        "HP readout 12014 = {hp:?}"
-    );
-    let sp = text_of(12018);
-    assert!(
-        sp.contains("SP") && sp.contains("/20"),
-        "SP readout 12018 = {sp:?}"
-    );
-
-    let quads = game.text_quads();
-    // 12010 is one run; 12014 and 12018 each split into three style runs (HP, name,
-    // /50) once the 290 shift is applied in the same tenth-of-a-cell unit as the panel.
-    assert_eq!(quads.len(), 7, "CE264 should emit 7 text quads");
-    assert!(
-        quads.iter().any(|q| q.text.contains("/50")),
-        "a quad carries /50"
-    );
-    assert!(
-        quads.iter().any(|q| q.text.contains("/20")),
-        "a quad carries /20"
-    );
-
     assert_eq!(game.stats.warnings, warnings_before, "CE264 must not warn");
 }
 
@@ -308,7 +274,10 @@ fn message_window_sub_events_and_always_events_run() {
         assert_eq!(game.stats.warnings, warnings_before, "CE{id} must not warn");
     }
 
-    // The bedroom already keeps the auto-skip handler (271) running.
+    // CE269/270/271 are engine one-shot initialisers. Priming runs them before the
+    // save is applied and they finish there (CE271 alone ends after 7 frames; the
+    // restored self99 guard ends it in one). What stays resident in a loaded bedroom
+    // is the implicit message-window event 63.
     let game = match bedroom() {
         Ok(game) => game,
         Err(err) => {
@@ -322,9 +291,16 @@ fn message_window_sub_events_and_always_events_run() {
         .iter()
         .map(|instance| instance.event)
         .collect();
+    for event in [269u32, 270, 271] {
+        assert!(
+            game.vm.started_events.contains(&event),
+            "engine initialiser CE{event} should have run during priming, got {:?}",
+            game.vm.started_events
+        );
+    }
     assert!(
-        ids.contains(&271),
-        "auto-skip CE271 should be resident, got {ids:?}"
+        ids.contains(&63),
+        "implicit message-window CE63 should stay resident, got {ids:?}"
     );
 }
 

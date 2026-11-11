@@ -440,19 +440,25 @@ impl MapRuntime {
                 // Deactivation while the page's coroutine is parked in a blocking
                 // 210/300 CALL must wait: the call is synchronous, so the page is
                 // still running its own command list and has not reached a point
-                // where WOLF would abandon it. (Switching to another live page is
-                // left to the normal path below; only losing the page entirely is
-                // deferred.) Otherwise a variable written inside the called event
-                // that falsifies this page's activation condition tears the page
-                // and its whole descendant CALL stack down mid-script. Without this
-                // guard CE329's own var69 = 0 (pc41) kills its ancestor page and
-                // the chain before the day rollover at pc385.
-                if want.is_none() {
-                    if let Some(id) = state.instance {
-                        if let Some(instance) = vm.instance(id) {
-                            if matches!(instance.wait, wolf_vm::WaitState::Child(_)) {
-                                continue;
-                            }
+                // A page condition is only re-evaluated when its event is *not* running: in
+                // WOLF a 210/300 call is synchronous, so a variable the child writes
+                // cannot switch the parent's page until the parent's own command list
+                // reaches the end. Dropping the instance here tore the coroutine down
+                // mid-script: SampleMapA event 1 is blocked in CE245 (the night menu)
+                // when affection changes select another page, and killing it skipped
+                // the two cleanup commands that clear the close-up portrait and the
+                // full-screen room layer, leaving the sister invisible in an empty
+                // room. Event 15's nine command-list pages are likewise killed between
+                // their 150 commands, which is what made the sidebar handle flicker.
+                // Keep the old page active; the next frame's finished-instance sweep
+                // retires it and only then applies `want`.
+                if let Some(id) = state.instance {
+                    if let Some(instance) = vm.instance(id) {
+                        // A page that has not executed its first instruction yet is not
+                        // mid-script: replacing it cannot skip any command. Once it has
+                        // advanced (or parked on a wait) let it run to completion.
+                        if instance.pc > 0 || !matches!(instance.wait, wolf_vm::WaitState::None) {
+                            continue;
                         }
                     }
                 }
@@ -566,9 +572,11 @@ fn condition_value(magic: u32, self_vars: Option<&SelfVars>, vars: &Variables) -
         MagicKind::SelfVar => self_vars
             .map(|self_vars| self_vars.get(magic.index() as usize))
             .unwrap_or(0),
-        MagicKind::StrVar | MagicKind::Literal | MagicKind::DbCell | MagicKind::Opaque => {
-            magic.raw()
-        }
+        MagicKind::StrVar
+        | MagicKind::CommonSelf
+        | MagicKind::Literal
+        | MagicKind::DbCell
+        | MagicKind::Opaque => magic.raw(),
     }
 }
 

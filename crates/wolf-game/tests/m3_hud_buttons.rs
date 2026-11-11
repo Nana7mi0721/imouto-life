@@ -90,9 +90,22 @@ fn load_bedroom() -> Option<Game> {
         eprintln!("skipping: boot failed");
         return None;
     }
+    let mut load_confirmed = false;
     for _ in 0..1600 {
+        // The title's load entry opens CE131, a 123-poll grid. Hold the confirm key
+        // until the load completes; relying on a sticky opcode-125 auto key was the
+        // old accidental behaviour (report BUG-14).
+        let grid = game.vm.instances().iter().any(|inst| inst.event == 131);
+        if grid {
+            game.key_bits = wolf_game::key::OK;
+            load_confirmed = true;
+        } else if load_confirmed {
+            game.key_bits = 0;
+            load_confirmed = false;
+        }
         game.frame();
     }
+    game.key_bits = 0;
     if !game
         .screen
         .iter()
@@ -245,6 +258,70 @@ fn save_icon_left_click_routes_to_save_menu_without_writing_a_save() {
 }
 
 #[test]
+fn repeated_save_menu_cycles_do_not_lock_the_hud_icons() {
+    let before = save_snapshot();
+    let Some(mut game) = load_bedroom() else {
+        return;
+    };
+
+    // BUG-08: opening and cancelling the save screen several times used to leave a
+    // zombie CE14/CE131 instance behind. `handle_action_key_input` then saw the
+    // guard event forever and no HUD icon responded. The guard still blocks while
+    // the UI chain really is alive, so each round must fully unwind before the
+    // next click is accepted.
+    for round in 0..3 {
+        settle_pointer(&mut game, 50, 540);
+        hold_and_release(&mut game);
+        for _ in 0..30 {
+            game.frame();
+        }
+        assert!(
+            running_event(&game, 131),
+            "round {round}: save icon must open CE131"
+        );
+
+        game.key_bits = wolf_game::key::CANCEL;
+        for _ in 0..24 {
+            game.frame();
+        }
+        game.key_bits = 0;
+        for _ in 0..60 {
+            game.frame();
+        }
+        let alive: Vec<u32> = game
+            .vm
+            .instances()
+            .iter()
+            .map(|inst| inst.event)
+            .filter(|event| matches!(event, 14 | 95 | 131 | 132))
+            .collect();
+        assert!(
+            alive.is_empty(),
+            "round {round}: cancel left a UI chain behind: {alive:?}"
+        );
+    }
+
+    // The next HUD click must still reach the map event after those cycles.
+    settle_pointer(&mut game, 1000, 550);
+    hold_and_release(&mut game);
+    for _ in 0..30 {
+        game.frame();
+    }
+    assert_eq!(
+        game.last_action_event,
+        Some(30),
+        "the data icon must still respond after repeated menu cycles"
+    );
+    assert_eq!(game.vm.vars.get(176), 1, "the stats panel must open");
+    assert_eq!(game.stats.warnings, 0);
+    assert_eq!(
+        before,
+        save_snapshot(),
+        "cancel-only menu cycles must not write Save/*"
+    );
+}
+
+#[test]
 fn data_icon_left_click_opens_the_play_tendency_panel() {
     let Some(mut game) = load_bedroom() else {
         return;
@@ -382,9 +459,33 @@ fn status_panel_opens_and_tracks_hover_once_the_gate_is_forced() {
         game.frame();
     }
     assert_eq!(slot_x(&game, 320), Some(0));
-    assert!(slot_text(&game, 321).contains("25"));
-    assert!(slot_text(&game, 323).contains("普通"));
-    assert!(slot_text(&game, 324).contains("普通"));
+    // The shipped save is mutable work data (other tests rewrite it), so assert the
+    // panel shows the live trust value rather than pinning one historical number.
+    let trust = game.vm.vars.get(20).to_string();
+    assert!(
+        slot_text(&game, 321).contains(&trust),
+        "status panel trust {trust:?}, got {:?}",
+        slot_text(&game, 321)
+    );
+    // The shipped save is mutable work data (other tests rewrite it), so these
+    // labels are variable-driven (v2000022/v2000023) and can legitimately differ
+    // between runs. Assert CE238 selected one of its own strings rather than
+    // pinning whichever value the save had when the test was first measured.
+    let sensitivity = ["超钝感", "钝感", "普通", "敏感", "超敏感"];
+    assert!(
+        sensitivity
+            .iter()
+            .any(|label| slot_text(&game, 323).contains(label)),
+        "status panel sensitivity, got {:?}",
+        slot_text(&game, 323)
+    );
+    let mood = ["爆发之前", "不悦", "普通", "高兴", "哥哥LOVE"];
+    assert!(
+        mood.iter()
+            .any(|label| slot_text(&game, 324).contains(label)),
+        "status panel mood, got {:?}",
+        slot_text(&game, 324)
+    );
     assert_eq!(game.stats.warnings, 0);
 
     // Same opcode 124 field 8 poll as the item list: leaving the rectangle makes

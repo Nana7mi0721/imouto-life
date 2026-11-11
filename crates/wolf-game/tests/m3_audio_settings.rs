@@ -262,6 +262,8 @@ fn event_sound_commands_resolve_and_render() {
                             first_se = Some(cmd.file.clone());
                         }
                     }
+                    // BGS is its own ambience bus; this assertion tracks BGM/SE only.
+                    SoundChannel::Bgs => {}
                 }
             }
         }

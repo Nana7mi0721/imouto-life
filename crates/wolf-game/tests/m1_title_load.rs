@@ -36,6 +36,24 @@ fn open_game() -> Option<Game> {
     }
 }
 
+const MISSING_ZOOM_EVENT: &str =
+    "300 CallByName: no event titled `▲┣[ｽﾞｰﾑ]イベント位置をズーム座標に`";
+
+fn assert_no_unexpected_warnings(game: &Game) {
+    // The retail project calls a zoom helper whose title is absent from
+    // CommonEvent.dat (docs/M3_EVENT_GRAPH.md section 6). Any other warning is fatal.
+    let known = game
+        .diagnostics
+        .get(MISSING_ZOOM_EVENT)
+        .copied()
+        .unwrap_or(0);
+    assert_eq!(
+        game.stats.warnings, known,
+        "only the documented missing zoom helper may warn: {:#?}",
+        game.diagnostics
+    );
+}
+
 fn screen_text(game: &Game) -> Vec<&str> {
     game.screen
         .iter()
@@ -89,7 +107,7 @@ fn title_menu_new_game_passes_through_the_Map003_hook_into_SampleMapA() {
     }
 
     assert_eq!(game.stats.frames, 3200);
-    assert_eq!(game.stats.warnings, 0, "the new-game path is warning-free");
+    assert_no_unexpected_warnings(&game);
     assert!(
         game.screen.len() > 30,
         "the room and HUD are drawn: {} pictures",
@@ -119,9 +137,24 @@ fn title_menu_load_restores_a_save_into_the_bedroom_hud() {
     game.auto_choice_delay = 2;
     game.boot().expect("the title map has its autorun event");
 
+    // The title prompt's second entry opens the load grid (CE131). That grid is a
+    // real 123-poll screen, so the harness has to confirm slot 1; before the
+    // opcode-125 one-frame fix a sticky auto key made this happen by accident.
+    let mut confirmed = false;
     for _ in 0..1600 {
+        let grid = game.vm.instances().iter().any(|inst| inst.event == 131);
+        if grid {
+            // CE131 is a 123 poll loop: a one-frame tap can fall between polls, so
+            // hold the key until the load has retired the grid.
+            game.key_bits = wolf_game::key::OK;
+            confirmed = true;
+        } else if confirmed {
+            game.key_bits = 0;
+            confirmed = false;
+        }
         game.frame();
     }
+    game.key_bits = 0;
 
     assert_eq!(game.stats.warnings, 0, "the load path is warning-free");
     assert!(
@@ -143,4 +176,29 @@ fn title_menu_load_restores_a_save_into_the_bedroom_hud() {
             "ENGINE_ALWAYS event {id} must survive a load"
         );
     }
+}
+
+#[test]
+fn the_title_quit_option_requests_a_process_exit() {
+    // BUG-11: おわる is menu3. CE42 runs opcode 175 (EndGame); the engine must
+    // publish the intent so the CLI / Godot front-end can leave its own loop.
+    let Some(mut game) = open_game() else { return };
+    game.auto_advance = true;
+    game.set_choice_cursor(2);
+    game.auto_choice = true;
+    game.auto_choice_delay = 2;
+    game.boot().expect("the title map has its autorun event");
+
+    for _ in 0..600 {
+        game.frame();
+        if game.quit_requested {
+            break;
+        }
+    }
+
+    assert!(
+        game.quit_requested,
+        "choosing おわる must reach opcode 175 and request an exit"
+    );
+    assert_eq!(game.stats.warnings, 0, "the quit path is warning-free");
 }

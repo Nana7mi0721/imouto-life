@@ -458,7 +458,11 @@ fn get_variable(seed: &Seed, raw: u32) -> i32 {
             4 => seed.sys4,
             _ => 0,
         },
-        MagicKind::SelfVar | MagicKind::StrVar | MagicKind::DbCell | MagicKind::Opaque => 0,
+        MagicKind::SelfVar
+        | MagicKind::StrVar
+        | MagicKind::CommonSelf
+        | MagicKind::DbCell
+        | MagicKind::Opaque => 0,
     }
 }
 

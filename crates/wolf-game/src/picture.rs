@@ -107,6 +107,16 @@ pub const SCREEN_H: u32 = 576;
 pub const ANCHOR_TOP_LEFT: u8 = 0;
 /// Anchor code 1 (head bit 0x1000): x/y name the picture centre.
 pub const ANCHOR_CENTRE: u8 = 1;
+/// Anchor code 2: x/y name the bottom-left corner.
+pub const ANCHOR_BOTTOM_LEFT: u8 = 2;
+/// Anchor code 3: x/y name the top-right corner.
+pub const ANCHOR_TOP_RIGHT: u8 = 3;
+/// Anchor code 4: x/y name the bottom-right corner.
+pub const ANCHOR_BOTTOM_RIGHT: u8 = 4;
+/// Anchor code 5: x is the horizontal centre, y the top edge.
+pub const ANCHOR_TOP_CENTRE: u8 = 5;
+/// Anchor code 6: x is the horizontal centre, y the bottom edge.
+pub const ANCHOR_BOTTOM_CENTRE: u8 = 6;
 /// Scale field value that means "no scaling" (percent).
 pub const SCALE_ONE: i32 = 100;
 
@@ -150,6 +160,11 @@ pub mod field {
     pub const Y: usize = 6;
     /// Uniform scale in percent (100 = 1.0).
     pub const SCALE: usize = 7;
+    /// Vertical scale for head scale mode 3 (`別々`), from raw argument 18.
+    ///
+    /// The tone triple occupies raw 15..17, so the second scale word lands at
+    /// `args[16]` (args itself starts at raw 2).
+    pub const SCALE_Y: usize = 16;
     /// Blend mode.
     pub const BLEND: usize = 8;
     /// First field that is kind-specific.
@@ -620,8 +635,10 @@ pub struct Pose {
     pub x: i32,
     /// Top edge / centre y, logical pixels.
     pub y: i32,
-    /// Uniform scale in percent.
+    /// Horizontal scale in percent.
     pub scale: i32,
+    /// Vertical scale in percent.
+    pub scale_y: i32,
     /// Opacity, 0..=255.
     pub opacity: i32,
 }
@@ -633,6 +650,7 @@ impl Pose {
             x: picture.x,
             y: picture.y,
             scale: picture.scale,
+            scale_y: picture.scale_y,
             opacity: picture.opacity,
         }
     }
@@ -714,8 +732,18 @@ pub struct Picture {
     /// record says pattern 7, which only fits a one-based count. The default 1 keeps every
     /// ordinary picture on the whole image.
     pub pattern_index: u32,
-    /// Uniform scale in percent.
+    /// Horizontal scale in percent.
+    ///
+    /// A `150` head with scale mode 3 (`別々` / independent X/Y) carries the
+    /// horizontal percentage here and the vertical one in [`Picture::scale_y`].
+    /// Every other mode writes the same value to both fields.
     pub scale: i32,
+    /// Vertical scale in percent.
+    ///
+    /// Only a mode-3 `150` changes this independently. A save stores the two
+    /// words separately (`vars7_18[9]` / `[10]`), which is how a bar that keeps
+    /// its height while its width follows a percentage survives a load.
+    pub scale_y: i32,
     /// Opacity, 0..=255.
     pub opacity: i32,
     /// Blend mode, passed to the renderer unchanged.
@@ -801,6 +829,7 @@ impl Picture {
             split: (1, 1),
             pattern_index: 1,
             scale: SCALE_ONE,
+            scale_y: SCALE_ONE,
             opacity: 255,
             blend: 0,
             window: None,
@@ -871,6 +900,7 @@ impl Picture {
             self.x = transition.to.x;
             self.y = transition.to.y;
             self.scale = transition.to.scale;
+            self.scale_y = transition.to.scale_y;
             self.opacity = transition.to.opacity;
             self.transition = None;
             return;
@@ -890,6 +920,12 @@ impl Picture {
         self.scale = blend(
             transition.from.scale,
             transition.to.scale,
+            transition.age,
+            transition.duration,
+        );
+        self.scale_y = blend(
+            transition.from.scale_y,
+            transition.to.scale_y,
             transition.age,
             transition.duration,
         );
@@ -1214,7 +1250,7 @@ impl Screen {
                 picture.text = cmd.text.clone();
                 picture.anchor = cmd.anchor;
                 let args = picture_args(cmd, base_x, base_y);
-                merge_args(&mut picture, &args);
+                merge_args(&mut picture, &args, cmd.scale_mode);
                 if let Some(shift) = inherited_shift {
                     picture.shift = shift;
                 }
@@ -1248,7 +1284,7 @@ impl Screen {
                 // unchanged field is its current value, which interpolates to itself.
                 let origin = Pose::of(picture);
                 let args = picture_args(cmd, origin.x, origin.y);
-                merge_args(picture, &args);
+                merge_args(picture, &args, cmd.scale_mode);
                 // With a usable duration the merged fields are only the TARGET: rewind them to
                 // where the picture already is and let `advance` walk there. Without one the
                 // merged fields are final, i.e. the teleport every duration-less move expects.
@@ -1257,6 +1293,7 @@ impl Screen {
                         picture.x = transition.from.x;
                         picture.y = transition.from.y;
                         picture.scale = transition.from.scale;
+                        picture.scale_y = transition.from.scale_y;
                         picture.opacity = transition.from.opacity;
                         picture.transition = Some(transition);
                     }
@@ -1448,6 +1485,58 @@ impl Screen {
         }
         out
     }
+
+    /// Screen rectangle of one picture under the same law as [`Self::quads`].
+    ///
+    /// `opcode 124 hover` and the save-grid pointer mapping must land on the pixels
+    /// the player sees: text metrics from the window box, window panels from their
+    /// box, ordinary pictures from their texture's native size, plus the tenths UI
+    /// block scale that `quads` applies. The old hover shortcut treated every
+    /// negative slot as a full-screen layer, which gave the 48x48 album icon at
+    /// picture -7 a 1024x576 hit box and swallowed clicks meant for the data icon.
+    #[must_use]
+    pub fn picture_rect<F>(&self, number: i32, mut tex_size: F) -> Option<[f32; 4]>
+    where
+        F: FnMut(&str) -> Option<(u32, u32)>,
+    {
+        let picture = self.pictures.get(&number)?;
+        // Window pictures are painted as a nine-slice panel from `Picture::window_skin`
+        // (Atlas::sprites), not from the 18x18 skin texture at its native size. Their hit
+        // box must be the panel box, or a visible save-slot row owns only its 1.8x1.8
+        // top-left skin corner. A built-in system-graphic spelling is the exception: the
+        // atlas draws that through `picture_frame` at the requested shape size.
+        let is_panel = picture.kind.is_window()
+            && picture.window.is_some()
+            && crate::sysgraphic::parse(&picture.file).is_none();
+        let mut dst = if is_panel {
+            let (w, h) = picture.window.unwrap_or((0, 0));
+            if w <= crate::window::MIN_BOX || h <= crate::window::MIN_BOX {
+                // Atlas::sprites skips a panel this small, so there is no visible pixel
+                // to hover or click.
+                return None;
+            }
+            picture.destination(w as f32, h as f32)
+        } else if picture.kind.is_text() {
+            let (w, h) = picture.window.unwrap_or((0, 0));
+            picture.destination(w.max(0) as f32, h.max(0) as f32)
+        } else {
+            // Prefer the real draw size (texture or built-in shape). A picture with no
+            // resolvable graphic still owns the window box the script declared, and
+            // opcode 124 may test exactly that synthetic control before its art loads.
+            match picture_frame(picture, &mut tex_size) {
+                Some((_src, (w, h))) => picture.destination(w as f32, h as f32),
+                None => {
+                    let (w, h) = picture.window.unwrap_or((0, 0));
+                    picture.destination(w.max(0) as f32, h.max(0) as f32)
+                }
+            }
+        };
+        let ui = self.ui_scale_for(number);
+        if ui > 1.0 {
+            dst = [dst[0], dst[1] / ui, dst[2] / ui, dst[3] / ui];
+        }
+        Some(dst)
+    }
 }
 
 /// True when a destination rectangle overlaps the logical screen at all.
@@ -1475,9 +1564,16 @@ impl Picture {
     /// and a shaken sprite cannot drift apart.
     #[must_use]
     pub fn destination(&self, w: f32, h: f32) -> [f32; 4] {
-        let scale = self.scale.max(0) as f32 / SCALE_ONE as f32;
-        let (sx, sy) = self.effect_scale();
-        let placed = place(self.anchor, self.x, self.y, w * scale * sx, h * scale * sy);
+        let scale_x = self.scale.max(0) as f32 / SCALE_ONE as f32;
+        let scale_y = self.scale_y.max(0) as f32 / SCALE_ONE as f32;
+        let (fx, fy) = self.effect_scale();
+        let placed = place(
+            self.anchor,
+            self.x,
+            self.y,
+            w * scale_x * fx,
+            h * scale_y * fy,
+        );
         self.transform(placed)
     }
 
@@ -1590,14 +1686,32 @@ impl ScreenQuad {
 
 /// Turns an anchor code plus a w*h extent into the destination rectangle.
 ///
-/// ANCHOR_CENTRE shifts by half the extent on both axes, which is what the retail title
-/// banner needs; every other code keeps the corner behaviour and is unverified.
+/// The editor offers seven reference points: top-left (0), centre (1), bottom-left
+/// (2), top-right (3), bottom-right (4), top-centre (5) and bottom-centre (6). The
+/// retail coordinates pin the mapping: CE36 draws the standing portrait with anchor 2
+/// at y=576 (the screen bottom), which is only visible as a bottom anchor, and the
+/// same event pairs it with anchor 4 at x=1024/y=570 for the right-aligned variant.
+/// Treating those as top-left put every portrait below the screen.
 fn place(anchor: u8, x: i32, y: i32, w: f32, h: f32) -> [f32; 4] {
     let mut left = x as f32;
     let mut top = y as f32;
-    if anchor == ANCHOR_CENTRE {
-        left -= w / 2.0;
-        top -= h / 2.0;
+    match anchor {
+        ANCHOR_CENTRE => {
+            left -= w / 2.0;
+            top -= h / 2.0;
+        }
+        ANCHOR_BOTTOM_LEFT => top -= h,
+        ANCHOR_TOP_RIGHT => left -= w,
+        ANCHOR_BOTTOM_RIGHT => {
+            left -= w;
+            top -= h;
+        }
+        ANCHOR_TOP_CENTRE => left -= w / 2.0,
+        ANCHOR_BOTTOM_CENTRE => {
+            left -= w / 2.0;
+            top -= h;
+        }
+        _ => {}
     }
     [left, top, w, h]
 }
@@ -1688,7 +1802,7 @@ fn picture_args(cmd: &PictureCmd, base_x: i32, base_y: i32) -> Vec<i32> {
 }
 
 /// Merges a command's field words into a picture, honouring the UNCHANGED sentinel.
-fn merge_args(picture: &mut Picture, args: &[i32]) {
+fn merge_args(picture: &mut Picture, args: &[i32], scale_mode: u8) {
     if let Some(value) = take(args, field::OPACITY) {
         picture.opacity = value.clamp(0, 255);
     }
@@ -1700,6 +1814,18 @@ fn merge_args(picture: &mut Picture, args: &[i32]) {
     }
     if let Some(value) = take(args, field::SCALE) {
         picture.scale = value;
+        // Independent X/Y (`別々`, mode 3) reads its vertical percentage from raw
+        // argument 18 - `PictureCmd::args` starts at raw 2, so slot 16 here. The
+        // mode-4 free transform keeps uniform scaling until its four corners are
+        // modelled, and every other mode copies the horizontal word.
+        if scale_mode != 3 {
+            picture.scale_y = value;
+        }
+    }
+    if scale_mode == 3 {
+        if let Some(value) = take(args, field::SCALE_Y) {
+            picture.scale_y = value;
+        }
     }
     if let Some(value) = take(args, field::BLEND) {
         picture.blend = value;
@@ -1803,6 +1929,7 @@ mod tests {
             animate: Vec::new(),
             keep_shift: false,
             relative: false,
+            scale_mode: 0,
             anchor: ANCHOR_TOP_LEFT,
         }
     }
@@ -1920,7 +2047,7 @@ mod tests {
     }
 
     #[test]
-    fn place_only_shifts_the_centre_anchor() {
+    fn place_shifts_by_the_selected_anchor() {
         assert_eq!(
             place(ANCHOR_TOP_LEFT, 512, 520, 606.0, 35.0),
             [512.0, 520.0, 606.0, 35.0]
@@ -1929,8 +2056,26 @@ mod tests {
             place(ANCHOR_CENTRE, 512, 520, 606.0, 35.0),
             [209.0, 502.5, 606.0, 35.0]
         );
-        // The unverified codes must behave like the corner, never like the centre.
-        assert_eq!(place(3, 100, 50, 20.0, 10.0), [100.0, 50.0, 20.0, 10.0]);
+        assert_eq!(
+            place(ANCHOR_BOTTOM_LEFT, 384, 576, 400.0, 650.0),
+            [384.0, -74.0, 400.0, 650.0]
+        );
+        assert_eq!(
+            place(ANCHOR_TOP_RIGHT, 1000, 60, 200.0, 100.0),
+            [800.0, 60.0, 200.0, 100.0]
+        );
+        assert_eq!(
+            place(ANCHOR_BOTTOM_RIGHT, 1024, 576, 300.0, 200.0),
+            [724.0, 376.0, 300.0, 200.0]
+        );
+        assert_eq!(
+            place(ANCHOR_TOP_CENTRE, 512, 100, 200.0, 50.0),
+            [412.0, 100.0, 200.0, 50.0]
+        );
+        assert_eq!(
+            place(ANCHOR_BOTTOM_CENTRE, 800, 576, 200.0, 50.0),
+            [700.0, 526.0, 200.0, 50.0]
+        );
     }
 
     #[test]
@@ -2990,6 +3135,7 @@ mod effect_tests {
             animate: Vec::new(),
             keep_shift: false,
             relative: false,
+            scale_mode: 0,
             anchor: ANCHOR_TOP_LEFT,
         });
         let picture = screen.get(90).expect("picture");
@@ -3028,6 +3174,22 @@ mod effect_tests {
             [800, 0, 400, 650],
             "the loop reaches pattern 3 next"
         );
+    }
+
+    #[test]
+    fn scale_mode_three_keeps_x_and_y_independent() {
+        let mut args = vec![0i32; field::SCALE_Y + 1];
+        args[field::SCALE] = 150;
+        args[field::SCALE_Y] = 60;
+        let mut separate = Picture::new(1);
+        merge_args(&mut separate, &args, 3);
+        assert_eq!(separate.scale, 150);
+        assert_eq!(separate.scale_y, 60);
+        // Every other mode mirrors the single scale word into both axes.
+        let mut uniform = Picture::new(2);
+        merge_args(&mut uniform, &args, 0);
+        assert_eq!(uniform.scale, 150);
+        assert_eq!(uniform.scale_y, 150);
     }
 
     /// The zoom percentage ramps over the action time instead of popping.

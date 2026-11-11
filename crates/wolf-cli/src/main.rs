@@ -112,6 +112,11 @@ fn main() -> ExitCode {
     // map and photograph the vendor logo (docs/BATTLE.md section 6.2).
     let mut boot_explicit = false;
     let mut menu_only = false;
+    // `--menu-only --prime`: run the one-shot engine initialisation before the title
+    // event, exactly like the real boot chain and the Godot front-end. Without it a
+    // new game starts before CE48/CE63 exist, so Sys1/2 and the message window are
+    // missing from the first frames; parity pixel captures need the primed entry.
+    let mut prime_engine = false;
     // M5 presentation controls, shared by `play` only. The default keeps the retail
     // integer pixel grid; `fit-*` fills a 16:9 window instead of leaving bars.
     let mut scale_mode = ScaleMode::Integer;
@@ -304,6 +309,9 @@ fn main() -> ExitCode {
             "--menu-only" => {
                 menu_only = true;
             }
+            "--prime" => {
+                prime_engine = true;
+            }
             "--scale" => {
                 let value = args.next().unwrap_or_default();
                 match ScaleMode::parse(&value) {
@@ -434,6 +442,7 @@ fn main() -> ExitCode {
                     event,
                     boot_explicit,
                     menu_only,
+                    prime_engine,
                 );
                 let entry = match &resolved {
                     CaptureEntry::Save(path) => Entry::Save(path.as_path()),
@@ -444,6 +453,7 @@ fn main() -> ExitCode {
                     CaptureEntry::CommonEvent(id) => Entry::CommonEvent(*id),
                     CaptureEntry::Boot => Entry::Boot,
                     CaptureEntry::Menu => Entry::Menu,
+                    CaptureEntry::MenuPrimed => Entry::MenuPrimed,
                 };
                 let answers = Answers {
                     index: answer,
@@ -514,6 +524,7 @@ fn main() -> ExitCode {
                 event,
                 boot_explicit,
                 menu_only,
+                prime_engine,
             );
             let entry = match &resolved {
                 CaptureEntry::Save(path) => Entry::Save(path.as_path()),
@@ -524,6 +535,7 @@ fn main() -> ExitCode {
                 CaptureEntry::CommonEvent(id) => Entry::CommonEvent(*id),
                 CaptureEntry::Boot => Entry::Boot,
                 CaptureEntry::Menu => Entry::Menu,
+                CaptureEntry::MenuPrimed => Entry::MenuPrimed,
             };
             // Resolve the simulator hotkeys before entering the event loop so a bad
             // file is reported up front and the loop always gets a usable table.
@@ -688,6 +700,9 @@ fn print_help() {
     );
     println!("    --menu-only       Start common event 42 directly instead of the boot map.");
     println!("                      Wins over --event (it names an entry point of its own).");
+    println!("    --prime           With --menu-only: finish the engine initialisation (CE48)");
+    println!("                      before event 42, like the real boot chain and the Godot");
+    println!("                      front-end. Without it Sys1/2 and CE63 are missing early.");
     println!("    --scale <MODE>    'play' presentation: integer (default, crisp + bars),");
     println!("                      fit-nearest or fit-linear (fractional, fills the window).");
     println!("                      F9 cycles the mode at runtime.");
@@ -1449,7 +1464,7 @@ fn run_precompile(root: &Path) -> ExitCode {
         Check::num("label_jumps", 612, stats.label_jumps as u64),
         // 3, not 5: only events 31/63/86 put \cself[n] inside a 213 label
         // (docs/OPCODE_SPEC.md §4.7 corrected by measuring the data again).
-        Check::num("dynamic_labels", 51, stats.dynamic_labels as u64),
+        Check::num("dynamic_labels", 3, stats.dynamic_labels as u64),
         Check::num("malformed_conditions", 0, stats.malformed_conditions as u64),
         Check::num("cases", 7_562, stats.cases as u64),
         Check::num("else_cases", 1_012, stats.else_cases as u64),
@@ -3542,6 +3557,8 @@ struct Answers {
 enum Entry<'a> {
     Boot,
     Menu,
+    /// The title event after the one-shot engine initialisation (`--menu-only --prime`).
+    MenuPrimed,
     Script {
         map: &'a str,
         event: u32,
@@ -3562,7 +3579,13 @@ enum Entry<'a> {
 enum CaptureEntry {
     Boot,
     Menu,
-    Script { map: String, event: u32 },
+    /// `--menu-only --prime`: the engine coroutines run their one-shot
+    /// initialisation before event 42 starts, like the boot chain.
+    MenuPrimed,
+    Script {
+        map: String,
+        event: u32,
+    },
     Save(PathBuf),
     CommonEvent(u32),
 }
@@ -3583,6 +3606,7 @@ fn resolve_capture_entry(
     event: Option<u32>,
     boot_explicit: bool,
     menu_only: bool,
+    prime: bool,
 ) -> CaptureEntry {
     if let Some(path) = load_save {
         return CaptureEntry::Save(path.to_path_buf());
@@ -3594,7 +3618,11 @@ fn resolve_capture_entry(
         };
     }
     if menu_only {
-        return CaptureEntry::Menu;
+        return if prime {
+            CaptureEntry::MenuPrimed
+        } else {
+            CaptureEntry::Menu
+        };
     }
     if let Some(id) = event {
         if !boot_explicit {
@@ -3981,6 +4009,13 @@ fn run_capture(
             game.start_title().map_err(|err| err.to_string()),
             "common event 42".to_owned(),
         ),
+        Entry::MenuPrimed => {
+            let primed = game.prime_engine();
+            (
+                game.start_title().map_err(|err| err.to_string()),
+                format!("common event 42 after {primed} initialisation frame(s)"),
+            )
+        }
         Entry::Script { map, event } => (
             game.start_map_event_by_name(map, event)
                 .map_err(|err| err.to_string()),
@@ -4879,7 +4914,7 @@ mod tests {
     #[test]
     fn event_alone_selects_the_common_event() {
         assert_eq!(
-            resolve_capture_entry(None, None, Some(239), false, false),
+            resolve_capture_entry(None, None, Some(239), false, false, false),
             CaptureEntry::CommonEvent(239)
         );
     }
@@ -4887,7 +4922,7 @@ mod tests {
     #[test]
     fn no_flags_still_selects_the_boot_map() {
         assert_eq!(
-            resolve_capture_entry(None, None, None, false, false),
+            resolve_capture_entry(None, None, None, false, false, false),
             CaptureEntry::Boot
         );
     }
@@ -4897,7 +4932,7 @@ mod tests {
     #[test]
     fn explicit_boot_outranks_event() {
         assert_eq!(
-            resolve_capture_entry(None, None, Some(239), true, false),
+            resolve_capture_entry(None, None, Some(239), true, false, false),
             CaptureEntry::Boot
         );
     }
@@ -4905,15 +4940,23 @@ mod tests {
     #[test]
     fn menu_only_outranks_event() {
         assert_eq!(
-            resolve_capture_entry(None, None, Some(239), false, true),
+            resolve_capture_entry(None, None, Some(239), false, true, false),
             CaptureEntry::Menu
+        );
+    }
+
+    #[test]
+    fn prime_selects_the_initialised_menu_entry() {
+        assert_eq!(
+            resolve_capture_entry(None, None, None, false, true, true),
+            CaptureEntry::MenuPrimed
         );
     }
 
     #[test]
     fn map_run_outranks_event_and_keeps_the_event_as_the_map_event_id() {
         assert_eq!(
-            resolve_capture_entry(None, Some("SampleMapA.mps"), Some(1), false, false),
+            resolve_capture_entry(None, Some("SampleMapA.mps"), Some(1), false, false, false),
             CaptureEntry::Script {
                 map: "SampleMapA.mps".to_owned(),
                 event: 1,
@@ -4921,7 +4964,7 @@ mod tests {
         );
         // Without --event a map capture keeps the old default of page 0.
         assert_eq!(
-            resolve_capture_entry(None, Some("TitleMap.mps"), None, false, false),
+            resolve_capture_entry(None, Some("TitleMap.mps"), None, false, false, false),
             CaptureEntry::Script {
                 map: "TitleMap.mps".to_owned(),
                 event: 0,
@@ -4965,6 +5008,7 @@ mod tests {
                 Some(Path::new("save.sav")),
                 Some("SampleMapA.mps"),
                 Some(239),
+                true,
                 true,
                 true
             ),

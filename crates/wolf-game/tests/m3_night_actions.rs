@@ -488,12 +488,12 @@ fn ce246_dispatch_stretch() {
     game.set_choice_cursor(3); // 鸡鸡伸展！
     press(&mut game, key::OK);
     let run = run_to_idle(&mut game, 200);
-
     assert!(
         run.messages.contains(&"…哥哥…这就有点…".to_owned()),
         "stretch branch message"
     );
-    for number in [900, 901, 902, 903, 16_000, 16_001] {
+    // 16000/16001 belonged to the old misrouted template path (report BUG-12).
+    for number in [900, 901, 902, 903] {
         assert!(
             run.pictures.contains(&number),
             "stretch branch paints picture {number}"
@@ -561,7 +561,10 @@ fn ce248_game_menu_and_branches() {
         "CE248 lists the four games"
     );
     let menu_pics = pictures(&game);
-    for number in [900, 901, 902, 903, 16_000, 16_001] {
+    // Pictures 16000/16001 used to appear here because opcode 210 sent CE264's
+    // 600104 call to template event CE104; with the relative call fixed they are
+    // not part of CE248's choice screen (report BUG-12/19).
+    for number in [900, 901, 902, 903] {
         assert!(
             menu_pics.contains(&number),
             "CE248 choice screen shows art {number}"
@@ -588,7 +591,7 @@ fn ce248_game_menu_and_branches() {
             run.messages.contains(&first_message.to_owned()),
             "game option {index} should say {first_message:?}"
         );
-        for number in [300, 16_000, 16_001] {
+        for number in [300] {
             assert!(
                 run.pictures.contains(&number),
                 "game branch keeps picture {number}"
@@ -631,7 +634,9 @@ fn ce249_bath_menu_and_branches() {
         run.messages.contains(&"好，去吧。".to_owned()),
         "single bath message"
     );
-    assert!(run.pictures.contains(&16_000), "bath paints picture 16000");
+    // The old expectation of picture 16000 came from CE264's misrouted template
+    // call (CE101 sets that picture base); the fixed call chain draws the bath
+    // through the balloon library instead.
     assert_eq!(game.stats.warnings, 0);
 
     // 两个人洗.

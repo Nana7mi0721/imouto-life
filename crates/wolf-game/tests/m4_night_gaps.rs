@@ -346,12 +346,22 @@ fn clicking_picture_1108_opens_ev21_and_yes_ends_the_interface() {
     );
 
     // 是 ends the interface and plays the closing line.
+    // auto_advance only had to walk the pre-prompt dialogue; the exit lines must
+    // stay on screen for step_collect to record them (and for the closing line
+    // to be visible), so turn it off once the prompt is up.
+    game.auto_advance = false;
     game.set_choice_cursor(0);
     game.key_bits = key::OK;
     game.frame();
     game.key_bits = 0;
-    for _ in 0..150 {
+    for _ in 0..600 {
         step_collect(&mut game, &mut messages);
+        // The script hands off to CE251 at pc214; that call is synchronous, so
+        // ev21 stays on the stack while bedtime runs. Stop once the handoff has
+        // happened instead of driving the whole next morning.
+        if running(&game, 251) {
+            break;
+        }
     }
 
     assert!(
@@ -362,6 +372,9 @@ fn clicking_picture_1108_opens_ev21_and_yes_ends_the_interface() {
     );
     assert_eq!(var(&game, 100), 0, "是 clears the interface page");
     assert_eq!(var(&game, 125), 0, "是 clears the action phase");
-    assert!(!running(&game, 21), "the exit event finishes");
+    assert!(
+        running(&game, 251),
+        "是 hands the interface over to CE251 bedtime"
+    );
     assert_eq!(game.stats.warnings, 0, "warnings");
 }

@@ -85,6 +85,19 @@ pub fn nine_slice_cornered(
     if w <= 0.0 || h <= 0.0 {
         return pieces;
     }
+    // Snap the outer box and every cut line to whole pixels before splitting. Each
+    // piece is drawn on its own, so letting two pieces round a shared fractional edge
+    // independently can make them overlap by one physical pixel (a dark seam along
+    // the stretch bands). Snapping the edges once keeps every shared boundary exact.
+    let x0 = x.round();
+    let y0 = y.round();
+    let x1 = (x + w).round();
+    let y1 = (y + h).round();
+    let w = x1 - x0;
+    let h = y1 - y0;
+    if w <= 0.0 || h <= 0.0 {
+        return pieces;
+    }
     // Skin columns: 0..cw, cw..skin_w-cw, skin_w-cw..skin_w. A skin narrower than
     // twice the frame has no middle column, and the frame shrinks to fit.
     let cw = corner.min(skin_w / 2);
@@ -93,18 +106,10 @@ pub fn nine_slice_cornered(
     let rows = split(skin_h, ch);
     // Destination columns: corners keep their pixel size unless the box is too
     // small for them, in which case they halve so the sum still covers the box.
-    let dcols = [
-        0.0_f32,
-        (cw as f32).min(w / 2.0),
-        w - (cw as f32).min(w / 2.0),
-        w,
-    ];
-    let drows = [
-        0.0_f32,
-        (ch as f32).min(h / 2.0),
-        h - (ch as f32).min(h / 2.0),
-        h,
-    ];
+    let cw_d = (cw as f32).min(w / 2.0).round();
+    let ch_d = (ch as f32).min(h / 2.0).round();
+    let dcols = [x0, x0 + cw_d, x1 - cw_d, x1];
+    let drows = [y0, y0 + ch_d, y1 - ch_d, y1];
     for row in 0..3 {
         for col in 0..3 {
             let (sx, sw) = (cols[col], cols[col + 1] - cols[col]);
@@ -118,7 +123,7 @@ pub fn nine_slice_cornered(
                 continue;
             }
             pieces.push(WindowPiece {
-                rect: [x + dcols[col], y + drows[row], dw, dh],
+                rect: [dcols[col], drows[row], dw, dh],
                 src: [sx, sy, sw, sh],
             });
         }
@@ -190,6 +195,44 @@ mod tests {
             assert!(piece.rect[0] >= 100.0 && piece.rect[1] >= 50.0);
             assert!(piece.rect[0] + piece.rect[2] <= 400.0 + 0.001);
             assert!(piece.rect[1] + piece.rect[3] <= 250.0 + 0.001);
+        }
+    }
+
+    #[test]
+    fn fractional_edges_are_snapped_once_before_splitting() {
+        // The frame and the cut lines are rounded as a whole. Rounding each piece on its
+        // own let a shared edge land on two different pixels, which paints a 1 px dark
+        // seam over the stretch bands.
+        let pieces = nine_slice([10.4, 20.6, 100.4, 50.7], 18, 18);
+        assert_eq!(pieces.len(), 9);
+        for piece in &pieces {
+            for value in piece.rect {
+                assert_eq!(
+                    value.fract(),
+                    0.0,
+                    "piece rect is not on whole pixels: {piece:?}"
+                );
+            }
+            assert!(piece.rect[2] > 0.0 && piece.rect[3] > 0.0);
+        }
+        // The snapped box is 10,21 .. 111,71: every piece stays inside it and no two
+        // pieces overlap, so the bands tile the box exactly.
+        for piece in &pieces {
+            assert!(piece.rect[0] >= 10.0 && piece.rect[1] >= 21.0);
+            assert!(piece.rect[0] + piece.rect[2] <= 111.0);
+            assert!(piece.rect[1] + piece.rect[3] <= 71.0);
+        }
+        for (index, a) in pieces.iter().enumerate() {
+            for b in &pieces[index + 1..] {
+                let overlap_x =
+                    (a.rect[0] + a.rect[2]).min(b.rect[0] + b.rect[2]) - a.rect[0].max(b.rect[0]);
+                let overlap_y =
+                    (a.rect[1] + a.rect[3]).min(b.rect[1] + b.rect[3]) - a.rect[1].max(b.rect[1]);
+                assert!(
+                    overlap_x <= 0.0 || overlap_y <= 0.0,
+                    "pieces overlap: {a:?} and {b:?}"
+                );
+            }
         }
     }
 

@@ -214,6 +214,12 @@ pub struct Atlas {
     /// Keys already in `misses`, so a picture re-drawn every frame is reported once
     /// instead of flooding the diagnostics map.
     missed: HashSet<String>,
+    /// Set when a pack attempt failed because the page was full; the next
+    /// [`Atlas::begin_frame`] clears the page and repacks only what is visible.
+    reset_pending: bool,
+    /// Bumped whenever the pixels change (a new entry or a reset), so a front-end can
+    /// tell "the texture must be re-uploaded" from "the atlas is unchanged".
+    revision: u64,
 }
 
 impl Default for Atlas {
@@ -242,7 +248,37 @@ impl Atlas {
             used_area: 0,
             misses: Vec::new(),
             missed: HashSet::new(),
+            reset_pending: false,
+            revision: 1,
         }
+    }
+
+    /// Clears the page when the previous frame could not fit an image.
+    ///
+    /// A persistent front-end kept one atlas for the whole session, so after roughly
+    /// thirty full-screen CGs every new picture missed forever. The packer cannot know
+    /// which entries the current frame still needs, so the front-end calls this before
+    /// rebuilding the frame: a full page is dropped and the visible set is packed again
+    /// from scratch. Images that never fit even in an empty page do not arm the reset,
+    /// otherwise one oversized asset would clear the atlas every frame.
+    pub fn begin_frame(&mut self) {
+        if !self.reset_pending {
+            return;
+        }
+        self.reset_pending = false;
+        self.entries.clear();
+        self.sources.clear();
+        self.shelves.clear();
+        self.pixels.fill(0);
+        self.used_area = 0;
+        self.revision = self.revision.wrapping_add(1);
+    }
+
+    /// Changes whenever the pixel content changes. Front-ends compare it to decide
+    /// whether the atlas texture needs re-uploading.
+    #[must_use]
+    pub fn revision(&self) -> u64 {
+        self.revision
     }
 
     /// `[width, height]` in pixels.
@@ -329,6 +365,12 @@ impl Atlas {
                     .last()
                     .map_or(0, |shelf| shelf.y + shelf.height);
                 if y + h > self.height {
+                    // Ask for a clean page next frame when there is something to
+                    // reclaim. An empty page means the image itself is simply too
+                    // large for this packer, and resetting would not help.
+                    if !self.entries.is_empty() {
+                        self.reset_pending = true;
+                    }
                     self.miss(name, [w, h], AtlasMissReason::Full);
                     return None;
                 }
@@ -345,6 +387,7 @@ impl Atlas {
         self.entries.insert(name.to_owned(), rect);
         self.sources.insert(name.to_owned(), [w, h]);
         self.used_area += u64::from(w) * u64::from(h);
+        self.revision = self.revision.wrapping_add(1);
         Some(rect)
     }
 
@@ -676,6 +719,50 @@ mod tests {
     }
 
     #[test]
+    fn a_full_page_is_dropped_at_the_next_frame_boundary() {
+        let mut atlas = Atlas::with_size(8, 8);
+        let first = atlas.add("first", &image(8, 8, 0x11)).expect("first");
+        let revision = atlas.revision();
+        // Nothing can fit beside a full page; the packer asks for a clean one.
+        assert!(atlas.add("second", &image(8, 8, 0x22)).is_none());
+        assert_eq!(atlas.len(), 1, "the old entry is still there this frame");
+        atlas.begin_frame();
+        assert_eq!(atlas.len(), 0, "the page was not cleared");
+        assert!(
+            atlas.revision() > revision,
+            "the reset must change the revision"
+        );
+        // The visible picture repacks exactly where it was before.
+        let again = atlas.add("first", &image(8, 8, 0x11)).expect("first again");
+        assert_eq!(again, first);
+    }
+
+    #[test]
+    fn an_image_too_large_for_an_empty_page_does_not_cause_resets() {
+        let mut atlas = Atlas::with_size(8, 8);
+        atlas.add("small", &image(4, 4, 0x11)).expect("small");
+        // 9 px wide is not a full-page miss: it can never fit, so a reset would be
+        // wasted work on every frame.
+        assert!(atlas.add("wide", &image(9, 1, 0x22)).is_none());
+        atlas.begin_frame();
+        assert_eq!(atlas.len(), 1, "a too-large image must not clear the page");
+    }
+
+    #[test]
+    fn a_revision_changes_when_and_only_when_pixels_change() {
+        let mut atlas = Atlas::with_size(16, 16);
+        let start = atlas.revision();
+        atlas.begin_frame();
+        assert_eq!(atlas.revision(), start, "nothing to clear, no new content");
+        atlas.add("a", &image(8, 8, 0x33)).expect("a");
+        assert!(atlas.revision() > start);
+        let after_add = atlas.revision();
+        // Re-adding a cached key leaves the pixels untouched.
+        atlas.add("a", &image(8, 8, 0x44)).expect("cached");
+        assert_eq!(atlas.revision(), after_add);
+    }
+
+    #[test]
     fn shelf_packing_fills_a_row_before_opening_a_new_one() {
         let mut atlas = Atlas::with_size(16, 16);
         let a = atlas.add("a", &image(8, 4, 0x11)).expect("a");
@@ -901,6 +988,7 @@ mod tests {
             animate: Vec::new(),
             keep_shift: false,
             relative: false,
+            scale_mode: 0,
             anchor: 0,
         });
         let mut atlas = Atlas::with_size(8, 8);
@@ -927,6 +1015,7 @@ mod tests {
             animate: Vec::new(),
             keep_shift: false,
             relative: false,
+            scale_mode: 0,
             anchor: 0,
         });
         let mut atlas = Atlas::with_size(64, 64);
@@ -966,6 +1055,7 @@ mod tests {
             animate: Vec::new(),
             keep_shift: false,
             relative: false,
+            scale_mode: 0,
             anchor: 0,
         }
     }
@@ -1046,6 +1136,7 @@ mod tests {
             animate: Vec::new(),
             keep_shift: false,
             relative: false,
+            scale_mode: 0,
             anchor: 0,
         });
         let mut atlas = Atlas::with_size(64, 64);

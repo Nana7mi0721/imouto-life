@@ -395,7 +395,7 @@ fn left_click_load_opens_the_ce14_read_grid() {
 }
 
 #[test]
-fn cancel_closes_the_load_grid_but_does_not_reopen_the_title_menu() {
+fn cancel_closes_the_load_grid_and_reopens_the_title_menu() {
     let Some(mut game) = open_title() else {
         return;
     };
@@ -415,12 +415,12 @@ fn cancel_closes_the_load_grid_but_does_not_reopen_the_title_menu() {
         "CE14 has ended after cancel: {:?}",
         live_events(&game)
     );
-    assert!(game.choices.is_none(), "no prompt is live after cancel");
-    // Documented current behaviour: the title menu does not come back.
-    assert_ne!(
+    // ESC/right click is "back to the previous level": cancelling the load grid
+    // returns to the title menu (CE42's cancel arm restarts it).
+    assert_eq!(
         trimmed_options(&game),
         EXPECTED_TITLE.map(str::to_owned).to_vec(),
-        "the title menu is not restored after cancelling the load grid (known gap)"
+        "cancel returns to the title menu"
     );
     assert_eq!(
         game.stats.warnings, 0,

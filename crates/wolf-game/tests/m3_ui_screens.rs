@@ -109,10 +109,13 @@ fn open_loaded_bedroom() -> Option<Game> {
         return None;
     }
     for _ in 0..1600 {
-        // Boot runs the title menu with auto_choice; no key feed here, or the
-        // harness would answer the menu's own polls before the cursor settles.
+        // The title prompt is answered by auto_choice; the load grid that follows
+        // is a 123 poll loop and needs the confirm key held until it closes.
+        let grid = game.vm.instances().iter().any(|inst| inst.event == 131);
+        game.key_bits = if grid { wolf_game::key::OK } else { 0 };
         game.frame();
     }
+    game.key_bits = 0;
     let has_action = game
         .screen
         .get(230)
@@ -320,6 +323,11 @@ fn ce240_standing_art() {
     let Some(mut game) = open_loaded_bedroom() else {
         return;
     };
+    // WOLF keeps a common event's self variables between invocations, and the
+    // boot session already called CE240 with argument -1 (that branch ends the
+    // event on purpose). A standalone start is a fresh call, so drop the stale
+    // bank; otherwise the event ends before painting anything.
+    game.vm.vars.common_self.remove(&240);
     let shot = run_event(&mut game, 240, 20);
     let slots: Vec<i32> = shot.pictures.keys().copied().collect();
     assert_eq!(slots, vec![900, 901, 902, 903], "CE240 layer slots");
@@ -341,7 +349,10 @@ fn ce241_blink_keeps_layers() {
     let Some(mut game) = open_loaded_bedroom() else {
         return;
     };
-    // 241 only animates the art that 240 already put up; draw that first.
+    // 241 only animates the art that 240 already put up; draw that first. Both
+    // banks carry arguments from the boot session, so isolate this fresh call.
+    game.vm.vars.common_self.remove(&240);
+    game.vm.vars.common_self.remove(&241);
     let _ = run_event(&mut game, 240, 20);
     let before: BTreeMap<i32, String> = game
         .screen
@@ -428,6 +439,14 @@ fn ce244_action_point_delta() {
     let Some(mut game) = open_loaded_bedroom() else {
         return;
     };
+    // CE244's delta is a call argument in self slot 0; the durable bank still
+    // holds the last real caller's value, which can clamp the branch away.
+    game.vm
+        .vars
+        .common_self
+        .entry(244)
+        .or_insert_with(Default::default)
+        .set(0, 0);
     let shot = run_event(&mut game, 244, 20);
     let slots: Vec<i32> = shot.pictures.keys().copied().collect();
     assert_eq!(slots, vec![110], "CE244 slot set");

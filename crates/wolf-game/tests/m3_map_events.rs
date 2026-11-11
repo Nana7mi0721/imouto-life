@@ -54,6 +54,24 @@ fn open_game() -> Option<Game> {
     }
 }
 
+const MISSING_ZOOM_EVENT: &str =
+    "300 CallByName: no event titled `▲┣[ｽﾞｰﾑ]イベント位置をズーム座標に`";
+
+fn assert_no_unexpected_warnings(game: &Game) {
+    // Retail calls a zoom helper absent from CommonEvent.dat; see
+    // docs/M3_EVENT_GRAPH.md section 6. Every other warning remains fatal.
+    let known = game
+        .diagnostics
+        .get(MISSING_ZOOM_EVENT)
+        .copied()
+        .unwrap_or(0);
+    assert_eq!(
+        game.stats.warnings, known,
+        "only the documented missing zoom helper may warn: {:#?}",
+        game.diagnostics
+    );
+}
+
 /// One page's slot tally, used by the metadata test.
 fn page_slot_counts(map: &Map) -> Vec<usize> {
     map.events
@@ -142,7 +160,11 @@ fn every_event_selects_a_page_under_a_loaded_save_without_panicking() {
                 4 => sys4,
                 _ => 0,
             },
-            MagicKind::SelfVar | MagicKind::StrVar | MagicKind::DbCell | MagicKind::Opaque => 0,
+            MagicKind::SelfVar
+            | MagicKind::StrVar
+            | MagicKind::CommonSelf
+            | MagicKind::DbCell
+            | MagicKind::Opaque => 0,
         }
     };
 
@@ -316,10 +338,7 @@ fn title_new_game_map_switch_reaches_sample_map_a() {
         reached,
         "the new-game path reached SampleMapA within 3200 frames"
     );
-    assert_eq!(
-        game.stats.warnings, 0,
-        "the new-game map switch is warning-free"
-    );
+    assert_no_unexpected_warnings(&game);
     assert!(
         game.screen.len() > 30,
         "the SampleMapA room and HUD are drawn: {} pictures",

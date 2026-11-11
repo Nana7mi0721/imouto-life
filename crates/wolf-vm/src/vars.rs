@@ -19,14 +19,18 @@
 //!
 //! Self variables live per coroutine ([crate::exec::Instance]), not here: two
 //! instances of the same common event have independent self variables, which is
-//! exactly what the menus rely on.
+//! exactly what the menus rely on. One exception lives here: the durable banks of
+//! common events, because the manual encodes cross-event access as
+//! `15_000_000 + 100*event + slot`.
+
+use std::collections::BTreeMap;
 
 /// Slot count above which we stop growing silently and start warning.
 ///
 /// The real game addresses at most a few thousand ordinary variables and 33
 /// system variables (`9_000_033` is the highest seen). The ceiling exists so a
 /// corrupt magic number (say `2_999_999`) cannot allocate 12 MB by accident.
-pub const MAX_SLOTS: usize = 65_536;
+pub const MAX_SLOTS: usize = 1_000_000;
 
 /// The global variable banks.
 #[derive(Clone, Debug)]
@@ -35,6 +39,11 @@ pub struct Variables {
     strings: Vec<String>,
     sys_nums: Vec<i32>,
     sys_strings: Vec<String>,
+    /// Durable common-event self banks, addressable from any script as
+    /// `15_000_000 + 100*event + slot` (manual 06valueget: コモンEv Y の
+    /// コモンセルフ変数 X). Keeping them beside the other banks lets the
+    /// interpreter resolve the message library's cross-event string writes.
+    pub common_self: BTreeMap<u32, EventSelfVars>,
 }
 
 impl Default for Variables {
@@ -53,6 +62,7 @@ impl Variables {
             strings: Vec::new(),
             sys_nums: Vec::new(),
             sys_strings: Vec::new(),
+            common_self: BTreeMap::new(),
         }
     }
 
@@ -64,6 +74,7 @@ impl Variables {
             strings: vec![String::new(); strings],
             sys_nums: vec![0; sys],
             sys_strings: Vec::new(),
+            common_self: BTreeMap::new(),
         }
     }
 
@@ -149,6 +160,68 @@ impl Variables {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.nums.is_empty()
+    }
+}
+
+/// Self variables of one common event, outside any running coroutine.
+///
+/// WOLF stores a common event's self variables in the event (100 numeric slots,
+/// CSelf0..CSelf99, plus the five string slots CSelf5..CSelf9) and a save carries all
+/// of them, including events that are not running. The interpreter needs the same
+/// durable bank: a coroutine starting after a load must see what the previous
+/// invocation left, not zeros.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EventSelfVars {
+    nums: Vec<i32>,
+    strings: Vec<String>,
+}
+
+/// Numeric self slots a common event persists.
+pub const EVENT_SELF_SLOTS: usize = crate::magic::SELF_SLOTS_PER_GROUP;
+/// String self slots a common event persists (CSelf5..CSelf9).
+pub const EVENT_SELF_STRINGS: usize = 5;
+
+impl Default for EventSelfVars {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl EventSelfVars {
+    /// An all-zero bank, matching a common event that never ran.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            nums: vec![0; EVENT_SELF_SLOTS],
+            strings: vec![String::new(); EVENT_SELF_STRINGS],
+        }
+    }
+
+    /// Read numeric slot `slot` (0..100).
+    #[must_use]
+    pub fn get(&self, slot: usize) -> i32 {
+        self.nums.get(slot).copied().unwrap_or(0)
+    }
+
+    /// Write numeric slot `slot`; out-of-range slots are ignored.
+    pub fn set(&mut self, slot: usize, value: i32) {
+        if let Some(cell) = self.nums.get_mut(slot) {
+            *cell = value;
+        }
+    }
+
+    /// Read string slot `slot` (0..5, i.e. CSelf5..CSelf9).
+    #[must_use]
+    pub fn get_str(&self, slot: usize) -> &str {
+        self.strings.get(slot).map_or("", String::as_str)
+    }
+
+    /// Write string slot `slot`; out-of-range slots are ignored.
+    pub fn set_str(&mut self, slot: usize, value: &str) {
+        if let Some(cell) = self.strings.get_mut(slot) {
+            cell.clear();
+            cell.push_str(value);
+        }
     }
 }
 

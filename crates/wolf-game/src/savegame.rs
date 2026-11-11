@@ -32,6 +32,8 @@ pub struct LoadedSave {
     pub pictures: usize,
     /// Normal variables copied out of \`SavePart3\` row 0.
     pub normal_vars: usize,
+    /// Normal string variables copied out of \`SavePart3.mds1\`.
+    pub normal_strings: usize,
     /// Playtime in frames, from \`SavePart2.vars3_21[0]\`.
     pub playtime_frames: u32,
     /// Choice-window anchor from \`SavePart2.vars3_21[9]/[10]\`.
@@ -104,6 +106,44 @@ pub fn apply(game: &mut Game, save: &SaveFile) -> LoadedSave {
     }
     loaded.normal_vars = index;
 
+    // Normal string variables live in SavePart3.mds1: the retail saves carry ten of
+    // them (the first is the hero's display name after character creation, the last
+    // the save-thumbnail path). They were never loaded, so a saved name reverted to
+    // whatever the live variable happened to hold.
+    for (index, body) in save.part3.mds1.iter().enumerate() {
+        let (text, _bad) = wolf_format::gbk::decode(strip_nul(body));
+        game.vm.vars.set_str(index, &text);
+    }
+    loaded.normal_strings = save.part3.mds1.len();
+
+    // Common-event self variables are owned by the event, not by a coroutine. Every
+    // shipped save stores 100 numeric slots and 5 string slots for all 350 events.
+    game.vm.vars.common_self.clear();
+    let events = save
+        .part3
+        .list_counts
+        .len()
+        .max(save.part3.slot_counts.len());
+    for event in 0..events {
+        let event = event as u32;
+        let mut bank = wolf_vm::vars::EventSelfVars::new();
+        for slot in 0..wolf_vm::vars::EVENT_SELF_SLOTS {
+            if let Some(value) = save.part3.self_var(event, slot) {
+                bank.set(slot, value);
+            }
+        }
+        for slot in 0..wolf_vm::vars::EVENT_SELF_STRINGS {
+            if let Some(body) = save.part3.self_string_bytes(event, slot) {
+                let (text, _bad) = wolf_format::gbk::decode(strip_nul(body));
+                bank.set_str(slot, &text);
+            }
+        }
+        game.vm.vars.common_self.insert(event, bank);
+    }
+    // Running engine/menu coroutines predate the load; give them the restored banks
+    // too, so their eventual end cannot write stale values back over the save.
+    game.vm.restore_common_self();
+
     // The variable database travels inside the save. Character creation writes the
     // player name into CDataBase type 0 row 12, and the HUD reads it back through
     // opcode 250, so a load must overlay it before the first frame is drawn.
@@ -119,6 +159,26 @@ pub fn apply(game: &mut Game, save: &SaveFile) -> LoadedSave {
     // Playtime is the first word of SavePart2's variable tail.
     loaded.playtime_frames = save.part2.vars3_21.first().copied().unwrap_or(0);
     game.set_playtime_frames(loaded.playtime_frames);
+
+    // The running BGM is part of the save. Restore it before the picture layer so the
+    // first frame after a load already has the right track (and so a script that only
+    // tweaks the volume keeps playing instead of restarting silence).
+    game.current_bgm = save.part2.bgm.as_ref().and_then(|bgm| {
+        let (path, _bad) = wolf_format::gbk::decode(strip_nul(&bgm.path1));
+        if path.is_empty() {
+            None
+        } else {
+            Some((path, bgm.vars75_77[0] as i32))
+        }
+    });
+    if let Some((file, volume)) = game.current_bgm.clone() {
+        if let Some(audio) = game.audio.as_mut() {
+            let gain = (volume.clamp(0, 100) as f32) / 100.0;
+            let _ = audio.play_bgm_with_fade(&file, true, gain, 0);
+        }
+    } else if let Some(audio) = game.audio.as_mut() {
+        audio.stop_bgm(0);
+    }
 
     // Rebuild the picture layer. The save stores every live slot, including hidden ones
     // and whole-screen layers with negative numbers, so a wholesale replacement is right.
@@ -177,13 +237,12 @@ pub fn picture_from_record(record: &SavePart5_1) -> Option<Picture> {
     // picture must appear at full strength on the first frame (retail Save/save1.jpg
     // shows the policy panel at 100%, while its record still carries fade = 10).
     picture.fade = 0;
-    // [9]/[10] are the horizontal/vertical scale in percent. A Picture has one uniform
-    // scale, so the horizontal value wins - the only non-uniform case in this game is the
-    // action-bar fill, whose width is the percentage the player must see.
-    // A zero scale is a real hidden picture (the HUD action-bar fill is stored as
-    // 0 when empty), not a missing field. Retail SaveData01 records picture 6233
-    // with [9] = 62 and [10] = 100; a freshly written save must preserve 0 as 0.
+    // [9]/[10] are the horizontal/vertical scale in percent. They are equal for a
+    // uniform draw, but the HUD action-bar fill stores (62, 100): the width follows
+    // the percentage while the height stays full. A zero scale is a real hidden
+    // picture (the fill is stored as 0 when empty), not a missing field.
     picture.scale = v[9] as i32;
+    picture.scale_y = v[10] as i32;
     let w = v[2] as i32;
     let h = v[3] as i32;
     if record.var6 == 1 {
@@ -288,7 +347,7 @@ fn canonical_record(picture: &Picture) -> SavePart5_1 {
     // reproduce byte-for-byte on a load -> save round trip). Clamping to 0 here used
     // to silently rewrite -100 as 0.
     v[9] = picture.scale as u32;
-    v[10] = v[9];
+    v[10] = picture.scale_y as u32;
     v[11] = 0;
     record
 }
@@ -450,7 +509,7 @@ pub fn decode_picture_text(bytes: &[u8]) -> String {
     out
 }
 
-fn strip_nul(bytes: &[u8]) -> &[u8] {
+pub(crate) fn strip_nul(bytes: &[u8]) -> &[u8] {
     match bytes.last() {
         Some(0) => &bytes[..bytes.len() - 1],
         _ => bytes,

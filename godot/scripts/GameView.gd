@@ -5,11 +5,37 @@ extends Control
 ## The Rust side (`WolfGame`) owns the event VM, the picture layer and the atlas; this
 ## script only feeds input, advances one 60 Hz frame and draws the returned quads with
 ## Godot's CanvasItem API.  Text is shaped by Godot's TextParagraph using the same
-## Microsoft YaHei faces the retail data names.
+## Microsoft YaHei faces the retail data names when they exist; other hosts fall back
+## to the faces bundled in the data root and finally to a system font.
 
 const LOGICAL_SIZE := Vector2(1024.0, 576.0)
-const FONT_BOLD := "C:/Windows/Fonts/msyhbd.ttc"
-const FONT_REGULAR := "C:/Windows/Fonts/msyh.ttc"
+## Preferred UI faces on Windows.  Missing files are skipped, never assumed.
+const WINDOWS_FONT_BOLD := "C:/Windows/Fonts/msyhbd.ttc"
+const WINDOWS_FONT_REGULAR := "C:/Windows/Fonts/msyh.ttc"
+## Faces shipped in the retail data root, tried in this order on any host.
+const BUNDLED_FONT_NAMES: Array[String] = [
+	"◆GenJyuuGothicX-P-Bold.ttf",
+	"07やさしさゴシックボールド.ttf",
+]
+## Last-resort primary faces.  A SystemFont always exists, so text never vanishes.
+const SYSTEM_FONT_NAMES: Array[String] = [
+	"Microsoft YaHei UI",
+	"Microsoft YaHei",
+	"Noto Sans CJK SC",
+	"Source Han Sans SC",
+	"WenQuanYi Micro Hei",
+	"sans-serif",
+]
+## Symbol-only fallback attached to both primary faces.  Microsoft YaHei has no
+## U+266A (the message "♪" glyph), so the shaper must be able to reach a face that
+## does.  The list is probed by the platform, not assumed to exist.
+const SYMBOL_FONT_NAMES: Array[String] = [
+	"Segoe UI Symbol",
+	"Noto Sans Symbols 2",
+	"Noto Sans Symbols",
+	"DejaVu Sans",
+	"sans-serif",
+]
 const WolfTextScript := preload("res://scripts/WolfText.gd")
 const WolfKeysLib := preload("res://scripts/WolfKeys.gd")
 
@@ -17,13 +43,22 @@ var wolf: WolfGame
 var atlas_texture: ImageTexture
 var atlas_len: int = -1
 var packet: Dictionary = {}
-var bold_font: FontFile
-var regular_font: FontFile
+var bold_font: Font
+var regular_font: Font
 var data_root := ""
 var bgm_player: AudioStreamPlayer
+## WOLF's BGS (background sound / ambience) is a second looping bus; rain or wind
+## must not stop the music (report BUG-17).
+var bgs_player: AudioStreamPlayer
 var se_players: Array[AudioStreamPlayer] = []
 var audio_cache: Dictionary = {}
 var bgm_tween: Tween
+var bgs_tween: Tween
+## WOLF reissues the same BGM/BGS command from several events; restarting the same
+## track from 0 s every time produced an audible stutter. Remember the file so a
+## repeated play request only adjusts volume.
+var bgm_file := ""
+var bgs_file := ""
 var se_cursor := 0
 var frozen_texture: ImageTexture
 var last_frame_texture: ImageTexture
@@ -59,6 +94,10 @@ var mouse_latch: int = 0
 var mouse_latch_pos := Vector2i(-1, -1)
 ## Wheel notches accumulated between physics ticks: positive up, negative down.
 var wheel_notches: int = 0
+## Set by a window/application focus-in notification and consumed by the next
+## physics tick.  That tick must not treat a button the OS already reports as
+## held as a fresh edge, or regaining focus fakes a click on a map hotspot.
+var focus_gained := false
 
 var log_input := false
 var log_messages := false
@@ -74,11 +113,18 @@ func _ready() -> void:
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	# Parse first: the entry point and log switches are needed before the first frame.
 	_parse_args()
-	bold_font = _load_font(FONT_BOLD)
-	regular_font = _load_font(FONT_REGULAR)
-
+	# The bundled font candidates live under the data root, so resolve it before
+	# loading text faces.
 	var root := _resolve_data_root()
 	data_root = root
+	bold_font = _load_font(true)
+	regular_font = _load_font(false)
+	# U+266A and other symbols missing from the primary faces are shaped through
+	# Font.fallbacks; TextParagraph passes the whole chain to the shaper.
+	var symbol_fallback := _make_symbol_font()
+	_attach_fallback(bold_font, symbol_fallback)
+	_attach_fallback(regular_font, symbol_fallback)
+
 	if root.is_empty():
 		push_error("data root not found: pass `-- --data-root=<unpacked Data dir>`")
 		set_physics_process(false)
@@ -134,12 +180,20 @@ func _physics_process(_delta: float) -> void:
 	if mouse_latch & 1 != 0 and mouse_latch_pos.x >= 0 and mouse_latch_pos.y >= 0:
 		mouse_pos = mouse_latch_pos
 	var raw_keys := _raw_key_codes()
-	var buttons := _mouse_buttons()
+	# Consume the focus-in marker: only the first tick after a focus-in skips the
+	# level query; later ticks trust it again for genuinely held buttons.
+	var skip_level := focus_gained
+	focus_gained = false
+	var buttons := _mouse_buttons(skip_level)
 	mouse_latch = 0
 	wolf.set_wheel(wheel_notches)
 	wheel_notches = 0
 	wolf.set_input(_key_bits(raw_keys), raw_keys, mouse_pos, buttons)
 	packet = wolf.frame()
+	if packet.get("quit", false):
+		# Opcode 175: the title's おわる option asked to exit.
+		get_tree().quit()
+		return
 	if packet.get("freeze", false):
 		print("wolf: freeze at game frame ", game_frames)
 		# The viewport still holds the frame 161 is replacing; copy it before _draw.
@@ -250,7 +304,12 @@ func _handle_mouse_button(event: InputEventMouseButton) -> void:
 
 
 func _notification(what: int) -> void:
-	if what == NOTIFICATION_WM_WINDOW_FOCUS_OUT or what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+	if what == NOTIFICATION_WM_WINDOW_FOCUS_IN or what == NOTIFICATION_APPLICATION_FOCUS_IN:
+		# The OS may report a button as already held on the frame the window comes
+		# back; let the next physics tick ignore that level so it cannot become a
+		# synthetic edge press on a hotspot.
+		focus_gained = true
+	elif what == NOTIFICATION_WM_WINDOW_FOCUS_OUT or what == NOTIFICATION_APPLICATION_FOCUS_OUT:
 		# Without focus the key-up events never arrive; a stale held key would
 		# otherwise look pressed forever.
 		held_keys.clear()
@@ -259,6 +318,7 @@ func _notification(what: int) -> void:
 		mouse_latch = 0
 		mouse_latch_pos = Vector2i(-1, -1)
 		wheel_notches = 0
+		focus_gained = false
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -302,15 +362,32 @@ func _draw() -> void:
 	if atlas_texture == null:
 		return
 
+	# Pictures and text share ONE layer stack keyed by WOLF picture slot. Drawing all
+	# sprites and then all texts put the HUD (slots 200..252) over the save window
+	# (12000+), which is the "top-bar values bleed through the save menu" bug. Entries
+	# of the engine's own menu chrome carry z = 1_000_000 so they stay above pictures.
+	var items: Array = []
+	var seq := 0
 	for sprite in packet.get("sprites", []):
-		var tint: Color = sprite["tint"]
-		tint.a *= float(sprite["alpha"])
-		if tint.a <= 0.0:
-			continue
-		draw_texture_rect_region(atlas_texture, sprite["rect"], sprite["src"], tint)
-
+		items.append({"sprite": sprite, "z": int(sprite.get("z", sprite.get("number", 0))), "seq": seq})
+		seq += 1
 	for text in packet.get("texts", []):
-		_draw_text(text)
+		items.append({"text": text, "z": int(text.get("z", text.get("number", 0))), "seq": seq})
+		seq += 1
+	items.sort_custom(func(a, b):
+		if a["z"] == b["z"]:
+			return a["seq"] < b["seq"]
+		return a["z"] < b["z"])
+	for item in items:
+		if item.has("sprite"):
+			var sprite: Dictionary = item["sprite"]
+			var tint: Color = sprite["tint"]
+			tint.a *= float(sprite["alpha"])
+			if tint.a <= 0.0:
+				continue
+			draw_texture_rect_region(atlas_texture, sprite["rect"], sprite["src"], tint)
+		else:
+			_draw_text(item["text"])
 
 	for overlay in packet.get("overlays", []):
 		var colour: Color = overlay["color"]
@@ -329,6 +406,9 @@ func _setup_audio() -> void:
 	bgm_player = AudioStreamPlayer.new()
 	bgm_player.name = "Bgm"
 	add_child(bgm_player)
+	bgs_player = AudioStreamPlayer.new()
+	bgs_player.name = "Bgs"
+	add_child(bgs_player)
 	for i in range(8):
 		var player := AudioStreamPlayer.new()
 		player.name = "Se%d" % i
@@ -345,6 +425,15 @@ func _apply_sounds(sounds: Array) -> void:
 		var frames := int(cmd.get("frames", 0))
 		if channel == "bgm":
 			if action == "play":
+				if file.is_empty():
+					continue
+				# Several events reissue the current track. Restarting it from 0 s was
+				# the audible stutter; keep the running voice and only refresh volume.
+				if file == bgm_file and bgm_player.playing:
+					if bgm_tween != null and bgm_tween.is_valid():
+						bgm_tween.kill()
+					bgm_player.volume_db = linear_to_db(volume)
+					continue
 				var stream := _load_audio(file)
 				if stream == null:
 					continue
@@ -354,10 +443,12 @@ func _apply_sounds(sounds: Array) -> void:
 				bgm_player.stream = stream
 				bgm_player.volume_db = -80.0 if frames > 0 else linear_to_db(volume)
 				bgm_player.play()
+				bgm_file = file
 				if frames > 0:
 					bgm_tween = create_tween()
 					bgm_tween.tween_property(bgm_player, "volume_db", linear_to_db(volume), float(frames) / 60.0)
 			elif action == "stop":
+				bgm_file = ""
 				if bgm_tween != null and bgm_tween.is_valid():
 					bgm_tween.kill()
 				if frames > 0:
@@ -366,6 +457,38 @@ func _apply_sounds(sounds: Array) -> void:
 					bgm_tween.tween_callback(bgm_player.stop)
 				else:
 					bgm_player.stop()
+		elif channel == "bgs":
+			if action == "play":
+				if file.is_empty():
+					continue
+				if file == bgs_file and bgs_player.playing:
+					if bgs_tween != null and bgs_tween.is_valid():
+						bgs_tween.kill()
+					bgs_player.volume_db = linear_to_db(volume)
+					continue
+				var stream := _load_audio(file)
+				if stream == null:
+					continue
+				_mark_bgm_loop(stream)
+				if bgs_tween != null and bgs_tween.is_valid():
+					bgs_tween.kill()
+				bgs_player.stream = stream
+				bgs_player.volume_db = -80.0 if frames > 0 else linear_to_db(volume)
+				bgs_player.play()
+				bgs_file = file
+				if frames > 0:
+					bgs_tween = create_tween()
+					bgs_tween.tween_property(bgs_player, "volume_db", linear_to_db(volume), float(frames) / 60.0)
+			elif action == "stop":
+				bgs_file = ""
+				if bgs_tween != null and bgs_tween.is_valid():
+					bgs_tween.kill()
+				if frames > 0:
+					bgs_tween = create_tween()
+					bgs_tween.tween_property(bgs_player, "volume_db", -80.0, float(frames) / 60.0)
+					bgs_tween.tween_callback(bgs_player.stop)
+				else:
+					bgs_player.stop()
 		elif channel == "se":
 			if action == "play":
 				var stream := _load_audio(file)
@@ -479,12 +602,58 @@ func _parse_args() -> void:
 			log_events = true
 
 
-func _load_font(path: String) -> FontFile:
-	var font := FontFile.new()
-	if font.load_dynamic_font(path) != OK:
-		push_warning("font not loaded: " + path)
-		return null
-	return font
+## Load the bold or regular UI face.
+##
+## Candidate order: the Windows Microsoft YaHei file, the faces bundled in the
+## data root, then a SystemFont lookup.  A SystemFont is always constructible, so
+## this never returns null and text never disappears on a host without YaHei.
+## Every departure from the first choice is logged, including which candidate won.
+func _load_font(is_bold: bool) -> Font:
+	var kind := "bold" if is_bold else "regular"
+	var candidates: Array[String] = []
+	candidates.append(WINDOWS_FONT_BOLD if is_bold else WINDOWS_FONT_REGULAR)
+	if not data_root.is_empty():
+		for name in BUNDLED_FONT_NAMES:
+			candidates.append(data_root.path_join(name))
+	for path in candidates:
+		if not FileAccess.file_exists(path):
+			continue
+		var font := FontFile.new()
+		if font.load_dynamic_font(path) != OK:
+			push_warning("font: cannot load %s" % path)
+			continue
+		print("font: %s <- %s" % [kind, path])
+		return font
+	var system := SystemFont.new()
+	system.font_names = PackedStringArray(SYSTEM_FONT_NAMES)
+	system.font_weight = 700 if is_bold else 400
+	system.allow_system_fallback = true
+	push_warning(
+		"font: no font file for %s, using SystemFont %s" % [kind, str(SYSTEM_FONT_NAMES)]
+	)
+	return system
+
+
+## Symbol-only face used through `Font.fallbacks`.  It only contributes glyphs the
+## primary face lacks (U+266A in Microsoft YaHei), so its metrics do not replace
+## the primary face's line metrics.
+func _make_symbol_font() -> Font:
+	var symbol := SystemFont.new()
+	symbol.font_names = PackedStringArray(SYMBOL_FONT_NAMES)
+	symbol.allow_system_fallback = true
+	return symbol
+
+
+## Append `fallback` to `font`'s existing chain instead of replacing it.
+func _attach_fallback(font: Font, fallback: Font) -> void:
+	if font == null or fallback == null:
+		return
+	var chain: Array[Font] = []
+	for existing in font.fallbacks:
+		chain.append(existing)
+	if not chain.has(fallback):
+		chain.append(fallback)
+	font.fallbacks = chain
 
 
 func _release_held(godot_keycode: int) -> void:
@@ -508,11 +677,15 @@ func _key_bits(raw_keys: PackedInt32Array) -> int:
 	return WolfKeysLib.bits_for(Array(raw_keys), wolf.key_config())
 
 
-func _mouse_buttons() -> int:
+func _mouse_buttons(skip_level: bool = false) -> int:
 	# Event-tracked state plus a latch for a click that was pressed and released
 	# entirely between two physics ticks; the level query is a fallback for a
-	# button that was already held when the window gained focus.
+	# button that was already held when the window gained focus.  That fallback is
+	# suppressed for the first tick after focus-in, where a held button would
+	# otherwise look like a brand-new click.
 	var buttons := mouse_down | mouse_latch
+	if skip_level:
+		return buttons
 	if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 		buttons |= 1
 	if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):

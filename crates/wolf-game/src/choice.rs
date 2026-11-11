@@ -81,6 +81,10 @@ pub struct ChoiceLayout {
     pub lines: Vec<[f32; 4]>,
     /// Rectangle of the highlighted option (the cursor row).
     pub cursor: [f32; 4],
+    /// Font size the panel was measured at (Sys8). The text pass draws the rows at this
+    /// size, so it must travel with the layout instead of falling back to the caller's
+    /// default: a setting that changes Sys8 would otherwise measure and paint differently.
+    pub font_px: f32,
 }
 
 /// Whether a glyph is full width, i.e. one em wide at any size.
@@ -182,6 +186,7 @@ fn build(options: &[String], cursor: usize, x: f32, y: f32, font_px: f32) -> Cho
         rect,
         lines,
         cursor: cursor_rect,
+        font_px,
     }
 }
 
@@ -284,6 +289,8 @@ fn title_image_layout(cursor: usize) -> ChoiceLayout {
         rect: [X, Y, W, H + 2.0 * GAP],
         lines,
         cursor: cursor_rect,
+        // This path is only a mouse hit test; nothing is painted from it.
+        font_px: TEXT_PX,
     }
 }
 
@@ -356,9 +363,8 @@ fn draw(
             text: option_label(option).to_owned(),
             rect: layout.lines[index],
             alpha: 1.0,
-            // The panel is drawn at one size (the caller passes Sys8 in), so each row
-            // is a single run with the default style.
-            font_px: 0.0,
+            // The panel was measured at Sys8; paint the row at that same size.
+            font_px: layout.font_px,
             colour: [255, 255, 255],
             outline: false,
             weight: 700,
@@ -515,5 +521,16 @@ mod tests {
         assert_eq!(texts.len(), 2);
         assert_eq!(texts[0].text, "option 0");
         assert_eq!(texts[1].text, "option 1");
+    }
+
+    #[test]
+    fn rows_are_painted_at_the_size_the_panel_was_measured_at() {
+        let mut atlas = Atlas::new();
+        let mut assets = Assets::new("no-such-root");
+        // A live Sys8 other than the default must reach the text pass; passing 0.0 here
+        // made the host fall back to its own default while the panel was sized for Sys8.
+        let (_, texts) = overlay_at_sized(&mut atlas, &mut assets, &options(2), 0, 400, 200, 33.0)
+            .expect("an on-screen anchor yields a panel");
+        assert!(texts.iter().all(|text| text.font_px == 33.0));
     }
 }

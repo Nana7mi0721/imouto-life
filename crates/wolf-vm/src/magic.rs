@@ -34,6 +34,15 @@ pub const VAR_BASE: i32 = 2_000_000;
 pub const STR_BASE: i32 = 3_000_000;
 /// Base of the system-variable bank.
 pub const SYS_BASE: i32 = 9_000_000;
+/// Base of the cross-event common-self bank: `15_000_000 + 100*event + slot`.
+///
+/// The official manual (06valueget) documents this as コモンEv Y のコモンセルフ
+/// 変数 X; slots 5..=9 are the event's string slots. The balloon-message library
+/// uses it to keep per-message state in its neighbouring events (CE268 writes the
+/// speaker name into CE269's CSelf5, CE270 reads it back from there).
+pub const COMMON_SELF_ADDR_BASE: i32 = 15_000_000;
+/// End of the cross-event common-self bank (999 events x 100 slots).
+pub const COMMON_SELF_ADDR_END: i32 = COMMON_SELF_ADDR_BASE + 100_000;
 /// Base of the `250`-style database-value magic bank.
 ///
 /// The interpreter also uses a magic number to address one database cell
@@ -78,6 +87,9 @@ pub enum MagicKind {
     StrVar,
     /// A system variable.
     SysVar,
+    /// A durable self variable of another common event, addressed as
+    /// `15_000_000 + 100*event + slot`.
+    CommonSelf,
     /// One database cell addressed directly as a magic number.
     ///
     /// The current title only uses this for CDataBase type 0 (可変DB[0]); the
@@ -160,6 +172,18 @@ impl Magic {
         (self.index % DB_VALUE_STRIDE as u32) as i32
     }
 
+    /// Event id of a [`MagicKind::CommonSelf`] operand.
+    #[must_use]
+    pub const fn common_event(self) -> u32 {
+        self.index / 100
+    }
+
+    /// Self-variable slot of a [`MagicKind::CommonSelf`] operand.
+    #[must_use]
+    pub const fn common_slot(self) -> usize {
+        (self.index % 100) as usize
+    }
+
     /// The unresolved flag nibble (docs/OPCODE_SPEC.md §2.3).
     #[must_use]
     pub const fn flags(self) -> u8 {
@@ -189,6 +213,9 @@ fn classify(body: i32) -> (MagicKind, u32) {
         VAR_BASE..STR_BASE => (MagicKind::Var, (body - VAR_BASE) as u32),
         STR_BASE..4_000_000 => (MagicKind::StrVar, (body - STR_BASE) as u32),
         SYS_BASE..=9_999_999 => (MagicKind::SysVar, (body - SYS_BASE) as u32),
+        COMMON_SELF_ADDR_BASE..COMMON_SELF_ADDR_END => {
+            (MagicKind::CommonSelf, (body - COMMON_SELF_ADDR_BASE) as u32)
+        }
         _ => (MagicKind::Opaque, 0),
     }
 }

@@ -55,9 +55,22 @@ fn loaded_game() -> Option<Game> {
     game.auto_choice = true;
     game.auto_choice_delay = 2;
     game.boot().expect("the title map has its autorun event");
+    // CE131 is a 123-poll grid: a single tap can fall between polls, so hold the
+    // confirm key while the grid is alive (opcode 125 auto keys are one-frame now,
+    // report BUG-14).
+    let mut load_confirmed = false;
     for _ in 0..1600 {
+        let grid = game.vm.instances().iter().any(|inst| inst.event == 131);
+        if grid {
+            game.key_bits = wolf_game::key::OK;
+            load_confirmed = true;
+        } else if load_confirmed {
+            game.key_bits = 0;
+            load_confirmed = false;
+        }
         game.frame();
     }
+    game.key_bits = 0;
     Some(game)
 }
 
@@ -240,14 +253,18 @@ fn sleep_event_251_runs_the_morning_and_advances_the_clock() {
         first.contains("早上好，哥哥！"),
         "the first message is the morning greeting: {first:?}"
     );
-    // 实测基线：9 条消息、74 张图片、6 个音效，全程无 warning。
+    // 实测基线：9 条消息、46 张图片、6 个音效，全程无 warning。
+    // 旧基线的 74 张图片来自 BUG-12/19：CE264 的 600101..600104 被当成
+    // 绝对编号 CE101..CE104，于是每次设定消息窗口都误跑了菜单文字/顶部状态/
+    // 菜单内部处理，凭空多画 28 张图。改成 caller + (raw - 600100) 后，
+    // CE264 正确调用 CE265/266/268/267（窗口/位置/姓名栏/脸图设定）。
     assert_eq!(
         game.stats.messages, 9,
         "the sleep event shows the measured nine messages"
     );
     assert_eq!(
-        game.stats.pictures, 74,
-        "and applies the measured 74 picture commands"
+        game.stats.pictures, 46,
+        "and applies the measured 46 picture commands"
     );
     assert_eq!(game.stats.sounds, 6, "and plays the measured six sounds");
     assert_eq!(game.stats.warnings, 0, "the sleep event is warning-free");

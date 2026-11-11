@@ -663,15 +663,29 @@ impl SavePart3 {
     /// The new body is stored NUL-terminated, the way the game writes it. False
     /// when the slot does not exist.
     pub fn set_self_string(&mut self, event: u32, slot: usize, text: &str) -> bool {
+        let mut body = text.as_bytes().to_vec();
+        body.push(0);
+        self.set_self_string_bytes(event, slot, &body)
+    }
+
+    /// Overwrite self string slot with an already encoded body.
+    ///
+    /// The game stores these bodies in the script encoding (GBK in the Chinese
+    /// release), not UTF-8, so a caller that has the original bytes must be able to
+    /// write them back without a lossy text round trip. A body without a trailing NUL
+    /// gets one, matching `MemData` written by the retail engine.
+    pub fn set_self_string_bytes(&mut self, event: u32, slot: usize, body: &[u8]) -> bool {
         let Some(span) = self.slot_span(event as usize) else {
             return false;
         };
         if slot >= span.len() {
             return false;
         }
-        let mut body = text.as_bytes().to_vec();
-        body.push(0);
-        self.slot_strings[span.start + slot] = body;
+        let mut stored = body.to_vec();
+        if !stored.ends_with(&[0]) {
+            stored.push(0);
+        }
+        self.slot_strings[span.start + slot] = stored;
         true
     }
 }

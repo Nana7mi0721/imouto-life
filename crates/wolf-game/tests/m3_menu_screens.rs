@@ -228,6 +228,59 @@ fn ce131_save_slot_grid_draws_and_cancels() {
 }
 
 #[test]
+fn ce131_slot_hit_boxes_are_the_visible_panels_not_the_skin_texture() {
+    let Some(mut game) = open_loaded(1) else {
+        return;
+    };
+    let before = save_dir_fingerprint();
+
+    game.screen.clear();
+    game.messages.clear();
+    assert!(game.start_event(131), "event 131 did not start");
+    for _ in 0..30 {
+        game.frame();
+    }
+
+    let rect = {
+        let screen = &game.screen;
+        let assets = &mut game.assets;
+        screen
+            .picture_rect(12090, |file| assets.texture_size(file))
+            .expect("the third slot panel has a rectangle")
+    };
+    // The slot window is a 928x115.2 panel after the tenths UI scale. Its skin is
+    // only 18x18; using the texture size made the hit box 1.8x1.8 and a click in the
+    // middle of the visible row fell through to slot 1.
+    assert!(
+        rect[2] > 900.0 && rect[3] > 100.0,
+        "slot 3 hit box must cover the visible panel, got {rect:?}"
+    );
+
+    // Move (not click) onto the middle of the visible row. CE131 writes the slot
+    // index into self610 before its VM step, so this checks the same hit test the
+    // save-grid pointer path uses without creating a save file.
+    game.mouse = [
+        (rect[0] + rect[2] * 0.5) as i32,
+        (rect[1] + rect[3] * 0.5) as i32,
+    ];
+    game.mouse_buttons = 0;
+    game.frame();
+
+    let cursor = game
+        .vm
+        .instances()
+        .iter()
+        .find(|inst| inst.event == 131)
+        .map(|inst| inst.self_vars.get(610));
+    assert_eq!(cursor, Some(2), "pointer over slot 3 must select index 2");
+    assert_eq!(
+        save_dir_fingerprint(),
+        before,
+        "moving over the grid must not write a save file"
+    );
+}
+
+#[test]
 fn ce132_system_settings_draws_navigates_and_cancels() {
     let Some(mut game) = open_loaded(1) else {
         return;

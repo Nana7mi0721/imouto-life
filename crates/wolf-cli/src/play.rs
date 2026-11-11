@@ -198,6 +198,13 @@ pub fn run(
             game.start_title().map_err(|err| err.to_string()),
             "common event 42".to_owned(),
         ),
+        crate::Entry::MenuPrimed => {
+            let primed = game.prime_engine();
+            (
+                game.start_title().map_err(|err| err.to_string()),
+                format!("common event 42 after {primed} initialisation frame(s)"),
+            )
+        }
         crate::Entry::Script { map, event } => (
             game.start_map_event_by_name(map, event)
                 .map_err(|err| err.to_string()),
@@ -254,7 +261,7 @@ pub fn run(
         mouse_buttons: 0,
         window: None,
         renderer: None,
-        uploaded_images: usize::MAX,
+        uploaded_revision: 0,
         frame_limit: frames,
         next_frame: Instant::now(),
         fps_frames: 0,
@@ -319,8 +326,9 @@ struct App {
     mouse_buttons: u32,
     window: Option<Arc<Window>>,
     renderer: Option<Renderer>,
-    /// Atlas image count at the last upload; a change means new artwork was packed.
-    uploaded_images: usize,
+    /// Atlas content revision at the last upload; a change means new artwork was
+    /// packed or the page was reset and repacked.
+    uploaded_revision: u64,
     /// Quit after this many frames (None = run until the window closes).
     frame_limit: Option<u64>,
     next_frame: Instant,
@@ -532,6 +540,9 @@ impl App {
     /// The panel is appended last so it composites over every script layer, which is
     /// what the engine does: a choice prompt is an engine overlay, not a picture slot.
     fn rebuild(&mut self) {
+        // A page that filled on a previous frame is dropped before the visible set is
+        // packed again (see Atlas::begin_frame).
+        self.atlas.begin_frame();
         // The registered maps paint their tiles from the WOLF editor's stock sample chips
         // (green ground / beige patch), and every frame is in practice repainted by a
         // full-screen CG or `cg/blackscreen.jpg`. Those chips are placeholder art the
@@ -709,7 +720,7 @@ impl App {
     }
 
     fn upload_if_needed(&mut self, renderer: &mut Renderer) {
-        if self.atlas.len() == self.uploaded_images {
+        if self.atlas.revision() == self.uploaded_revision {
             return;
         }
         let [width, height] = self.atlas.size();
@@ -719,7 +730,7 @@ impl App {
             .set_atlas(self.atlas.pixels(), width, height)
             .is_ok()
         {
-            self.uploaded_images = self.atlas.len();
+            self.uploaded_revision = self.atlas.revision();
         }
     }
 
@@ -1007,6 +1018,13 @@ impl ApplicationHandler for App {
                 self.next_frame = now + FRAME_TIME;
             }
             self.step();
+            // Opcode 175 (the title's おわる option) asks the process to exit. The
+            // window owns the event loop, so poll the flag here rather than calling
+            // exit() from inside the VM.
+            if self.game.quit_requested {
+                event_loop.exit();
+                return;
+            }
             if self
                 .frame_limit
                 .is_some_and(|limit| self.game.stats.frames >= limit)

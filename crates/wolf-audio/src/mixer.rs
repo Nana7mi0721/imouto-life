@@ -174,6 +174,8 @@ pub struct Mixer {
     out_rate: u32,
     out_channels: u16,
     bgm: Option<Voice>,
+    /// Background ambience (`140` BGS): a second looping bus under the BGM.
+    bgs: Option<Voice>,
     ses: Vec<Voice>,
     bgm_volume: f32,
     se_volume: f32,
@@ -186,6 +188,7 @@ impl Mixer {
             out_rate,
             out_channels: out_channels.max(1),
             bgm: None,
+            bgs: None,
             ses: Vec::new(),
             bgm_volume: 1.0,
             se_volume: 1.0,
@@ -261,6 +264,44 @@ impl Mixer {
         }
     }
 
+    /// Start (or replace) the single BGS voice with an optional linear fade-in.
+    ///
+    /// BGS is WOLF's ambience bus (rain, wind, cicadas). It plays alongside the BGM
+    /// rather than replacing it, so it needs its own voice.
+    pub fn play_bgs_with_fade(
+        &mut self,
+        audio: DecodedAudio,
+        looping: bool,
+        volume: f32,
+        fade_frames: u32,
+    ) {
+        let mut voice = Voice::new(audio, looping, volume);
+        if fade_frames > 0 {
+            let total = game_frames_to_output(fade_frames, self.out_rate);
+            voice.fade_in = Some(FadeIn {
+                frames_left: total,
+                frames_total: total,
+            });
+        }
+        self.bgs = Some(voice);
+    }
+
+    /// Stop the BGS. `fade_frames` is a length in game frames (60 fps); 0 stops immediately.
+    pub fn stop_bgs(&mut self, fade_frames: u32) {
+        if fade_frames == 0 {
+            self.bgs = None;
+            return;
+        }
+        if let Some(voice) = self.bgs.as_mut() {
+            let total =
+                ((fade_frames as f64 * self.out_rate as f64) / GAME_FPS as f64).round() as u32;
+            voice.fade = Some(FadeOut {
+                frames_left: total.max(1),
+                frames_total: total.max(1),
+            });
+        }
+    }
+
     /// Immediately stop every SE voice.
     ///
     /// Retail opcode 140 SE stops decode to `State::FreeAll` with no file name or voice
@@ -289,6 +330,10 @@ impl Mixer {
         self.bgm.is_some()
     }
 
+    pub fn bgs_playing(&self) -> bool {
+        self.bgs.is_some()
+    }
+
     pub fn se_count(&self) -> usize {
         self.ses.len()
     }
@@ -306,6 +351,32 @@ impl Mixer {
             let base = f * ch;
 
             if let Some(voice) = self.bgm.as_mut() {
+                if !voice.done {
+                    let fade_gain = match voice.fade.as_mut() {
+                        Some(fade) => fade.next_gain(),
+                        None => 1.0,
+                    };
+                    let mut fade_in_gain = 1.0f32;
+                    if let Some(fade_in) = voice.fade_in.as_mut() {
+                        fade_in_gain = fade_in.next_gain();
+                    }
+                    if voice.fade_in.as_ref().is_some_and(|fade| fade.is_done()) {
+                        voice.fade_in = None;
+                    }
+                    let gain = voice.volume * bgm_volume * fade_gain * fade_in_gain;
+                    for c in 0..ch {
+                        out[base + c] += voice.sample(c) * gain;
+                    }
+                    if !voice.advance(out_rate) {
+                        voice.done = true;
+                    }
+                    if voice.fade.as_ref().is_some_and(|fade| fade.is_done()) {
+                        voice.done = true;
+                    }
+                }
+            }
+
+            if let Some(voice) = self.bgs.as_mut() {
                 if !voice.done {
                     let fade_gain = match voice.fade.as_mut() {
                         Some(fade) => fade.next_gain(),
@@ -359,6 +430,9 @@ impl Mixer {
 
         if self.bgm.as_ref().is_some_and(|v| v.done) {
             self.bgm = None;
+        }
+        if self.bgs.as_ref().is_some_and(|v| v.done) {
+            self.bgs = None;
         }
         self.ses.retain(|v| !v.done);
         out

@@ -343,30 +343,43 @@ fn hud_stable_snapshot_layers_and_hidden_state() {
         assert_eq!((p.x, p.y), (110, 10));
         assert_eq!(p.window, Some((1, 1)));
     }
-    assert_eq!(slot_text(&game, 220), "哥哥（学生）");
+    // CE242 paints `\cdb[0:12:0]\cdb[0:12:1]哥哥（学生）`: the two cells hold the
+    // loaded save's name prefix/status. The VM now expands database escapes while
+    // decoding the picture (the renderer used to do it), so the raw text carries
+    // the values instead of the escape spellings.
+    let prefix: String = (0..=1)
+        .filter_map(|column| game.databases.text(Container::CData, 0, 12, column))
+        .collect();
+    assert_eq!(slot_text(&game, 220), format!("{prefix}哥哥（学生）"));
     {
         let p = game.screen.get(220).unwrap();
         assert_eq!((p.x, p.y), (180, 12));
         assert_eq!(p.window, Some((1, 1)));
     }
 
-    // 行动力 / 精力：图片文本引用对应 cdb 单元；DB 数值必须与 SaveData01 一致
+    // 行动力 / 精力：DB 数值必须与 SaveData01 一致
     // （精力上限 3，不是旧引擎把 DB value magic 误当原始数值时写出的 9）。
-    let raw230 = game.screen.get(230).unwrap().text.clone();
-    assert!(
-        slot_visible(&game, 230).starts_with("行动力"),
-        "槽230 应以 行动力 开头"
+    // The VM expands the `\cdb` escapes while decoding the picture, so the raw
+    // text already carries the numbers; assert the rendered readout instead.
+    assert_eq!(
+        slot_visible(&game, 230),
+        format!(
+            "行动力{}/{}",
+            game.databases.num(Container::CData, 0, 12, 8).unwrap(),
+            game.databases.num(Container::CData, 0, 12, 9).unwrap()
+        ),
+        "槽230 应显示行动力/行动力上限"
     );
-    assert!(raw230.contains("cdb[0:12:8]"), "槽230 应引用 cdb[0:12:8]");
-    assert!(raw230.contains("cdb[0:12:9]"), "槽230 应引用 cdb[0:12:9]");
     assert_eq!(game.screen.get(230).unwrap().x, 640);
-    let raw240 = game.screen.get(240).unwrap().text.clone();
-    assert!(
-        slot_visible(&game, 240).starts_with("精力"),
-        "槽240 应以 精力 开头"
+    assert_eq!(
+        slot_visible(&game, 240),
+        format!(
+            "精力 {}/{}",
+            game.databases.num(Container::CData, 0, 12, 6).unwrap(),
+            game.databases.num(Container::CData, 0, 12, 7).unwrap()
+        ),
+        "槽240 应显示精力/精力上限"
     );
-    assert!(raw240.contains("cdb[0:12:6]"), "槽240 应引用 cdb[0:12:6]");
-    assert!(raw240.contains("cdb[0:12:7]"), "槽240 应引用 cdb[0:12:7]");
     assert_eq!(game.screen.get(240).unwrap().x, 760);
     assert_eq!(game.databases.num(Container::CData, 0, 12, 8), Some(60));
     assert_eq!(game.databases.num(Container::CData, 0, 12, 9), Some(65));
@@ -517,6 +530,15 @@ fn hud_event_244_delta_slot_is_transient() {
     let base_nums = numbers(&game);
     assert!(game.screen.get(110).is_none(), "初始不应有槽 110");
 
+    // CE244 reads its delta from self slot 0, which the durable bank keeps from
+    // the last real caller. Seed a zero change so this isolated invocation shows
+    // the "+0" transient the test is about instead of clamping the action bar.
+    game.vm
+        .vars
+        .common_self
+        .entry(244)
+        .or_insert_with(Default::default)
+        .set(0, 0);
     assert!(game.start_event(244), "start_event(244) 应成功");
     for _ in 0..20 {
         game.frame();

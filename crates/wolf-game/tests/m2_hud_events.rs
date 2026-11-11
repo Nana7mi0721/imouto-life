@@ -106,8 +106,15 @@ fn open_loaded_bedroom() -> Option<Game> {
         return None;
     }
     for _ in 0..1600 {
+        let grid = game.vm.instances().iter().any(|inst| inst.event == 131);
+        if grid {
+            game.key_bits = wolf_game::key::OK;
+        } else {
+            game.key_bits = 0;
+        }
         game.frame();
     }
+    game.key_bits = 0;
     // If the save did not restore, the bedroom HUD's action-point readout is absent; skip.
     let has_hud = game
         .screen
@@ -233,6 +240,17 @@ fn ce244_action_point_change_paints_the_delta() {
     let Some(mut game) = open_loaded_bedroom() else {
         return;
     };
+    // CE244 takes the delta in its self slot 0. The durable bank now keeps the
+    // last real caller's argument (15 on this save), and 55 + 15 would clamp to
+    // the 60 maximum instead of painting a delta. Seed a -5 change so the
+    // non-clamping branch runs deterministically; the live caller still goes
+    // through the same seeded bank.
+    game.vm
+        .vars
+        .common_self
+        .entry(244)
+        .or_insert_with(Default::default)
+        .set(0, -5);
     let run = run_event(&mut game, 244, 8);
 
     let slots: Vec<i32> = run.pictures.keys().copied().collect();
@@ -246,6 +264,7 @@ fn ce244_action_point_change_paints_the_delta() {
         is_signed_int(&delta),
         "the action-point change is a signed integer, got {delta:?}"
     );
+    assert_eq!(delta, "-5", "the painted delta is the seeded change");
     assert!(
         run.messages.is_empty(),
         "the action-point change shows no message"

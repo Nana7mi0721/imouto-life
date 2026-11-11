@@ -95,7 +95,10 @@ const BASELINES: [Baseline; 5] = [
         depends_on_save: false,
         expect_header: "  entry     : boot map (TitleMap.mps event 2)",
         frames: 240,
-        peak_coroutines: 6,
+        // The first frame starts the engine coroutines and the boot map chain together:
+        // 48/270/271/216/63/2 plus CE270's transient CE264/CE265 calls. They settle to
+        // the title, HUD and menu coroutines after the splash chain finishes.
+        peak_coroutines: 8,
         pictures_live: 4,
         textured_quads: 4,
         text_pictures: 0,
@@ -141,6 +144,11 @@ const BASELINES: [Baseline; 5] = [
         // the labels to the 16 px raster face. Re-recorded again after the HUD anchor fix
         // (only anchor-3 pictures inside a tenths-scale UI block are centred now), which
         // changed the atlas from 20 to 19 images and the non-black count to 589251.
+        //
+        // Re-recorded 2026-11-11 after the review fixes: the picture anchor 2..6 and
+        // independent X/Y scaling changes moved the nine-slice panels a little, and the
+        // op122 save-label fix changed the slot text. The level term cell (CE94 pc395)
+        // is empty in this fan-translated data, so the label is just ` 1\n<name>`.
         name: "saveui",
         args: &["--map", "SampleMapA", "--event", "5", "--frames", "40"],
         load_save: false,
@@ -149,15 +157,15 @@ const BASELINES: [Baseline; 5] = [
         frames: 40,
         peak_coroutines: 8,
         pictures_live: 25,
-        textured_quads: 27_695,
+        textured_quads: 27_727,
         text_pictures: 13,
         choice_open: false,
         choice_options: 0,
-        atlas_images: 19,
+        atlas_images: 20,
         text_items: 13,
         text_glyphs: 54,
         text_lines: 13,
-        nonblack: 589_251,
+        nonblack: 576_227,
         messages: 0,
         choices: 0,
     },
@@ -170,7 +178,8 @@ const BASELINES: [Baseline; 5] = [
         depends_on_save: true,
         expect_header: "  entry     : save file",
         frames: 240,
-        peak_coroutines: 7,
+        // +1 for the restarting CE270 display pass (see the title scene).
+        peak_coroutines: 8,
         pictures_live: 50,
         textured_quads: 23,
         text_pictures: 23,
@@ -192,7 +201,8 @@ const BASELINES: [Baseline; 5] = [
         depends_on_save: true,
         expect_header: "  entry     : save file",
         frames: 60,
-        peak_coroutines: 6,
+        // +1 for the restarting CE270 display pass (see the title scene).
+        peak_coroutines: 7,
         pictures_live: 50,
         textured_quads: 5,
         text_pictures: 14,

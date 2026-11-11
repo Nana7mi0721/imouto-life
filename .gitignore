@@ -16,3 +16,7 @@
 /prt sc/
 /docs/相关链接.txt
 /docs/攻略文档/
+/godot/.godot/
+/godot/bin/*.dll
+/godot/bin/*.pdb
+/godot/.import/

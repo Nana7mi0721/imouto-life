@@ -18,8 +18,9 @@
 //! Event 43 (`┗オリジナルタイトル画面Ｂ`) has zero 210/211/300 call sites, but it is
 //! NOT dead code: it is the original title screen's menu renderer. On its own page life
 //! it draws the three hand-drawn image buttons `Picture/menu1_b`/`menu2_b`/`menu3_b`
-//! at x=10, y=400/450/500, and overlays the bright variant (`menu*_a`) of whichever row
-//! system variable 20 selects. Its run condition (global v0 == 0) holds only at the title,
+//! at x=10, y=400/450/500, and overlays the dark selected variant (`menu*_a`) of
+//! whichever row system variable 20 selects. The `_b` files are the lighter,
+//! unselected buttons; `_a` is the dark highlight. Its run condition (global v0 == 0) holds only at the title,
 //! so it must be scheduled exactly like every other `run_condition == 2` event; the port
 //! then mirrors the choice cursor into Sys20 each frame so the highlight tracks the
 //! player's selection (see [`crate::game::Game::frame`]). The previous port excluded it
@@ -183,6 +184,29 @@ impl AutoEvents {
     #[must_use]
     pub fn running_ids(&self) -> Vec<u32> {
         self.running.keys().copied().collect()
+    }
+
+    /// Restarts one owned event from its first instruction.
+    ///
+    /// The title menu renderer (event 43) draws one frame and ends, so moving the
+    /// highlight has to replay it: it reads Sys20 only at start-up. The scheduler's
+    /// normal condition edge stays latched, which keeps [`Self::sync`] from starting
+    /// a second copy on the next frame.
+    pub fn restart(&mut self, event: u32, vm: &mut Vm) -> bool {
+        if !self.enabled {
+            return false;
+        }
+        if let Some(instance) = self.running.remove(&event) {
+            vm.stop_instance(instance);
+        }
+        match vm.start_event(event) {
+            Some(instance) => {
+                self.running.insert(event, instance);
+                self.latched.insert(event, true);
+                true
+            }
+            None => false,
+        }
     }
 
     /// Evaluates every condition and creates or destroys coroutines as needed.

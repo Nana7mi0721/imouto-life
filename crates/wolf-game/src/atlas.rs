@@ -526,16 +526,6 @@ impl Atlas {
                 if sysgraphic::parse(&picture.file).is_some() {
                     return None;
                 }
-                // `CursorBase.png` is the 12x12 anti-aliased choice cursor
-                // (docs/re/RUNTIME_CONSTANTS.md §4.3), not a nine-slice window skin.
-                // CE94 issues four type-4 window pictures whose file comes from self[9]
-                // (the cursor DB row), one for each save slot; treating them as panels
-                // painted a near-black 4 px frame around and between all four slots,
-                // which the retail save screen does not show. A real cursor belongs to
-                // the input/choice layer, so it must not enter the picture panel pass.
-                if picture.file.ends_with("CursorBase.png") {
-                    return None;
-                }
                 let (w, h) = picture.window?;
                 if w <= window::MIN_BOX || h <= window::MIN_BOX {
                     return None;

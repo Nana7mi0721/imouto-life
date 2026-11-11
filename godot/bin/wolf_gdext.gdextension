@@ -1,0 +1,10 @@
+[configuration]
+
+entry_symbol = "gdext_rust_init"
+compatibility_minimum = "4.7"
+reloadable = true
+
+[libraries]
+
+windows.debug.x86_64 = "res://bin/wolf_gdext.dll"
+windows.release.x86_64 = "res://bin/wolf_gdext.dll"

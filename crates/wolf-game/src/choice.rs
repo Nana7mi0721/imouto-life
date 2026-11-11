@@ -255,7 +255,8 @@ pub fn layout_at_sized(
 ///
 /// The original title menu is not a text window at all: three hand-drawn image buttons
 /// (`Picture/menu1_a.png` .. `menu3_a.png`) are painted at fixed screen rows by the
-/// conditional title event 43, and the bright/dim variant follows system variable 20.
+/// conditional title event 43; `_a` is the dark selected button, `_b` the lighter
+/// unselected one, and system variable 20 picks which `_a` overlay is drawn.
 /// Recognising these exact keys lets the port skip the inferred text panel and let the
 /// script's own images be the menu (see [`title_image_layout`] for the hit rows).
 #[must_use]

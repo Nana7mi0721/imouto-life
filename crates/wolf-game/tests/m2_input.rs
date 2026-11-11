@@ -198,3 +198,53 @@ fn the_keyboard_still_drives_the_same_poll() {
         "the mouse path must not replace the keyboard path"
     );
 }
+
+/// The message window is mouse-first too: the retail 101 wait closes on a left click
+/// as well as on the confirm key. Before this test only `key_bits & OK` was consulted,
+/// so clicking the dialogue did nothing (the player had to reach for Enter/Z).
+#[test]
+fn a_left_click_advances_the_message_window() {
+    let Some(mut game) = open_game() else { return };
+    game.auto_advance = false;
+    game.auto_choice = false;
+    if let Err(err) = game.start_map_event_by_name("SampleMapA", 0) {
+        eprintln!("skipping: cannot start the opening: {err}");
+        return;
+    }
+
+    // Walk the opening until the first 101 parks on its message wait.
+    let mut shown = 0u64;
+    for _ in 0..4000 {
+        game.frame();
+        if !game.messages.is_empty() {
+            shown = game.stats.messages;
+            break;
+        }
+    }
+    assert!(shown > 0, "the opening never showed a message");
+    let text = game.messages[0].text.clone();
+
+    // A fresh left edge dismisses the window. The script may paint the next line or a
+    // choice prompt in the same frame, so accept any of those as "advanced".
+    game.mouse_buttons = 1;
+    game.frame();
+    let advanced =
+        game.messages.is_empty() || game.messages[0].text != text || game.stats.messages > shown;
+    assert!(
+        advanced,
+        "a left click must dismiss/advance the message (still {:?})",
+        game.messages.first().map(|m| m.text.as_str())
+    );
+
+    // Holding the button must not run through the rest of the conversation.
+    let after_click = game.stats.messages;
+    for _ in 0..5 {
+        game.frame();
+    }
+    assert_eq!(
+        game.stats.messages, after_click,
+        "a held left button is one click, not a repeat"
+    );
+    game.mouse_buttons = 0;
+    game.frame();
+}

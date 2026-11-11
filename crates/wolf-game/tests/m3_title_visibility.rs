@@ -19,14 +19,13 @@
 //!   panel for the same three options is on screen, i.e. treating an out-of-bounds (or the
 //!   manual's -1) anchor as "default position" would make the title menu visible again.
 //!
-//! * Cancelling the load screen does not put an operable title menu back. Boot -> menu2
+//! * Cancelling the load screen must put an operable title menu back. Boot -> menu2
 //!   (`つづきから`) runs CE42 -> CE14 -> CE131 (the load screen, picture slots 12000..12113).
 //!   Pressing CANCEL unwinds CE131 -> CE14 (op172) -> CE42 -> the rest of the TitleMap
-//!   event 2 page ([60] Sys4=150, [62]), and the whole call stack ends, leaving only the
-//!   title background picture (-2) up with no choice window and no running event. There is
-//!   no loop back to CE42's op102, so the player is stranded on a menu-less title. The test
-//!   pins that measured end state (Sys4 == 150 is the tell that control returned past
-//!   op102 into the [60] instruction).
+//!   event 2 page ([60] Sys4=150, [62]), and the whole call stack ends. CE42's op102 is a
+//!   one-shot, so the Game layer detects the boot map left with no title stack and starts
+//!   CE42 again. The test pins the re-opened menu (same three options, Sys3/Sys4 back at
+//!   -1000, CE43's button rows repainted).
 //!
 //! Data-missing runs print a skip and return, keeping the default `cargo test` exit 0.
 
@@ -234,7 +233,7 @@ fn a_valid_anchor_would_show_the_title_menu() {
 }
 
 #[test]
-fn cancelling_the_load_screen_unwinds_to_a_menu_less_title() {
+fn cancelling_the_load_screen_reopens_the_title_menu() {
     let Some((mut game, options, _saw_271)) = boot_to_title_choices() else {
         return;
     };
@@ -286,35 +285,52 @@ fn cancelling_the_load_screen_unwinds_to_a_menu_less_title() {
         game.frame();
     }
     game.key_bits = 0;
-    for _ in 0..90 {
-        game.frame();
-    }
 
-    // The whole stack unwinds: the load screen, CE14 and the title event all end, and the
-    // TitleMap event 2 autorun page finishes. That it ran past CE42's op102 is visible in
-    // Sys4 == 150, set by the page's [60] instruction *after* the (blocking) CE42 call.
+    // The stack unwinds (CE131 -> CE14 -> CE42 -> the TitleMap event 2 tail), and the
+    // Game layer notices that the boot map is left with no flow running. It restarts
+    // CE42, so the player gets the title menu back instead of a menu-less background.
+    let mut reopened = false;
+    for _ in 0..240 {
+        game.frame();
+        if game.choices.is_some() && running(&game, 42) {
+            reopened = true;
+            break;
+        }
+    }
+    assert!(
+        reopened,
+        "cancelling the load screen must re-open the title menu"
+    );
     assert!(!running(&game, 131), "the load screen ended on cancel");
     assert!(!running(&game, 14), "CE14 unwound on cancel");
-    assert!(!running(&game, 42), "the title event ended on cancel");
-    assert!(!running(&game, 2), "the TitleMap event 2 page finished");
     assert_eq!(
-        game.sys(4),
-        150,
-        "control returned past op102 to the page's [60] instruction"
+        game.choices.as_ref().map(|c| c.options.clone()),
+        Some(
+            TITLE_OPTIONS
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>()
+        ),
+        "the restarted title event offers the same three options"
     );
-    assert_eq!(game.sys(3), -1000, "Sys3 is left at the script's -1000");
-
-    // The player is stranded on a menu-less title: only the title art remains, no choice
-    // window, no text, nothing running to re-open the menu.
-    assert!(
-        game.choices.is_none(),
-        "no choice window is offered after cancelling the load screen"
-    );
-    assert!(game.text_quads().is_empty(), "no menu text is drawn");
-    assert!(game.messages.is_empty(), "no message window is drawn");
+    assert_eq!(game.sys(3), -1000, "the restarted CE42 sets Sys3 again");
+    assert_eq!(game.sys(4), -1000, "the restarted CE42 sets Sys4 again");
     assert!(
         game.screen.iter().any(|p| p.file.contains("TitleGraphic2")),
         "the title background picture is still displayed"
+    );
+    assert!(
+        game.screen
+            .iter()
+            .any(|p| p.file.contains("menu1_b") || p.file.contains("menu1_a")),
+        "the title button renderer (CE43) painted its rows again"
+    );
+    assert!(
+        game.diagnostics
+            .keys()
+            .any(|line| line.contains("menu restarted after load-screen cancel")),
+        "the restart is recorded as a diagnostic, got {:?}",
+        game.diagnostics.keys().collect::<Vec<_>>()
     );
     assert_eq!(
         game.stats.warnings, warnings_before,

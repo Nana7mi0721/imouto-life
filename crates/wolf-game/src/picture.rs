@@ -920,9 +920,12 @@ impl Picture {
     ///
     /// Three layers, in this order: the base tone from the 150 colour slots, the type 1
     /// colour correction added to it and clamped to 0..200, then every live colour effect
-    /// multiplying the result (docs/OPCODE_290.md section 5.2 pins that order). DxLib expresses the result as SetDrawBright, which
-    /// scales the colour channels of whatever is drawn and never the alpha, so alpha()
-    /// stays independent of this and the banner still blends at its own opacity.
+    /// adjusting the result. Flash effects multiply the result (docs/OPCODE_290.md section
+    /// 5.2 pins that order); a type 5 blink instead adds its target to the base and walks
+    /// back to the base, because CE94's save cursor is black at rest and must pulse up. DxLib
+    /// expresses the result as SetDrawBright, which scales the colour channels of whatever
+    /// is drawn and never the alpha, so alpha() stays independent of this and the banner
+    /// still blends at its own opacity.
     #[must_use]
     pub fn tone_byte(&self) -> [u8; 3] {
         let mut out = [0u8; 3];
@@ -936,6 +939,23 @@ impl Picture {
             for effect in &self.effects {
                 let numerator = effect.percent_times_duration(channel);
                 let denominator = i64::from(SCALE_ONE) * i64::from(effect.duration);
+                if effect.kind == EFFECT_BLINK {
+                    // A blink ramps the base tone itself, it does not scale it. CE94's
+                    // save-slot cursor proves it: the four cursor windows are drawn at
+                    // tone 0 (black) and only the selected one gets `290 type 5` with
+                    // target +100, i.e. it must pulse 100% -> 0% over its 15 frames.
+                    // Multiplying the black base by any percentage can only produce
+                    // black, which left the grid with no visible cursor; adding the
+                    // target to the base and walking back to the base gives the pulse.
+                    // The title banner (base 100, target -50) is unchanged: it still
+                    // ramps 50% -> 100%.
+                    let span = i64::from(effect.duration);
+                    let rest = i64::from(effect.age % effect.duration);
+                    let percent =
+                        i64::from(base) * span + i64::from(effect.target[channel]) * (span - rest);
+                    value = (255 * percent + 50 * span) / (100 * span);
+                    continue;
+                }
                 value = (value * numerator + denominator / 2) / denominator;
             }
             *slot = value.clamp(0, 255) as u8;
@@ -2637,6 +2657,32 @@ mod tone_tests {
             .push(PictureEffect::new(EFFECT_FLASH, 25, [-50, 0, 0]));
         assert_eq!(picture.tone_byte(), [128, 128, 0]);
         assert_eq!(picture.alpha(), 1.0);
+    }
+
+    /// A type 5 blink ramps the base tone instead of scaling it.
+    ///
+    /// CE94 draws one cursor window per save slot at tone 0, then gives only the selected
+    /// slot a 15-frame blink with target +100. A multiplier of a black base stays black,
+    /// which is exactly the invisible save cursor this pins against: the frame must start
+    /// white (100% + 100%), pass through grey, and return to black at the end of the
+    /// cycle, so the player sees it pulse.
+    #[test]
+    fn blink_ramps_the_base_tone_instead_of_scaling_it() {
+        let mut picture = Picture::new(12051);
+        picture.tone = [0, 0, 0];
+        picture
+            .effects
+            .push(PictureEffect::new(EFFECT_BLINK, 15, [100, 100, 100]));
+        assert_eq!(picture.tone_byte(), [255, 255, 255], "start of the cycle");
+        picture.effects[0].age = 7;
+        let middle = picture.tone_byte()[0];
+        assert!(
+            (100..200).contains(&middle),
+            "the frame passes through grey mid-cycle, got {middle}"
+        );
+        picture.effects[0].age = 14;
+        let end = picture.tone_byte()[0];
+        assert!(end < 30, "the ramp returns to the black base, got {end}");
     }
 
     /// A finished one-shot drops out of the list, so the base tone takes over again.

@@ -350,6 +350,13 @@ pub struct Game {
     /// tile grid first and the picture layer over it; keeping the two separate here
     /// preserves that order and lets a map switch replace only the tile half.
     pub tilemap: Option<TileMap>,
+    /// The map currently installed, retained so a save can rebuild SavePart1.
+    ///
+    /// `install_map` used to drop the parsed map after building the tile layer and the
+    /// page runtime, which left `save_to` with no map snapshot to write. Keeping the
+    /// parsed data costs one map per switch and gives the save path the event list,
+    /// tile layers and tileset index it needs.
+    pub current_map: Option<Map>,
     /// The six decoded tilesets. Retained so a teleport can rebuild [`Self::tilemap`]
     /// without re-reading TileSetData.dat.
     tilesets: Option<TileSetData>,
@@ -411,6 +418,19 @@ pub struct Game {
     pub auto_choice_delay: u32,
     /// The automatic pages of the map the game booted into.
     pub runtime: MapRuntime,
+    /// True while the boot/title map is the installed map.
+    ///
+    /// Every other [`Self::install_map`] (teleport, save restore) clears it. The
+    /// load-screen cancel path uses it to tell "back to the title map" from
+    /// "cancelled an in-game load menu".
+    boot_map_active: bool,
+    /// True while CE131 owned the screen on the previous frame.
+    load_grid_open: bool,
+    /// A load screen closed on the boot map and the title stack has not drained yet.
+    ///
+    /// The close and the end of CE42/CE14/event 2 can happen on different frames, so
+    /// the transition has to be remembered until the stack is actually empty.
+    load_cancel_pending: bool,
     /// The last map event started by a point-and-click action-key press (diagnostics
     /// and tests; `None` until the player clicks a trigger-0 hotspot).
     pub last_action_event: Option<u32>,
@@ -423,8 +443,19 @@ pub struct Game {
     pub mouse: [i32; 2],
     /// Mouse buttons held this frame: bit 0 left, bit 1 right, bit 2 middle.
     pub mouse_buttons: u32,
+    /// Mouse-wheel notches since the last frame: positive is up, negative down.
+    ///
+    /// The front-end accumulates `InputEventMouseButton` wheel events between
+    /// physics ticks; [`Self::frame`] consumes them as one menu step per notch
+    /// (choice cursor, or a page key while the save/load grid owns the screen).
+    pub wheel: i32,
     /// Which option the player has highlighted in the current choice prompt.
     choice_cursor: usize,
+    /// Title-menu cursor mirrored into Sys20 on the previous frame.
+    ///
+    /// Event 43 is a one-shot renderer that reads Sys20 at start-up, so a cursor
+    /// change has to restart it; this field detects that change.
+    previous_title_cursor: Option<usize>,
     /// Keys held on the previous frame, so a choice sees presses and not holds.
     previous_keys: u32,
     /// Mouse buttons held on the previous frame, so a press can be told from a hold.
@@ -551,6 +582,7 @@ impl Game {
             text_cache: RefCell::new(TextQuadCache::default()),
             translator,
             tilemap: None,
+            current_map: None,
             tilesets,
             assets: Assets::with_overlays(&root, overlays.clone()),
             databases,
@@ -572,12 +604,17 @@ impl Game {
             key_hold: [0; 8],
             repeat_bits: 0,
             runtime: MapRuntime::new(),
+            boot_map_active: false,
+            load_grid_open: false,
+            load_cancel_pending: false,
             last_action_event: None,
             auto_events,
             playtime_frames: 0,
             mouse: [-1, -1],
             mouse_buttons: 0,
+            wheel: 0,
             choice_cursor: 0,
+            previous_title_cursor: None,
             previous_keys: 0,
             previous_mouse_buttons: 0,
             previous_mouse: [-1, -1],
@@ -942,6 +979,26 @@ impl Game {
         save.set_part2(&part2)
             .map_err(|err| format!("220 SaveLoad: cannot encode part2: {err}"))?;
 
+        // A retail save used as the template already carries the map snapshot the player
+        // saved on, and the byte-fidelity tests rely on it surviving untouched. A fresh
+        // session starts from System.sav, whose Part1 has no map at all; without this the
+        // written file is unloadable ("the save carries no map event objects").
+        if save.part1.objects.is_empty() {
+            if let Some(map) = self.current_map.as_ref() {
+                let tileset = self
+                    .tilesets
+                    .as_ref()
+                    .and_then(|sets| sets.get(map.tileset_index));
+                let template_tail = save.part1.tail_vars.clone();
+                let mut part1 = crate::savegame::part1_from_map(map, tileset, save.file_version);
+                if template_tail.len() == 11 {
+                    part1.tail_vars = template_tail;
+                }
+                save.set_part1(&part1)
+                    .map_err(|err| format!("220 SaveLoad: cannot encode part1: {err}"))?;
+            }
+        }
+
         let mut part3 = save.part3.clone();
         for index in 0..800 {
             let _ = part3.set_normal_var(index, self.vm.vars.get(index));
@@ -1082,6 +1139,9 @@ impl Game {
         let map = Map::parse(&bytes).map_err(GameError::Format)?;
         self.start_pages(&map, Some(BOOT_EVENT));
         if self.start_map_event(&map, BOOT_EVENT) {
+            // Only the real boot chain leaves the title map installed. Any teleport or
+            // save restore goes through install_map and clears this again.
+            self.boot_map_active = true;
             Ok(())
         } else {
             Err(GameError::MissingEvent(BOOT_EVENT))
@@ -1118,12 +1178,14 @@ impl Game {
     }
 
     fn install_map(&mut self, map: &Map, skip: Option<u32>) {
+        self.boot_map_active = false;
         self.tilemap = match &self.tilesets {
             Some(sets) => sets
                 .get(map.tileset_index)
                 .map(|tileset| TileMap::new(map, tileset, sets.version)),
             None => None,
         };
+        self.current_map = Some(map.clone());
         self.runtime = MapRuntime::collect_except(map, skip);
     }
 
@@ -1885,6 +1947,18 @@ impl Game {
         if !self.messages.is_empty() || self.choices.is_some() {
             return;
         }
+        // A save/load grid (CE131), the menu dispatcher (CE14) or the settings screen
+        // (CE132/CE95) owns the pointer. Without this gate a click on a grid row also
+        // reaches the map event under it: clicking save slot 3 opened the sister's
+        // dialogue from the room behind the grid, and the write never happened.
+        if self
+            .vm
+            .instances()
+            .iter()
+            .any(|instance| matches!(instance.event, 14 | 95 | 131 | 132))
+        {
+            return;
+        }
         let fresh_click = self.mouse_buttons & 1 != 0 && self.previous_mouse_buttons & 1 == 0;
         let fresh_ok = self.key_bits & !self.previous_keys & crate::key::OK != 0;
         if !fresh_click && !fresh_ok {
@@ -1967,9 +2041,60 @@ impl Game {
         }
     }
 
+    /// Turns this frame's mouse-wheel notches into a menu step.
+    ///
+    /// Returns the key bits injected for opcode-123 polls. A choice prompt is
+    /// driven directly (the same cursor the up/down keys move); the save/load grid
+    /// is a 123-poll screen where the wheel pages it with the left/right keys. Any
+    /// other menu gets up/down, so wheel scrolling works without a per-screen list.
+    fn apply_wheel(&mut self) -> u32 {
+        let notches = std::mem::take(&mut self.wheel);
+        if notches == 0 {
+            return 0;
+        }
+        let choice_count = self.choices.as_ref().map(|choices| choices.options.len());
+        if let Some(count) = choice_count {
+            if count > 0 {
+                for _ in 0..notches.unsigned_abs() as usize {
+                    if notches > 0 {
+                        self.choice_cursor = (self.choice_cursor + count - 1) % count;
+                    } else {
+                        self.choice_cursor = (self.choice_cursor + 1) % count;
+                    }
+                }
+                self.choice_cursor = self.choice_cursor.min(count - 1);
+            }
+            return 0;
+        }
+        let bit = if self.save_grid_active() {
+            if notches > 0 {
+                crate::key::LEFT
+            } else {
+                crate::key::RIGHT
+            }
+        } else if notches > 0 {
+            crate::key::UP
+        } else {
+            crate::key::DOWN
+        };
+        self.key_bits |= bit;
+        bit
+    }
+
+    /// True while the save/load grid (CE131) owns the screen.
+    fn save_grid_active(&self) -> bool {
+        self.vm
+            .instances()
+            .iter()
+            .any(|instance| instance.event == 131)
+    }
+
     /// Advances one frame at 1/60 s.
     pub fn frame(&mut self) -> FrameOutcome {
         self.sounds.clear();
+        // Wheel input must land before the key-repeat pass: the save grid polls
+        // opcode 123 with the wait bit, and that path only reports `repeat_bits`.
+        let wheel_bits = self.apply_wheel();
         self.update_key_repeat();
         // Start or stop the conditional background events before anything runs, so a
         // condition that became true last frame is running now (docs/ENGINE_EVENTS.md
@@ -1986,8 +2111,8 @@ impl Game {
         self.auto_events.sync(&mut self.vm);
         self.handle_choice_input();
         // Mirror the choice cursor into system variable 20 so the conditional title event
-        // 43 can light up the matching Picture/menu*_a.png button (it reads Sys20 == 0/1/2
-        // to pick the bright over the dim image). Only the three-key title prompt uses it.
+        // 43 can paint the matching Picture/menu*_a.png button (Sys20 == 0/1/2 selects the
+        // dark highlight over the lighter `_b` rows). Only the three-key prompt uses it.
         let title_cursor = self.choices.as_ref().and_then(|choices| {
             crate::choice::is_title_image_menu(&choices.options).then(|| {
                 self.choice_cursor
@@ -1995,7 +2120,17 @@ impl Game {
             })
         });
         if let Some(cursor) = title_cursor {
+            let changed = self.previous_title_cursor != Some(cursor);
             self.vm.vars.set_sys(20, cursor as i32);
+            // Event 43 draws the three button rows once and ends; it reads Sys20 only
+            // while it runs. Replaying it is what makes the dark selected button move
+            // with the keyboard, mouse hover and wheel.
+            if changed {
+                self.auto_events.restart(43, &mut self.vm);
+            }
+            self.previous_title_cursor = Some(cursor);
+        } else {
+            self.previous_title_cursor = None;
         }
         // A fresh press can also be an action-key activation of the map event under
         // the pointer. Run it before the VM step so the started page executes this
@@ -2033,12 +2168,17 @@ impl Game {
         });
         // A `220` load replaces the picture layer and the normal variables, so it runs
         // as soon as the VM step that requested it has released its borrow of `Game`.
+        let mut loaded_save = false;
         let requests = std::mem::take(&mut self.save_requests);
         for request in requests {
             match request {
                 crate::savegame::SaveRequest::Load(path) => {
                     match crate::savegame::load_into(self, &path) {
                         Ok(loaded) => {
+                            loaded_save = true;
+                            // A loaded game is gameplay, not the boot/title flow, even
+                            // when the load was requested from the title load screen.
+                            self.boot_map_active = false;
                             self.diagnostics.insert(
                                 format!(
                                     "220 SaveLoad: loaded {} picture(s), {} variable(s)",
@@ -2046,6 +2186,23 @@ impl Game {
                                 ),
                                 1,
                             );
+                            // The retail load is followed by the save-menu coroutine's
+                            // map change; the port's CE14/CE131 chain does not issue it
+                            // (the grid stays up until CANCEL). Install the saved map's
+                            // runtime here, otherwise the room/HUD pictures show but no
+                            // map event is alive: clicks, the save hotspot and the daily
+                            // loop all do nothing.
+                            match self.resume_loaded_map() {
+                                Ok(name) => {
+                                    self.diagnostics
+                                        .insert(format!("220 SaveLoad: resumed map {name}"), 1);
+                                }
+                                Err(err) => {
+                                    self.diagnostics
+                                        .entry(format!("220 SaveLoad: map resume skipped: {err}"))
+                                        .or_insert(0);
+                                }
+                            }
                         }
                         Err(err) => {
                             self.diagnostics
@@ -2094,6 +2251,39 @@ impl Game {
                 }
             }
         }
+        // The title menu is a one-shot op102 inside CE42. Cancelling CE131 unwinds
+        // CE14 -> CE42 -> the TitleMap event 2 page, leaving a menu-less title
+        // background with nothing running (docs/M3_TITLE_UX.md section 2.5). Re-enter
+        // CE42 once the whole title stack has drained, so CANCEL really means "back to
+        // the title" instead of a soft lock. A successful load clears
+        // `boot_map_active`, so this only fires on the cancel path.
+        let load_grid_now = self.save_grid_active();
+        if self.load_grid_open && !load_grid_now && self.boot_map_active && !loaded_save {
+            self.load_cancel_pending = true;
+        }
+        if self.load_cancel_pending {
+            if !self.boot_map_active || loaded_save {
+                // A teleport or a loaded game superseded the cancel.
+                self.load_cancel_pending = false;
+            } else if self.choices.is_none()
+                && !self
+                    .vm
+                    .instances()
+                    .iter()
+                    .any(|instance| matches!(instance.event, BOOT_EVENT | 14 | 42 | 131))
+            {
+                self.diagnostics.insert(
+                    "title: menu restarted after load-screen cancel".to_owned(),
+                    1,
+                );
+                if let Err(err) = self.start_title() {
+                    self.diagnostics
+                        .insert(format!("title: restart after cancel failed: {err}"), 1);
+                }
+                self.load_cancel_pending = false;
+            }
+        }
+        self.load_grid_open = load_grid_now;
         // One more frame of play time; the save stores this in SavePart2.vars3_21[0].
         self.playtime_frames = self.playtime_frames.saturating_add(1);
         // Age the UI state after the VM ran, so a message shown this frame is 0 frames old.
@@ -2127,6 +2317,10 @@ impl Game {
         self.vm
             .vars
             .set_sys(12, i32::from(!self.messages.is_empty()));
+        // Drop the one-frame wheel key so it is not seen as held next frame. The
+        // host's next `set_input` overwrites the field anyway; this also keeps the
+        // pure `Game::frame` loops (tests, wolf-cli) honest.
+        self.key_bits &= !wheel_bits;
         self.previous_keys = self.key_bits;
         // Automatic pages are restarted here, i.e. at the end of a frame, so a
         // parallel page that just ended comes back on the next tick.
@@ -2580,9 +2774,13 @@ impl Host for GameHost<'_> {
     }
 
     fn message_dismissed(&mut self) -> bool {
-        // A human dismisses messages with the confirm key; a headless run dismisses them
-        // immediately so a scripted capture can walk through a conversation.
-        self.auto_advance || self.key_bits & crate::key::OK != 0
+        // A human dismisses messages with the confirm key or a left click. The click is
+        // edge-triggered: a held button must not run through a whole conversation, and
+        // the front-end latches a click that was released between two physics ticks.
+        let clicked = self.mouse_buttons & 1 != 0 && self.previous_mouse_buttons & 1 == 0;
+        // A headless run dismisses them immediately so a scripted capture can walk
+        // through a conversation.
+        self.auto_advance || self.key_bits & crate::key::OK != 0 || clicked
     }
 
     fn close_message(&mut self) {

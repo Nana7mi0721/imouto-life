@@ -9,6 +9,7 @@ members = [
     "crates/wolf-game",
     "crates/wolf-cli",
     "crates/wolf-launcher",
+    "crates/wolf-gdext",
 ]
 
 [workspace.package]
@@ -38,3 +39,12 @@ opt-level = 2
 opt-level = 3
 lto = "thin"
 codegen-units = 1
+
+# Godot development build: optimised like a release binary but without debug info or
+# incremental state. The gdext bindings' debug rlib is ~275 MB; this profile keeps the
+# extension build in the hundreds of megabytes instead of growing target/ by ~1 GB.
+[profile.godot]
+inherits = "dev"
+opt-level = 2
+debug = 0
+incremental = false

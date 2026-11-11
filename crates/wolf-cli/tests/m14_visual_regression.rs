@@ -43,6 +43,11 @@ struct Baseline {
     /// Arguments after capture; the save path is injected for load-save scenes.
     args: &'static [&'static str],
     load_save: bool,
+    /// The scene reads Save/SaveData01.sav (directly or through the save grid).
+    /// The baselines were recorded with the shipping 50-picture save; a player save
+    /// overwrites the same file, so the scene skips instead of reporting a false
+    /// renderer failure when that fixture no longer matches.
+    depends_on_save: bool,
     expect_header: &'static str,
     frames: u32,
     peak_coroutines: u32,
@@ -87,6 +92,7 @@ const BASELINES: [Baseline; 5] = [
         name: "title",
         args: &["--frames", "240"],
         load_save: false,
+        depends_on_save: false,
         expect_header: "  entry     : boot map (TitleMap.mps event 2)",
         frames: 240,
         peak_coroutines: 6,
@@ -107,6 +113,7 @@ const BASELINES: [Baseline; 5] = [
         name: "map_idle",
         args: &["--map", "SampleMapA", "--frames", "600"],
         load_save: false,
+        depends_on_save: false,
         expect_header: "  map       : MapData/SampleMapA.mps 64x36 tile(s)",
         frames: 600,
         peak_coroutines: 5,
@@ -137,6 +144,7 @@ const BASELINES: [Baseline; 5] = [
         name: "saveui",
         args: &["--map", "SampleMapA", "--event", "5", "--frames", "40"],
         load_save: false,
+        depends_on_save: true,
         expect_header: "  map       : MapData/SampleMapA.mps 64x36 tile(s)",
         frames: 40,
         peak_coroutines: 8,
@@ -159,6 +167,7 @@ const BASELINES: [Baseline; 5] = [
         name: "day_command",
         args: &["--event", "245", "--frames", "240"],
         load_save: true,
+        depends_on_save: true,
         expect_header: "  entry     : save file",
         frames: 240,
         peak_coroutines: 7,
@@ -180,6 +189,7 @@ const BASELINES: [Baseline; 5] = [
         name: "hud",
         args: &["--frames", "60"],
         load_save: true,
+        depends_on_save: true,
         expect_header: "  entry     : save file",
         frames: 60,
         peak_coroutines: 6,
@@ -256,6 +266,23 @@ fn save_fixture() -> PathBuf {
     data_root().join("Save").join("SaveData01.sav")
 }
 
+/// True when SaveData01 still carries the shipping 50-picture bedroom state.
+///
+/// The baselines below were recorded against that file. A normal player save (or
+/// the game's own save screen) rewrites SaveData01 with its current picture table,
+/// which changes the whole frame; that is fixture drift, not a renderer change, so
+/// the save-dependent scenes skip instead of failing. The save round-trip tests are
+/// the ones that must catch a real format/load regression.
+fn shipping_save_fixture() -> bool {
+    let Ok(bytes) = std::fs::read(save_fixture()) else {
+        return false;
+    };
+    let Ok(save) = wolf_save::SaveFile::parse(&bytes) else {
+        return false;
+    };
+    save.part5.events.len() == 50
+}
+
 fn run_baseline(baseline: &'static Baseline) {
     let Some(metrics) = capture_scene(baseline) else {
         return;
@@ -296,6 +323,13 @@ fn capture_scene(baseline: &'static Baseline) -> Option<Metrics> {
             "skipping {}: save fixture {} is missing",
             baseline.name,
             save_fixture().display()
+        );
+        return None;
+    }
+    if baseline.depends_on_save && !shipping_save_fixture() {
+        eprintln!(
+            "skipping {}: SaveData01 is no longer the shipping 50-picture bedroom (a player save overwrote it); the save round-trip suite covers format/load",
+            baseline.name
         );
         return None;
     }

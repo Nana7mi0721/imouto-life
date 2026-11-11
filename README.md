@@ -13,6 +13,7 @@
 - M5 超越原版：完成，M5-A（高分辨率 / 无级缩放 / 全屏）、M5-B（F3 运行时调试 overlay）、M5-C（F2 统计/里程碑 overlay）、M5-D（TSV 内容翻译目录 + 覆盖检查工具/上下文键）、M5-E（--mod 数据/音频覆盖层 + mod 清单/依赖/文本补丁）、M5-F（F4 消息回顾）已落地
 - M6 输入层对等：完成（`123` 选项字/掩码过滤/等待位、原始键码与改键闭环、`125`/`126` 编码、`121` min-max）
 - M7 三项增强：完成（完整英语语言包 `docs/translations/en.full.tsv`、mod 记录级二进制补丁、模拟器热键重绑定 `--hotkeys`；本地提交）
+- **Godot 迁移：P0/P1/P2 完成**（GDExtension 混合前端；标题菜单与 Rust capture 基线 **99.779% 像素完全一致**；输入/读档/文字校准/600-1800 帧长程 parity 已通）。见 **[docs/GODOT_MIGRATION.md](docs/GODOT_MIGRATION.md)**
 
 当前状态摘要与遗留事项见 **[docs/HANDOFF_M0.md](docs/HANDOFF_M0.md) §11**；完整历史进度见 **[docs/HANDOFF_PROGRESS.md](docs/HANDOFF_PROGRESS.md)**。
 开工前必读协作约定见 **[AGENTS.md](AGENTS.md)**。
@@ -42,6 +43,21 @@ WOLF_DATA_ROOT=work/Data ./target/debug/wolf-cli.exe verify
 
 装包与发布：见 **[docs/PACKAGING.md](docs/PACKAGING.md)**，产物在 `work/out/dist/<version>/`。
 
+### Godot 前端（迁移中）
+
+需要 Godot 4.7.2（当前 `E:/Study/github program/Godot_v4.7.2-stable/`）。Rust 只编
+`wolf-gdext` 一个 cdylib（不含 wgpu/winit），Godot 负责窗口、渲染、音频与 UI：
+
+```bash
+bash tools/build-godot.sh     # 产出 godot/bin/wolf_gdext.dll
+bash tools/smoke-godot.sh     # headless：标题/键码/鼠标/滚轮/读档界面/存档往返
+bash tools/parity-godot.sh    # 600/1200/1800 帧 VM 统计 + 600 帧像素对照
+'/e/Study/github program/Godot_v4.7.2-stable/Godot_v4.7.2-stable_win64_console.exe' --path godot
+```
+
+细节、数据根参数与截图命令见 **[docs/GODOT_MIGRATION.md](docs/GODOT_MIGRATION.md)**；
+操作/显示/对话问题的复现与日志开关见 **[docs/GODOT_DEBUGGING.md](docs/GODOT_DEBUGGING.md)**。
+
 ## 仓库结构
 
 | 目录 | 内容 |
@@ -53,6 +69,8 @@ WOLF_DATA_ROOT=work/Data ./target/debug/wolf-cli.exe verify
 | `crates/wolf-audio` | BGM/SE 混音与 SoundCmd 语义 |
 | `crates/wolf-game` | 游戏层：Game、地图运行时、HUD、设置、存档应用 |
 | `crates/wolf-cli` | `wolf-cli` 子命令：verify / precompile / list / capture / play / run |
+| `crates/wolf-gdext` | Godot 4 GDExtension 桥：`WolfGame` 类 + 每帧绘制包 |
+| `godot/` | Godot 4.7 工程（1024x576，GDExtension 混合前端） |
 | `docs/` | 交接、里程碑说明、审计报告与调研资料 |
 | `work/` | 本地数据与临时输出（gitignore） |
 

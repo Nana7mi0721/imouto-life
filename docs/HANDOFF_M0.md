@@ -261,8 +261,9 @@ WOLF_DATA_ROOT="$PWD/work/Data" ./target/debug/wolf-cli.exe verify | tail -20
 > **[HANDOFF_PROGRESS.md](HANDOFF_PROGRESS.md)**。本节只保留**当前状态摘要**；
 > 新会话判断“现在是什么状态”以本节 + 各专题文档为准，查历史细节再翻日志。
 
-### 11.1 当前状态（2026-11-03）
+### 11.1 当前状态（2026-11-10）
 
+* **Godot 迁移 P0 + P1 核心 + P2 输入/文字/长程 parity 完成（2026-11-10）**：新增 `crates/wolf-gdext`（GDExtension 混合桥，gdext 0.5.5 + `api-4-7`）与 `godot/` 工程；Godot 4.7.2 负责窗口/渲染/输入/音频，Rust 保留格式/VM/存档/游戏层。标题菜单与 Rust `title.png` 基线 **99.779% 像素完全一致**。**输入**：`WolfKeys.gd` 镜像 `play.rs` 的 scancode+100 表与 `App::bits()`，`key_map.gd` 97 项全过；`GameView` 用 `_input` 跟踪物理键并通过 `WolfGame.key_config()` 实时吃 Sys52/54/56 改键。**读档界面**：`load_menu.gd` 从标题菜单用真实 Down/Enter 进入 CE14→CE131，两次 Down 落到空槽 3（确认不加载），Up 两次 + Enter 加载 `SaveData01`，退回卧室 **50 picture / 14 text**，含 `220 SaveLoad: loaded`。**文字**：`WolfText.gd` 按 cosmic-text 基线 `round(y)+round(size*1.023193)` 与 FreeType ascent 差做逐字号 shift，四份 ±2px 黑字复刻 `\E`；新游戏 600 帧 **MAE 0.769→0.368、±8 99.28→99.45%**，零售读档 **0.888→0.423**，消息 300 帧 **2.191→0.594、±8 98.48→99.14%**；标题不变，文字 rect 外零回归。**长程 parity**：`tools/parity-godot.sh` 在 600/1200/1800 帧逐项等于 Rust（16,038/43,938/71,838 指令；4,526/14,726/24,926 picture；15 message/3 choice/0 warning/3 sound），600 帧像素 MAE 0.3680。**冻结过渡审计**：161/162 只在未注册的 `SampleMapB.mps`（PlayerTouch 示例）出现，正式 5 张图没有，故本作不可达；实现与单测保留。**存档闭环**（同日已修）：`savegame::part1_from_map` 在模板 Part1 为空时写地图快照与 35 个对象，静态字段与零售 SaveData01 零差异，新游戏 save→load→resume 恢复 SampleMapA。**P2 补丁（同日）**：标题 CE43 是单次渲染器，光标变化时 `AutoEvents::restart(43)` 重放，深色 `menu*_a` 跟随方向键/滚轮/悬停；`Game::apply_wheel` 让 op102 选项直接移光标、CE131 存档网格滚轮=左右页键、其它 123 菜单=上下；`GameView` 用 `_input` 锁存鼠标按下/坐标，快速点击与右键不再丢；`--capture` 冻结物理帧；Godot 全局字体 fallback 实测会把文字度量改坏（600 帧 MAE 0.368→3.11）已回退，21,009 个静态字符只缺 5 个私用区/乱码码点。新增 `m6_title_wheel.rs`、`mouse_latch.gd`、`title_wheel.gd`、`gameview_title_wheel.gd`。**陷阱**：玩家保存会覆盖 `work/Data/Save/SaveData01/02.sav`，已备份到 `work/out/player_saves_2026-11-10/` 并按 50-picture 出货状态恢复；`m14_visual_regression` 增加 `depends_on_save` 守卫。**仍缺**：游戏内存档点（`SampleMapA ev5` 调 CE14）的脚本化写槽验证、weight 400 字重对照、真缺字时的逐字形 fallback、Part1 运行态字段、导出打包。排查流程见 `docs/GODOT_DEBUGGING.md`，迁移细节见 `docs/GODOT_MIGRATION.md` §4–6。
 * 里程碑 **M0–M7 全部完成并推送**。
 * **C 任务**（原版 Game.exe 静态逆向，Ghidra 12.2 + JDK 25）已完成，结论见
   `docs/ENGINE_BEHAVIOR.md` §3.2、`docs/RE_GAME_EXE.md` 与 `docs/re/*.md`；
@@ -277,7 +278,8 @@ WOLF_DATA_ROOT="$PWD/work/Data" ./target/debug/wolf-cli.exe verify | tail -20
 * **真机 GPU play 路径已验证**（2026-11-02，RTX 5060 Laptop / Vulkan / 1024x576）：
   boot 600 帧、load-save 900 帧、event 245 600 帧、menu-only 600 帧，四个入口全部
   **exit 0 / 0 warning**；标题画面离屏 capture 正确。
-* 工作区 `du -sh .` = **5.6 GB**（target 4.1 G 可重编、release/incremental 已清；work 1.5 G = Data 176 M + work/out 1.3 G；发布包在 `D:\program\Imouto Life` 188 M）。
+* 工作区 `du -sh .` = **4.9 GB**（2026-11-10 清理后：target 4.6 G = debug 3.7 G（Rust CLI/测试全量 + 旧 wgpu 栈）+ `target/godot` 893 M；work 264 M）。Godot 运行时只编 `wolf-gdext`（不含 wgpu/winit），旧 debug 栈是 Rust CLI/测试所需；P3 下线旧前端后可清。
+* 2026-11-03 工作区 `du -sh .` 为 **5.6 GB**（当时 target 4.1 G；release/incremental 已清；work 1.5 G = Data 176 M + work/out 1.3 G；发布包在 `D:\program\Imouto Life` 188 M）。该数字仅作历史对照。
 
 ### 11.2 最近三轮摘要
 

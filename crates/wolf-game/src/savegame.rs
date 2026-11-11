@@ -16,8 +16,11 @@
 
 use std::path::Path;
 
+use wolf_format::mps::Map;
+use wolf_format::tileset::TileSet;
+use wolf_save::part1::SavePart1_1_1;
 use wolf_save::part5::{SavePart5, SavePart5_1};
-use wolf_save::SaveFile;
+use wolf_save::{SaveFile, SavePart1, SavePart1_1};
 
 use crate::game::Game;
 use crate::picture::{Picture, PictureKind, Screen};
@@ -451,6 +454,149 @@ fn strip_nul(bytes: &[u8]) -> &[u8] {
     match bytes.last() {
         Some(0) => &bytes[..bytes.len() - 1],
         _ => bytes,
+    }
+}
+
+/// Builds the `SavePart1` map snapshot for a session that has no retail map template.
+///
+/// The template `Save/System.sav` carries no map, so a save written before the player
+/// loads an existing file used to store zero objects and `resume_loaded_map` rejected it
+/// with "the save carries no map event objects". This fills the snapshot from the map
+/// currently installed by [`crate::game::Game::install_map`]: the three tile layers, the
+/// tileset's chip image and automatic tile names, and one object per map event.
+///
+/// `var1` (event id) is the load-bearing field for this port's resume path:
+/// `resume_loaded_map` matches the object ids against the map and `start_pages_loaded`
+/// re-selects pages from the restored variables. The object does **not** store the
+/// current page: retail saves carry `var2 = event.x * 2`, `var3 = event.y * 2`, an empty
+/// page table and only the event's page-0 direction/opacity. Measured against
+/// SaveData01/SaveData02: all 35 objects match the map's 35 events and coordinates
+/// (2x tiles), `map_tiles` matches all 6,912 words, and `vars2_new` is the tileset's
+/// passability word list (2,360 entries), not a switch table.
+#[must_use]
+pub fn part1_from_map(map: &Map, tileset: Option<&TileSet>, file_version: u16) -> SavePart1 {
+    let auto_count = match file_version {
+        value if value >= 0x8A => 31,
+        value if value >= 0x73 => 15,
+        _ => 7,
+    };
+    let mut auto_tiles: Vec<Vec<u8>> = tileset
+        .map(|set| {
+            set.raw_autotile_bytes
+                .iter()
+                .map(|raw| {
+                    let mut bytes = raw.clone();
+                    bytes.push(0);
+                    bytes
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    auto_tiles.resize(auto_count, vec![0]);
+    auto_tiles.truncate(auto_count);
+
+    let chip_image = tileset.map_or_else(Vec::new, |set| {
+        let mut bytes = set.base_image.as_bytes().to_vec();
+        if !bytes.ends_with(&[0]) {
+            bytes.push(0);
+        }
+        bytes
+    });
+
+    let map_tiles = if map.has_tile_data {
+        map.layers
+            .iter()
+            .flat_map(|layer| layer.iter().copied())
+            .collect()
+    } else {
+        Vec::new()
+    };
+
+    let vars2_new = tileset.map_or_else(Vec::new, |set| {
+        set.passability.iter().map(|word| word.raw).collect()
+    });
+
+    let objects = map
+        .events
+        .iter()
+        .map(|event| {
+            let first_page = event.pages.first();
+            let chip_id = first_page.map_or(u32::MAX, |page| page.graphic_chip_id);
+            let mut graphic =
+                first_page.map_or_else(Vec::new, |page| page.graphic.as_bytes().to_vec());
+            if !graphic.ends_with(&[0]) {
+                graphic.push(0);
+            }
+            SavePart1_1 {
+                var1: event.id,
+                // Retail stores the position in half-tile units.
+                var2: event.x.saturating_mul(2),
+                var3: event.y.saturating_mul(2),
+                var4: 0,
+                var5: 0,
+                var6: chip_id,
+                md1: graphic,
+                var7: u16::from(first_page.map_or(255, |page| page.opacity)),
+                var8: 0,
+                var9: u16::from(first_page.map_or(0, |page| page.direction)),
+                var10: 1,
+                var11: 0,
+                var12: 1,
+                sp1: empty_page_table(),
+                sp2: empty_page_table(),
+                var13: 0,
+                var14: 3,
+                var15: 3,
+                var16: 3,
+                var17: 0,
+                var18: 0,
+                var19: 0,
+                var20: 0,
+                var21: 0,
+                vars1: Vec::new(),
+                var23: 1,
+                var24: 1,
+                var25: 0,
+                var26: 0,
+                var27: 0,
+                var28: 0,
+                var29: 1,
+                var30: 0,
+                var31: 0,
+                var32: 0,
+                mds1: Vec::new(),
+                var34: 0,
+                var35: 0,
+                var36: 0,
+                var37: 0,
+                var38: 0,
+                var39: 0,
+            }
+        })
+        .collect();
+
+    SavePart1 {
+        var1: 1,
+        var2: 0,
+        var3: 0,
+        map_width: map.width,
+        map_height: map.height,
+        map_tiles,
+        chip_image,
+        auto_tiles,
+        vars2_new,
+        vars2_old: Vec::new(),
+        objects,
+        tail_vars: vec![0, 0, 0, 0, 100, 100, 0, 0, 0, 0, 100],
+        vars3: Vec::new(),
+    }
+}
+
+fn empty_page_table() -> SavePart1_1_1 {
+    SavePart1_1_1 {
+        head: [3, 3, 3, 0, 3, 2],
+        count: 0,
+        items: Vec::new(),
     }
 }
 

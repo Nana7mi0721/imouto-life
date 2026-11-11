@@ -124,6 +124,15 @@
 > 当前订正/U 状态源 = `05_冲突与待验证.md`（14 处订正 / 34 项 U）；一手 S 级中间数据在 `work/out/`（gitignored，51 份产物）。
 > 姊妹作 `imoto life` 的定稿/正文属**另一仓库**，不互通（AGENTS.md:29）；《早安骑》《浴室隐藏逆推 CG》经判定属**本作**、已由定稿 12 收录核实（S 级坐标 `CE251@430-442` / `CE249@121,176,180`），见 `00` §6、正文 §0.4、检查报告 §14。
 
+## 6.2 Godot 迁移（进行中）
+
+| 文件 | 状态 | 内容 |
+|---|---|---|
+| [GODOT_MIGRATION.md](GODOT_MIGRATION.md) | **现行 · P0/P1/P2 完成** | GDExtension 混合架构：Godot 负责窗口/渲染/音频/UI，Rust 保留 `wolf-format`/`wolf-vm`/`wolf-save`/`wolf-game`。含工程布局、`build/smoke/parity-godot.sh`、标题像素对照、输入/读档/文字校准与长程 parity 结果、剩余缺口 |
+| [../godot/](../godot/) | 现行 | Godot 4.7 工程（`project.godot`、`main.tscn`、`GameView.gd`、`WolfKeys/WolfText`、headless smoke/parity） |
+| [../crates/wolf-gdext/](../crates/wolf-gdext/) | 现行 | `WolfGame` GDExtension 类：每帧返回 sprites/texts/overlays/sounds 绘制包 |
+| [GODOT_DEBUGGING.md](GODOT_DEBUGGING.md) | 现行 | 操作/显示/对话缺失的排查手册：输入契约、`--log-input/--log-events/--log-messages`、截图 diff、字形覆盖、存档 fixture 坑 |
+
 ## 7. 翻译目录
 
 | 文件 | 内容 |

@@ -26,12 +26,16 @@ cd '/e/Study/github program/Imouto Life' && source tools/env.sh >/dev/null 2>&1
 - 默认 `cargo test -q --workspace` 会跳过需要数据的用例（缺数据就 eprintln skipping 后 return），必须保持 exit 0。
 - 真正跑本作数据测试用：`WOLF_DATA_ROOT="$PWD/work/Data" cargo test -q -p <crate>`。**必须绝对路径**——`cargo test` 以各 crate 根为工作目录，`work/Data` 这类相对路径会被解析到 crate 目录而静默 skip（于是假「全绿」）；已知本作数据上跑整套 `-p wolf-game` 会有若干姊妹作期望值/事件语义差异用例失败（长期记录于 docs/HANDOFF_PROGRESS.md），不是缺陷。
 - 每个里程碑结束跑：`cargo test -q --workspace`、`WOLF_DATA_ROOT=work/Data ./target/debug/wolf-cli.exe verify`（PASS 64 / 1 SKIP 为 M0 基线），需要时再跑 `verify --wolf <安装目录>/Data.wolf`。
+- Godot 前端相关里程碑加跑 `bash tools/smoke-godot.sh`（headless，240 帧；P0 基线 `pictures=4 sprites=4`）。
 - 本作自己的期望值在 docs/BASELINE.json；**不要照抄姊妹作 imoto life 的 BASELINE.json**（那是第一部游戏的数值）。
 
 ## 3. Godot / 截图 / 前台
 
-- **不要用 PowerShell 抢前台或模拟按键截图**（用户明令会打断他操作电脑）。截图只能由用户按游戏内 PrintScreen（Game.ini ScreenShotFlag=1，产物在安装目录，1024x576 原生）。
-- 需要视觉核对时优先用已有实机截图（docs/REFERENCE.md 有 10 张目录）或读用户新截图；headless capture 的 wgpu 离屏初始化目前卡死，属渲染阶段问题，不要在这上面硬耗。
+- **不要用 PowerShell 抢前台或模拟按键截图**（用户明令会打断他操作电脑）。原版游戏的截图只能由用户按游戏内 PrintScreen（Game.ini ScreenShotFlag=1，产物在安装目录，1024x576 原生）。
+- Godot 前端（迁移中）：`bash tools/build-godot.sh` 产出 `godot/bin/wolf_gdext.dll`；`bash tools/smoke-godot.sh` 做 headless 冒烟；窗口运行用已验证的 Godot 4.7.2 可执行文件 `--path godot`。首次运行需 `--headless --path godot --import`（smoke 脚本会自动处理）。
+- Godot 侧的自动截图走游戏内视口：`-- --data-root=<abs> --entry=menu --capture=<abs.png> --frames=120`；这是 GDScript 读自己的 Viewport，不抢前台，不属于上面禁止的 PowerShell 方式。
+- Godot 正在运行时不能覆盖 `godot/bin/wolf_gdext.dll`；重建前先关窗口/编辑器。
+- 需要视觉核对时优先用已有实机截图（docs/REFERENCE.md 有 10 张目录）、Rust `capture` 基线或 Godot viewport 截图；wgpu 离屏 capture 的历史坑不要再硬耗。
 
 ## 4. 本作特有的“不要做”
 
@@ -42,11 +46,12 @@ cd '/e/Study/github program/Imouto Life' && source tools/env.sh >/dev/null 2>&1
 
 ## 5. 代码与提交
 
-- 仓库是 Cargo workspace，7 个 crate：wolf-format / wolf-save / wolf-vm / wolf-render / wolf-audio / wolf-game / wolf-cli。
-- 不新增外部依赖，除非有充分理由并先问 lead。
+- 仓库是 Cargo workspace，8 个 crate：wolf-format / wolf-save / wolf-vm / wolf-render / wolf-audio / wolf-game / wolf-cli / wolf-gdext。Godot 前端代码在 `godot/`（GDScript + 工程文件），不是 Cargo crate。
+- 不新增外部依赖，除非有充分理由并先问 lead。`wolf-gdext` 的 `godot`（gdext）依赖是 Godot 迁移的既定选择，版本锁定 0.5.5 + `api-4-7`。
 - 提交身份：`git -c user.name='imoto lead' -c user.email='lead@imoto.local' commit -F <msgfile>`。
 - push：全局 http.proxy 是死代理，必须 `git -c http.proxy= -c https.proxy= push origin master`。
 - 不要提交 work/、tools/bin|cmake|ffmpeg、*.exe、prt sc/、docs/相关链接.txt。
+- 不要提交 Godot 生成物：`godot/.godot/`、`godot/bin/*.dll`、`godot/bin/*.pdb`；`godot/bin/wolf_gdext.gdextension` 与 `godot/` 下的脚本/场景要提交。
 - 每推进一步在 docs/HANDOFF_PROGRESS.md 末尾追加一条进度（历史日志），并把当前状态同步到 docs/HANDOFF_M0.md §11.1（方便下次交接）；里程碑结束写对应的 docs/M*_*.md 说明。
 
 

@@ -888,3 +888,18 @@ M0–M7 与 C 任务每一步的改动、验证数字与踩过的坑。它只记
   * **precompile 基线**：`dynamic_labels` 由错误的 51 修正为 3（代码注释与实测数据均为 3；仅有 CE31/63/86 三条 `213` 标签含 `\cself`）。`wolf-cli precompile` 现在 **PASS 19 / 0**。
   * **最终验证**：默认 workspace **exit 0**；数据 workspace 105 个 target ok，仅 7 个既有姊妹作差异（auto_events 3、db 2、game title 2）；`verify` **PASS 64 / 1 SKIP**；`precompile` **PASS 19 / 0**；`m14_visual_regression` **5 passed**（title peak=8）；`cargo fmt --all -- --check` 与 `git diff --check` 通过；`smoke-godot.sh` exit 0（smoke 4/4、load_save 50/14、roundtrip 38/38）；`parity-godot.sh 600 --pixel-check=0` **PASS**（15,549 指令 / 4,418 picture / 15 message / 3 choice / 0 warning / 3 sound）。
   * **清理**：删除 `work/out/dllprobe`、`work/out/godot_roundtrip.sav`、`target/debug/incremental`、`target/release`、`target/ver6`、`work/out/saveprobe`；`du -sh .` = **7.5 GB**（work 334 M = Data 176 M + out 159 M；target 7.1 G = debug 6.2 G + godot 894 M）。未 commit。
+
+* 2026-11-11（全量字节码深度审计沉淀与文档冲突消解）：
+  * **工具沉淀**：编写并沉淀 `tools/audit_bytecode.py`，全量静态扫描 350 个 Common Event 与 8 张地图 102 个地图页面的 **63,506 条指令**，生成 `work/out/BYTECODE_AUDIT_REPORT.md`。实现了操作码覆盖、虚拟硬件状态差集、Picture 槽位主协程/并行协程竞争碰撞（发现 15 组交叉槽位）、循环无让步死循环风险、视口级演出特效等 5 大规则引擎。
+  * **新增 5 项深水区缺陷审计归档**：
+    * **BUG-20**：地图动态实体跟随气泡/图标坐标锚定缺失（全作 78 处查询 `character_state` 字段 6/7 恒返回 None；澄清固定对话框已由平移闭环，此处专指地图动态层）；
+    * **BUG-21**：鼠标滚轮系统彻底瘫痪（`engine_state(10)` 滚轮移动量硬编码返回 0，导致道具/相册/存档窗口无法滚轮翻页）；
+    * **BUG-22**：鼠标移出窗口检测失效（`engine_state` 漏处理字段 11/12 走 `_ => None`，CE 224 无法感知鼠标出界，指针残留边缘）；
+    * **BUG-23**：全屏闪烁与震动演出丢弃（Opcode 290 全屏 Flash/Shake 发现 Picture 表为空时直接返回 false 放弃）；
+    * **BUG-24**：按键自动连发延迟误绑定到未定义系统变量 `sys(15/16)`。
+  * **全面消解文档冲突**：
+    * 修正 `docs/M3_EVENT_GRAPH.md` 中残留的 `raw - 600_000` 错误公式，统一为 `caller + (raw - 600_100)`；纠正 CE 265..268 为运行期可达而非 helper 残留。
+    * 统一 BUG-02 口径：已完全闭环修复（Opcode 112 bit 24 掩码修复，`m15_balloon_name` 连续 60 帧 PASS）；消解 BUG-20 与 BUG-02 的重叠冲突，严守不伪造坐标约定。
+    * 统一 BUG-04 为 NOT-A-BUG（原版设计规范，日常顶栏只有文本）。
+    * 重写更新 `work/out/review/POST_DEEPSEEK_BUGS_INVESTIGATION_REPORT.md`，缺陷台账扩充至 24 项，升级为五批次分步修复规划。
+  * **验证**：`cargo test -q --workspace` **exit 0**；`m15_balloon_name` **1 passed**；全量数据及 Godot 冒烟测试基线保持。未 commit。

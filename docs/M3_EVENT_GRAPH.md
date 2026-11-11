@@ -6,17 +6,17 @@
 
 - 公共事件总数 **350**（id 0..=349），其中自有事件 **212..303 共 92 个**。
 - **静态调用图**（op210/op211/op300 + 注册地图全部页）可达自有事件 **50/92**；加上引擎 AutoEvents 的 `run_condition == 2` 调度根后 **runtime 可达 76/92**。
-- 严格 **静态不可达自有事件 16 个**：212, 213, 217, 218, 221, 222, 236, 265, 266, 267, 268, 272, 289, 291, 292, 301。
+- **严格 静态不可达自有事件 16 个**（历史旧算法 `raw - 600_000` 误判）：旧分析将 265..268 判为不可达，实际在 BUG-12/19 修正后证实，CE 264 通过 `600101..600104`（相对寻址 `caller + (raw - 600100)`）直达 CE 265..268（高功能气泡人名栏与消息辅助）；真实运行期均完全可达。
 - **任务里写的根 CE549 在本作不存在**（最大 id 349）；本作 boot 链根实际是 **CE42** 与 **TitleMap.mps** 的地图事件。
-- **可疑未接线**：CE301「アルバム表示」无 caller（CE303 才是地图入口，疑似旧版重复）；CE222「画面拡大」及两个无法解析的 op300 缩放名疑似漏接；其余 265..268 为消息库 helper 残留，空标题为占位事件。
+- **可疑未接线**：CE301「アルバム表示」无 caller（CE303 才是地图入口，疑似旧版重复）；CE222「画面拡大」及两个无法解析的 op300 缩放名疑似漏接；空标题为占位事件。
 - **task-32 的孤立结论需要细分**：CE224/225/226/229/237 确实没有 CE caller，但它们是 `run_condition == 2` 的 AutoEvents 背景事件，**runtime 可达**；CE228 看似孤立，实际由 **Map031.mps event0 page0（active）** 调用，**call 可达**。
 
 ## 1. 方法与数据源
 
 - 解析 `BasicData/CommonEvent.dat`（`wolf_format::commonevent::CommonEventData::parse`）得到 350 个事件，`run_condition` 直方图实测 **{0: 312, 2: 31, 3: 7}**。
 - 调用边：
-  - **op210**：1 个参数为 raw target；literal range `500_000..=599_999` => id=raw-500_000，`600_000..=699_999` => id=raw-600_000；其他 Magic 类型（SelfVar/Var/...）计入 **dynamic，无法静态解析**。
-  - **op211**：同 target 规则，语义是 reserve/弱调用，也计入边。
+  - **op210**：1 个参数为 raw target；literal range `500_000..=599_999` => id=raw-500_000；`600_000..=699_999` => **相对寻址**，公式为 `caller_event_id + (raw - 600_100)`（见 BUG-12/19 修正，基准 600100 为调用者自身偏移 0；旧版误算为 `raw - 600_000` 已纠正）；其他 Magic 类型（SelfVar/Var/...）计入 **dynamic，无法静态解析**。
+  - **op211**：同 target 规则（同样支持 `caller + (raw - 600_100)` 相对寻址），语义是 reserve/弱调用，也计入边。
   - **op300**：按 `strings[0]` 事件名查唯一标题映射；唯一匹配才作边，重复/无名分别计 ambiguous/unknown。
 - 地图根：从 `BasicData/SysDatabase.dat` 的 `MAP_SETTINGS_TYPE`（type 0）读 5 张注册地图：`MapData/TitleMap.mps`、`MapData/SampleMapA.mps`、`MapData/Map003.mps`、`MapData/Map024.mps`、`MapData/Map031.mps`；解析每张地图的 40 个事件 / 83 页。
   - **active0**：零变量状态下 `active_page_index(|_|0)` 页的调用；

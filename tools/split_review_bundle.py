@@ -174,16 +174,33 @@ def verify_split(zip_path, out_dir, prefix, parts):
     return same, valid_zip
 
 
+def clear_dir(path):
+    """清空目录内容。目录本身可能被某个进程占用（Windows 上 cwd 锁），
+    因此逐个删除文件，删除目录失败时忽略。"""
+    if not os.path.isdir(path):
+        os.makedirs(path)
+        return
+    for name in os.listdir(path):
+        target = os.path.join(path, name)
+        try:
+            if os.path.isdir(target):
+                shutil.rmtree(target, ignore_errors=True)
+            else:
+                os.remove(target)
+        except OSError:
+            pass
+
+
 def main():
     for path in (FULL_ZIP, LITE_ZIP):
         if not os.path.isfile(path):
             raise SystemExit(f"missing bundle: {path} (run tools/pack_review_bundle.py first)")
 
-    if os.path.isdir(UPLOAD_DIR):
-        shutil.rmtree(UPLOAD_DIR)
-    os.makedirs(UPLOAD_DIR)
+    clear_dir(UPLOAD_DIR)
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
 
     manifest_lines = []
+    zip_hashes = []
 
     for zip_path, prefix, label in (
         (FULL_ZIP, "full", "full"),
@@ -200,7 +217,9 @@ def main():
         for name in parts:
             path = os.path.join(UPLOAD_DIR, name)
             manifest_lines.append(f"{sha256_of(path)}  {name}")
-        manifest_lines.append(f"{sha256_of(zip_path)}  {os.path.basename(zip_path)}")
+        # 还原后 zip 的哈希单独记录：manifest 只列真正会被上传的分片，
+        # 否则 `sha256sum -c` 会因为 zip 不在目录里而报 FAILED。
+        zip_hashes.append(f"{sha256_of(zip_path)}  {os.path.basename(zip_path)}")
 
     with open(os.path.join(UPLOAD_DIR, "00_README_FIRST.txt"), "w",
               encoding="utf-8", newline="\n") as f:
@@ -213,6 +232,15 @@ def main():
     manifest_path = os.path.join(UPLOAD_DIR, "00_MANIFEST.sha256")
     with open(manifest_path, "w", encoding="utf-8", newline="\n") as f:
         f.write("\n".join(manifest_lines) + "\n")
+
+    # 还原后 zip 的哈希写进 README，方便还原后核对整包。
+    readme_path = os.path.join(UPLOAD_DIR, "00_README_FIRST.txt")
+    with open(readme_path, "w", encoding="utf-8", newline="\n") as f:
+        f.write(README_TXT)
+        f.write("\nRESTORED ARCHIVE CHECKSUMS (verify after `cat`)\n")
+        f.write("-" * 60 + "\n")
+        for line in zip_hashes:
+            f.write(line + "\n")
 
     print(f"\nupload dir: {UPLOAD_DIR}")
     print(f"manifest  : {manifest_path}")

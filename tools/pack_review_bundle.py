@@ -9,18 +9,24 @@ tools/pack_review_bundle.py — 云端沙箱审查用源码打包器
   * 产物写入 work/out/（Windows 下 bash 子进程写 /tmp 会 PermissionDenied）。
 
 产出两个包：
-  1. imouto_life_sandbox.zip   —— 逻辑可运行包（含 Godot 工程、Rust 全量源码、
-                                  全量字节码 JSON、核心数据元数据；剔除音视频大件）
-  2. imouto_life_sandbox_full.zip —— 同上 + 音视频资产（BGM/SE/cg/BattleEffect），
-                                  用于需要真实演出表现做像素级比对的场景
+  1. imouto_life_sandbox.zip    —— 逻辑可运行包（含 Godot 工程、Rust 全量源码、
+                                   全量字节码 JSON、核心数据与事件背景图）
+  2. imouto_life_media.zip      —— 音频与特效资产（BGM/SE/BattleEffect/气泡底图）
 """
 
+import io
 import os
+import shutil
+import subprocess
 import sys
+import tarfile
 import zipfile
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 OUT_DIR = os.path.join(REPO_ROOT, "work", "out")
+
+LOGIC_ZIP = os.path.join(OUT_DIR, "imouto_life_sandbox.zip")
+MEDIA_ZIP = os.path.join(OUT_DIR, "imouto_life_media.zip")
 
 # --- 顶层文件：构建与工程约定 ---
 TOP_FILES = [
@@ -77,6 +83,14 @@ CORE_DATA_DIRS = [
     "work/Data/FIcon",
     "work/Data/Fog_BackGround",
     "work/Data/Picture",
+    # Event backgrounds. These are full-screen pictures referenced by the save
+    # picture table, so without them every rendered scene comes out black and
+    # the pixel-level visual regression baselines cannot run at all (measured:
+    # the `hud` baseline drops from 554,890 to 11,294 non-black pixels).
+    "work/Data/cg",
+    # The balloon base plates are UI assets the message library draws; the
+    # wolf-format Data.wolf reference check also expects them present.
+    "work/Data/BalloonBase_CafeLatte",
 ]
 
 CORE_DATA_FILES = [
@@ -84,13 +98,13 @@ CORE_DATA_FILES = [
     "work/Data/◆GenJyuuGothicX-P-Bold.ttf",
 ]
 
-# --- 可选：音视频大件（全量包才包含）---
+# --- 可选：音频与战斗特效（audio-only 组）---
+# BGM/SE are needed for an end-to-end play run; the audio *logic* (channel
+# routing, retrigger suppression) is testable without the files themselves.
 FULL_DATA_DIRS = [
     "work/Data/BGM",
     "work/Data/SE",
-    "work/Data/cg",
     "work/Data/BattleEffect",
-    "work/Data/BalloonBase_CafeLatte",
 ]
 
 # --- 排除规则 ---
@@ -126,12 +140,40 @@ def should_skip_file(rel_path: str, name: str) -> bool:
     return False
 
 
-def collect(top_files, src_dirs, doc_dirs, review_dirs, review_files, data_dirs, data_files):
-    """返回 [(绝对路径, 归档内相对路径)]。"""
+def snapshot_head():
+    """导出 HEAD 的一个自洽快照。
+
+    工作区可能正被其它 agent 并发修改（例如 Opcode 140 新增 pitch 字段、
+    PictureCmd 新增 owner_event 字段，而构造点还没同步），此时直接打包工作区
+    会得到**编译不过**的中间态，交付给沙箱只会浪费对方时间。`git archive HEAD`
+    永远给出一个已知可编译的快照。
+    """
+    tmp = os.path.join(OUT_DIR, "_snapshot")
+    shutil.rmtree(tmp, ignore_errors=True)
+    os.makedirs(tmp, exist_ok=True)
+    archive = subprocess.run(
+        ["git", "archive", "HEAD"], cwd=REPO_ROOT, capture_output=True
+    )
+    if archive.returncode != 0:
+        raise SystemExit(f"git archive failed: {archive.stderr[:400]!r}")
+    with tarfile.open(fileobj=io.BytesIO(archive.stdout), mode="r|") as tf:
+        tf.extractall(tmp)
+    print(f"  snapshot of HEAD -> {tmp}")
+    return tmp
+
+
+def collect(top_files, src_dirs, doc_dirs, review_dirs, review_files,
+            data_dirs, data_files, src_root=None):
+    """返回 [(绝对路径, 归档内相对路径)]。
+
+    src_root 给定时，源码与构建文件从该快照读取（保证可编译）；
+    文档与数据始终取工作区（文档不参与编译，且可能包含尚未入库的新报告）。
+    """
+    root = src_root or REPO_ROOT
     items = []
 
     for rel in top_files:
-        full = os.path.join(REPO_ROOT, rel)
+        full = os.path.join(root, rel)
         if os.path.isfile(full):
             items.append((full, rel))
         else:
@@ -144,17 +186,18 @@ def collect(top_files, src_dirs, doc_dirs, review_dirs, review_files, data_dirs,
         else:
             print(f"  [skip] missing review file: {rel}")
 
-    for group in (src_dirs, doc_dirs, review_dirs, data_dirs):
+    for group, base in ((src_dirs, root), (doc_dirs, REPO_ROOT),
+                        (review_dirs, REPO_ROOT), (data_dirs, REPO_ROOT)):
         for rel_dir in group:
-            full_dir = os.path.join(REPO_ROOT, rel_dir)
+            full_dir = os.path.join(base, rel_dir)
             if not os.path.isdir(full_dir):
                 print(f"  [skip] missing dir: {rel_dir}")
                 continue
-            for root, dirs, files in os.walk(full_dir):
-                dirs[:] = [d for d in dirs if not should_skip_dir(d)]
+            for r, dirs, files in os.walk(full_dir):
+                dirs[:] = [d for d in dirs if d not in {".git", "target", ".godot"}]
                 for name in files:
-                    full = os.path.join(root, name)
-                    rel = os.path.relpath(full, REPO_ROOT).replace("\\", "/")
+                    full = os.path.join(r, name)
+                    rel = os.path.relpath(full, base).replace("\\", "/")
                     if should_skip_file(rel, name):
                         continue
                     items.append((full, rel))
@@ -195,48 +238,63 @@ LAYOUT
   tools/             audit_bytecode.py + build-godot.sh + smoke-godot.sh +
                      parity-godot.sh + reverse-engineering helpers
   docs/              architecture, handoff and review documentation
-  work/Data/         unpacked WOLF game data (logic metadata + sprites + fonts)
+  work/Data/         unpacked WOLF game data: logic metadata, sprites, fonts and
+                     the event backgrounds (work/Data/cg). The backgrounds are
+                     full-screen pictures referenced by the save picture table,
+                     so they are required for any pixel-level rendering check.
   work/out/          full bytecode dumps (JSON) and review reports
   work/out/review/   24-item defect ledger (BUG-01 .. BUG-24)
 
 HOW TO BUILD AND TEST IN THE SANDBOX
-  # 1. Rust workspace (the Godot extension is a Rust crate)
-  cargo check --workspace
-  cargo test -q --workspace          # exits 0 without WOLF_DATA_ROOT
+  # 0. unpack the offline dependency bundle into this directory first
+  #    (it provides vendor/ and .cargo/config.toml) — the sandbox has no network
+  unzip -o ../imouto_life_offline_deps.zip -d .
+
+  # 1. Rust workspace
+  cargo check --offline --workspace --all-targets
+  cargo test  --offline --workspace
 
   # 2. Full static bytecode audit over all 63,506 instructions
   python tools/audit_bytecode.py     # writes work/out/BYTECODE_AUDIT_REPORT.md
 
   # 3. Real-data test suite (needs an absolute WOLF_DATA_ROOT)
-  WOLF_DATA_ROOT="$PWD/work/Data" cargo test -q -p wolf-game --no-fail-fast
-
-  # 4. Godot frontend
-  bash tools/build-godot.sh          # produces godot/bin/wolf_gdext.so
-  bash tools/smoke-godot.sh          # headless smoke: 240 frames
-  bash tools/parity-godot.sh 600    # 600-frame Rust/Godot parity
+  WOLF_DATA_ROOT="$PWD/work/Data" cargo test --offline -p wolf-game --no-fail-fast
 
 NOTES
-  * godot/bin/*.dll is intentionally NOT included (Windows-only binary);
-    rebuild the native extension for the sandbox platform with build-godot.sh.
+  * godot/bin/*.dll is intentionally NOT included (Windows-only binary).
   * No target/ build artifacts are included.
+  * The Godot editor binary is not included either: it is a 173 MB Windows-only
+    executable. The Rust side renders the same frames (`wolf-cli capture`).
 """
 
 
 def main():
     os.makedirs(OUT_DIR, exist_ok=True)
 
+    snapshot = snapshot_head()
+
     base_items = collect(TOP_FILES, SRC_DIRS, DOC_DIRS, REVIEW_DIRS,
-                          REVIEW_FILES, CORE_DATA_DIRS, CORE_DATA_FILES)
+                          REVIEW_FILES, CORE_DATA_DIRS, CORE_DATA_FILES,
+                          src_root=snapshot)
+    build_zip(LOGIC_ZIP, base_items, BASE_NOTE)
 
-    slim_path = os.path.join(OUT_DIR, "imouto_life_sandbox.zip")
-    build_zip(slim_path, base_items, BASE_NOTE)
-
-    full_items = collect(TOP_FILES, SRC_DIRS, DOC_DIRS, REVIEW_DIRS,
-                         REVIEW_FILES, CORE_DATA_DIRS + FULL_DATA_DIRS,
-                         CORE_DATA_FILES)
-    full_path = os.path.join(OUT_DIR, "imouto_life_sandbox_full.zip")
-    build_zip(full_path, full_items, BASE_NOTE + "\n  (this bundle also carries the\n"
-               "   BGM/SE/cg/BattleEffect media assets for pixel-accurate review)\n")
+    # 音频组：只装 BGM/SE/BattleEffect/气泡底图，不重复源码与数据。
+    media_items = []
+    for rel_dir in FULL_DATA_DIRS:
+        full_dir = os.path.join(REPO_ROOT, rel_dir)
+        if not os.path.isdir(full_dir):
+            print(f"  [skip] missing dir: {rel_dir}")
+            continue
+        for root, dirs, files in os.walk(full_dir):
+            dirs[:] = [d for d in dirs if d not in {".git", "target"}]
+            for name in files:
+                full = os.path.join(root, name)
+                rel = os.path.relpath(full, REPO_ROOT).replace("\\", "/")
+                media_items.append((full, rel))
+    build_zip(MEDIA_ZIP, media_items,
+              "Imouto! Life ~Monochrome~ — audio & effect assets.\n"
+              "Unzip into the project root so that work/Data/BGM, work/Data/SE,\n"
+              "work/Data/BattleEffect and work/Data/BalloonBase_CafeLatte appear.\n")
 
     print("\nDone.")
 

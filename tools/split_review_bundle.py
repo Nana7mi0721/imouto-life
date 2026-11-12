@@ -33,8 +33,9 @@ UPLOAD_DIR = os.path.join(OUT_DIR, "review_bundle_upload")
 # 沙箱单文件上限 10 MB；取 9 MB 留出协议层余量。
 PART_SIZE = 9 * 1024 * 1024
 
-FULL_ZIP = os.path.join(OUT_DIR, "imouto_life_sandbox_full.zip")
-LITE_ZIP = os.path.join(OUT_DIR, "imouto_life_sandbox.zip")
+LOGIC_ZIP = os.path.join(OUT_DIR, "imouto_life_sandbox.zip")
+MEDIA_ZIP = os.path.join(OUT_DIR, "imouto_life_media.zip")
+DEPS_ZIP = os.path.join(OUT_DIR, "imouto_life_offline_deps.zip")
 
 RESTORE_SH = """#!/usr/bin/env bash
 # 一键还原云端沙箱审查包。
@@ -81,8 +82,9 @@ restore() {
   echo "    -> $OUT/${zip_name%.zip}"
 }
 
-restore full imouto_life_sandbox_full.zip
 restore logic imouto_life_sandbox.zip
+restore media imouto_life_media.zip
+restore deps imouto_life_offline_deps.zip
 echo "==> done: $OUT"
 """
 
@@ -94,43 +96,66 @@ WHY SPLIT
   cut into ordered byte slices of at most 9 MB. A slice is NOT a zip by
   itself: it is a raw slice of one zip file.
 
+GROUPS (upload what you need)
+  logic/  logic.partNN.bin   7 slices   source + docs + bytecode + game data
+                                    (incl. work/Data/cg event backgrounds)
+  deps/   deps.partNN.bin    9 slices   vendored crates.io tree (offline build)
+  media/  media.partNN.bin  11 slices   BGM / SE / BattleEffect audio assets
+
+  RECOMMENDED: upload logic.* + deps.*  (16 slices + this README) and you get
+  a fully buildable, fully testable project with the complete bytecode audit
+  and the pixel-level visual regression baselines.
+  Upload media.* only if you also want an end-to-end play run with audio.
+
 HOW TO RESTORE (inside the sandbox)
   # 1. upload every part of one group into the same directory
   # 2. concatenate the parts in ascending part-number order:
-  cat full.part*.bin > imouto_life_sandbox_full.zip
   cat logic.part*.bin > imouto_life_sandbox.zip
+  cat deps.part*.bin  > imouto_life_offline_deps.zip
+  cat media.part*.bin > imouto_life_media.zip
   #    (the names are zero padded, so lexical order equals numeric order)
   # 3. extract:
   #    recommended: python's zipfile always restores UTF-8 file names;
   #    some unzip builds decode CJK paths with the local code page.
-  python3 -c "import zipfile; zipfile.ZipFile('imouto_life_sandbox_full.zip').extractall('imouto_life_sandbox')"
+  python3 -c "import zipfile; zipfile.ZipFile('imouto_life_sandbox.zip').extractall('imouto_life_sandbox')"
 
   OR simply run:   bash 00_restore.sh
   which restores whichever groups are present into ./restored/ using
   python's zipfile (falls back to `unzip -O UTF-8` only when python is absent).
 
 VERIFY
-  sha256sum -c 00_MANIFEST.sha256     # checks every part and both zips
-
-GROUPS
-  full/   complete project + all media (BGM / SE / cg / BattleEffect)
-  logic/  same project without the bulky media assets
-          (everything needed for cargo test, the bytecode audit and the
-           Godot headless smoke / parity runs)
+  sha256sum -c 00_MANIFEST.sha256     # checks every uploaded slice
 
 AFTER RESTORE
-  cd restored/<group>/
-  cargo check --workspace
-  cargo test -q --workspace
-  python tools/audit_bytecode.py          # 63,506 instructions
-  WOLF_DATA_ROOT="$PWD/work/Data" cargo test -q -p wolf-game --no-fail-fast
-  bash tools/build-godot.sh               # native extension for this platform
-  bash tools/smoke-godot.sh
-  bash tools/parity-godot.sh 600
+  # source tree
+  cd restored/imouto_life_sandbox/
+  python tools/audit_bytecode.py     # 63,506 instructions, pure python
 
-NOTE
-  godot/bin/*.dll is intentionally absent (Windows-only binary). Rebuild it
-  for the sandbox platform with tools/build-godot.sh.
+  # offline build (deps group only)
+  unzip -o ../imouto_life_offline_deps.zip -d .
+  cargo check --offline --workspace --all-targets
+  cargo test  --offline --workspace
+
+  # real-data suite
+  WOLF_DATA_ROOT="$PWD/work/Data" cargo test --offline -p wolf-game --no-fail-fast
+
+  # pixel-level baselines (work/Data/cg is part of the logic group)
+  WOLF_DATA_ROOT="$PWD/work/Data" cargo test --offline -p wolf-cli --test m14_visual_regression
+
+KNOWN ENVIRONMENTAL FAILURE
+  wolf-format's `ver6_data_wolf_extracts_every_entry` only runs when the
+  original Data.wolf archive is reachable (WOLF_DATA_WOLF / WOLF_GAME_DIR /
+  the hard-coded install path). In an offline sandbox it skips and the suite
+  stays green. If you do point it at a Data.wolf, it byte-compares every
+  entry against work/Data, so the BGM/SE/BattleEffect files must be present
+  too — unpack the media group first or expect "文件不存在" on those paths.
+
+GODOT
+  The Godot 4.7.2 editor binary is deliberately NOT bundled: it is a 173 MB
+  Windows-only executable, useless on a Linux sandbox, and the frontend needs
+  a native GDExtension built for the host platform anyway. The Rust side
+  covers the same ground (`wolf-cli capture` renders 1024x576 without Godot).
+  See docs/GODOT_MIGRATION.md if you want to drive the frontend locally.
 """
 
 
@@ -192,9 +217,10 @@ def clear_dir(path):
 
 
 def main():
-    for path in (FULL_ZIP, LITE_ZIP):
+    for path in (LOGIC_ZIP, MEDIA_ZIP, DEPS_ZIP):
         if not os.path.isfile(path):
-            raise SystemExit(f"missing bundle: {path} (run tools/pack_review_bundle.py first)")
+            raise SystemExit(f"missing bundle: {path} "
+                             f"(run tools/pack_review_bundle.py and tools/pack_offline_deps.py first)")
 
     clear_dir(UPLOAD_DIR)
     os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -203,8 +229,9 @@ def main():
     zip_hashes = []
 
     for zip_path, prefix, label in (
-        (FULL_ZIP, "full", "full"),
-        (LITE_ZIP, "logic", "logic"),
+        (LOGIC_ZIP, "logic", "logic"),
+        (MEDIA_ZIP, "media", "media"),
+        (DEPS_ZIP, "deps", "deps"),
     ):
         parts, total, count = split_zip(zip_path, UPLOAD_DIR, prefix)
         same, valid = verify_split(zip_path, UPLOAD_DIR, prefix, parts)

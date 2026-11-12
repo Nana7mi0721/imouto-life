@@ -343,11 +343,16 @@ fn action_key_hit_area_matches_the_shipped_event_geometry() {
     let Some(mut game) = loaded_with(&[5]) else {
         return;
     };
-    // One pixel outside every edge must miss: the rectangle is half-open.
+    // The visible save icon is (10,510) 80x60. The old 64x64 tile box around
+    // (32,528) must no longer own points outside the icon:
+    //   * (9,540) is inside the old box but left of the icon;
+    //   * (96,540) is inside the old box but right of the icon;
+    //   * the top/bottom points are outside the icon vertically.
+    // Every point is outside the picture rectangle and must miss.
     for (x, y, label) in [
-        (31, 540, "left"),
+        (9, 540, "left"),
         (96, 540, "right"),
-        (50, 527, "top"),
+        (50, 509, "top"),
         (50, 592, "bottom"),
     ] {
         click_at(&mut game, x, y);
@@ -375,10 +380,11 @@ fn action_key_hit_area_matches_the_shipped_event_geometry() {
 // 3. Status hotspot (ev10 + CE238) and its condition gate.
 // ---------------------------------------------------------------------------
 
-/// ev10 page 0 requires `v15 == 99`; no shipped script writes 99, so the save's
-/// v15 = 0 must keep the hotspot dormant.
+/// ev10 page 0 still requires `v15 == 99`, which no shipped script writes. The
+/// visible 25-pixel status sliver is a UI affordance: it opens CE238 directly
+/// without faking v15 or reviving event 10's dead action page.
 #[test]
-fn status_hotspot_respects_its_v15_condition() {
+fn status_sliver_opens_without_faking_the_dead_v15_gate() {
     let Some(mut game) = loaded_with(&[10]) else {
         return;
     };
@@ -388,13 +394,16 @@ fn status_hotspot_respects_its_v15_condition() {
         game.frame();
     }
     assert_eq!(
-        game.last_action_event, None,
-        "inactive status page must not fire"
+        game.last_action_event,
+        Some(10),
+        "the visible status strip must open CE238"
     );
-    assert!(
-        !running(&game, 10) && !running(&game, 238),
-        "no CE238 without v15==99"
+    assert_eq!(
+        game.screen.get(320).map(|picture| picture.x),
+        Some(0),
+        "CE238 must slide the panel in"
     );
+    assert_eq!(game.vm.vars.get(15), 0, "the bridge must not write v15");
     assert_eq!(game.stats.warnings, 0, "warnings");
 }
 

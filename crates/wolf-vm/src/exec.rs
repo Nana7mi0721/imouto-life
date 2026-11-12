@@ -107,7 +107,7 @@ pub enum WaitState {
 pub struct LoopCtx {
     /// Index into [Program::blocks].
     pub block: usize,
-    /// Remaining iterations; `-1` for an unconditional loop (`170`/`176`).
+    /// Remaining iterations; `-1` for an unconditional loop (`170`).
     pub remaining: i64,
 }
 
@@ -140,6 +140,8 @@ pub struct Instance {
     /// bank and retires the instance itself. Common events keep the default
     /// false and are reaped exactly as before.
     pub retain_after_finish: bool,
+    /// True when this coroutine runs as a parallel background event.
+    pub is_parallel: bool,
 }
 
 impl Instance {
@@ -158,6 +160,7 @@ impl Instance {
             loops: Vec::new(),
             return_to: None,
             retain_after_finish: false,
+            is_parallel: false,
         }
     }
 
@@ -273,6 +276,8 @@ pub struct PictureCmd {
     /// from where the hidden panel drew it. Treating those words absolutely parks the whole
     /// panel at x=305 and stacks every label on top of it.
     pub relative: bool,
+    /// Owning common event id when created by a common event.
+    pub owner_event: Option<u32>,
 }
 
 /// The `cmd` nibble of a `150 Picture` instruction.
@@ -323,6 +328,21 @@ pub struct SoundCmd {
     /// start delay for an SE play, or fade-out length for a BGM stop. All of these are
     /// honoured by the mixer via `AudioEngine::apply_sound_cmd`; 0 means immediate.
     pub frames: i32,
+    /// Playback pitch (tempo) percentage (default 100).
+    pub pitch: i32,
+}
+
+impl Default for SoundCmd {
+    fn default() -> Self {
+        Self {
+            channel: SoundChannel::Bgm,
+            action: SoundAction::Play,
+            file: String::new(),
+            volume: 100,
+            frames: 0,
+            pitch: 100,
+        }
+    }
 }
 
 /// What a `140 PlaySound` does.
@@ -720,6 +740,12 @@ pub trait Host {
         let _ = event;
     }
 
+    /// `211 CommonEventReserve`: schedule an event with arguments to start after this one ends.
+    fn reserve_with_args(&mut self, event: EventId, args: &[i32], strings: &[String]) {
+        let _ = (args, strings);
+        self.reserve(event);
+    }
+
     /// Reads one attribute of a picture for `124 SetVariableEx` (`0x4000` / `0x4400`).
     ///
     /// Returns `None` when the host has no opinion, which makes the interpreter leave
@@ -910,12 +936,28 @@ impl KeyQuery {
 /// The values stay in WOLF's layout here; the host translates them into its own
 /// key bits. `ban_keys` is therefore not the command word: it is the set of inputs
 /// a mode-1/2 toggle switched off, and a mode-0 toggle removes them again.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct InputState {
     /// Key bits the script wants pressed even when the player is not pressing them.
     pub auto_keys: u32,
     /// Key bits a `126` toggle switched off.
     pub ban_keys: u32,
+    pub auto_keys_ttl: u8,
+    pub auto_keys_delivered: Vec<InstanceId>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum CrossWrite {
+    Num {
+        event: u32,
+        slot: usize,
+        value: i32,
+    },
+    Str {
+        event: u32,
+        slot: usize,
+        value: String,
+    },
 }
 
 /// Transition setting installed by opcode 160 and consumed by 161/162.
@@ -1066,7 +1108,35 @@ impl Vm {
         Some((inst.event, bank))
     }
 
+    fn apply_cross_writes(instances: &mut [Instance], cross_writes: &[CrossWrite]) {
+        for cw in cross_writes {
+            match cw {
+                CrossWrite::Num { event, slot, value } => {
+                    for inst in instances.iter_mut() {
+                        if inst.program.self_base == crate::program::COMMON_SELF_BASE
+                            && inst.event == *event
+                        {
+                            inst.self_vars
+                                .set(crate::program::COMMON_SELF_BASE + slot, *value);
+                        }
+                    }
+                }
+                CrossWrite::Str { event, slot, value } => {
+                    for inst in instances.iter_mut() {
+                        if inst.program.self_base == crate::program::COMMON_SELF_BASE
+                            && inst.event == *event
+                        {
+                            inst.self_vars
+                                .set_str(crate::program::COMMON_SELF_BASE + 5 + slot, value);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// Copies one instance's self variables back into its event's durable bank.
+    #[allow(dead_code)]
     fn save_common_self(&mut self, inst: &Instance) {
         if let Some((event, bank)) = Self::bank_from(inst) {
             self.vars.common_self.insert(event, bank);
@@ -1130,6 +1200,34 @@ impl Vm {
         self.seed_common_self(&mut inst);
         inst.return_to = return_to;
         self.instances.push(inst);
+        self.started_events.insert(event);
+        self.started_event_total += 1;
+        Some(id)
+    }
+
+    /// Load a common event with the numeric and string arguments of a `211`.
+    ///
+    /// `211 CommonEventReserve` starts its event after the current foreground
+    /// stack has ended, so this is the same seeding path as a `210` child:
+    /// numbers go to CSelf0.. and the durable `common_self` bank, strings to
+    /// CSelf5..8. A reservation must not be started by `start_event`, which
+    /// would silently drop its arguments.
+    pub fn start_event_with_args(
+        &mut self,
+        event: EventId,
+        args: &[i32],
+        strings: &[String],
+    ) -> Option<InstanceId> {
+        let program = Arc::clone(self.programs.event(event)?);
+        if self.instances.len() >= MAX_INSTANCES {
+            return None;
+        }
+        let id = self.next_id;
+        self.next_id += 1;
+        let mut child = Instance::new(id, None, program);
+        self.seed_common_self(&mut child);
+        self.bind_call_arguments(event, &mut child, args, strings);
+        self.instances.push(child);
         self.started_events.insert(event);
         self.started_event_total += 1;
         Some(id)
@@ -1229,18 +1327,44 @@ impl Vm {
                 }
             }
         }
-        let banks: Vec<(EventId, EventSelfVars)> = self
-            .instances
-            .iter()
-            .filter(|instance| doomed.contains(&instance.id))
-            .filter_map(Self::bank_from)
-            .collect();
-        for (event, bank) in banks {
-            self.vars.common_self.insert(event, bank);
-        }
         self.instances
             .retain(|instance| !doomed.contains(&instance.id));
         true
+    }
+
+    /// Mark an instance as parallel background coroutine or foreground coroutine.
+    pub fn set_instance_parallel(&mut self, id: InstanceId, parallel: bool) {
+        if let Some(inst) = self.instances.iter_mut().find(|i| i.id == id) {
+            inst.is_parallel = parallel;
+        }
+    }
+
+    /// Set an instance self variable and keep durable common-self bank in sync.
+    pub fn set_instance_self_var(&mut self, id: InstanceId, slot: usize, value: i32) {
+        let mut sync_event = None;
+        if let Some(inst) = self.instances.iter_mut().find(|i| i.id == id) {
+            inst.self_vars.set(slot, value);
+            if inst.program.self_base == crate::program::COMMON_SELF_BASE
+                && (600..700).contains(&slot)
+            {
+                sync_event = Some(inst.event);
+            }
+        }
+        if let Some(event) = sync_event {
+            self.vars
+                .common_self
+                .entry(event)
+                .or_default()
+                .set(slot - 600, value);
+            for other in &mut self.instances {
+                if other.program.self_base == crate::program::COMMON_SELF_BASE
+                    && other.event == event
+                    && other.id != id
+                {
+                    other.self_vars.set(slot, value);
+                }
+            }
+        }
     }
 
     /// Load an event by title. Returns `None` when no title matches.
@@ -1261,12 +1385,17 @@ impl Vm {
         self.poll_waits(host);
         self.run_instances(host, &mut budget, &mut report);
         self.reap_finished(host);
-        // 125 自動入力 injects a key for exactly one frame ("1フレームだけ有効" in the
-        // official manual). Keeping it made every later 123 poll read a held key for
-        // the rest of the session: menus answered themselves, CE131's save grid
-        // decided on its own, and the map input guard eventually locked the pointer.
-        // The reset lives here, after every coroutine has had this frame to see it.
-        self.input.auto_keys = 0;
+        // 125 自動入力 injects a key for up to two frames or until delivered.
+        if self.input.auto_keys_ttl > 0 {
+            self.input.auto_keys_ttl -= 1;
+            if self.input.auto_keys_ttl == 0 {
+                self.input.auto_keys = 0;
+                self.input.auto_keys_delivered.clear();
+            }
+        } else {
+            self.input.auto_keys = 0;
+            self.input.auto_keys_delivered.clear();
+        }
 
         report.steps = self.budget - budget.min(self.budget);
         report.running = self.instances.len();
@@ -1345,7 +1474,24 @@ impl Vm {
             if *budget == 0 {
                 return;
             }
+            let foreground_event = self
+                .instances
+                .iter()
+                .rev()
+                .find(|other| {
+                    !other.is_parallel
+                        && (other.pc < other.program.len() || other.wait != WaitState::None)
+                })
+                .map(|other| {
+                    let common = other.program.self_base == crate::program::COMMON_SELF_BASE;
+                    if common {
+                        other.event as i32 + 500_000
+                    } else {
+                        other.event as i32
+                    }
+                });
             let mut hist: Vec<(usize, u64)> = Vec::new();
+            let mut cross_writes = Vec::new();
             let result = {
                 let inst = &mut self.instances[i];
                 execute(
@@ -1359,8 +1505,11 @@ impl Vm {
                     &mut self.transition,
                     self.hot_trace,
                     &mut hist,
+                    foreground_event,
+                    &mut cross_writes,
                 )
             };
+            Self::apply_cross_writes(&mut self.instances, &cross_writes);
             if self.hot_trace && !hist.is_empty() {
                 let event = self.instances[i].event;
                 hist.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
@@ -1408,8 +1557,8 @@ impl Vm {
                 },
                 Signal::ReturnToTitle => {
                     host.return_to_title();
-                    self.instances[i].wait = WaitState::None;
-                    self.instances[i].pc = self.instances[i].program.len();
+                    self.instances.clear();
+                    return;
                 }
                 Signal::EndGame => {
                     host.end_game();
@@ -1456,26 +1605,47 @@ impl Vm {
         self.next_id += 1;
         let mut child = Instance::new(id, Some(self.instances[caller].id), program);
         self.seed_common_self(&mut child);
-        // Arguments land in self variable group 6 (magic 1_600_000 + i), not in
-        // group 0 - see magic::SELF_ARG_BASE for the measurement. Getting this
-        // wrong is invisible on the title screen but wedges every story script
-        // that uses a progress bar or a mode switch.
+        self.bind_call_arguments(target, &mut child, &args, &strings);
+        child.return_to = return_to;
+        self.instances.push(child);
+        self.instances[caller].wait = WaitState::Child(id);
+    }
+
+    /// Seed a not-yet-pushed child with the arguments of a `210`/`211`.
+    ///
+    /// Arguments land in self variable group 6 (magic 1_600_000 + i), not in
+    /// group 0 - see magic::SELF_ARG_BASE for the measurement. Strings go to
+    /// CSelf5..8 (magic 1_600_005 + k), mirroring the editor's four numeric and
+    /// four string input boxes (docs/OPCODE_210_RETURN.md section 8).
+    ///
+    /// Only the new child receives the call arguments. Another live instance of
+    /// the same event keeps its own group-6 values: a bare scheduler instance is
+    /// not a callee and must not inherit an unrelated `210` argument.
+    fn bind_call_arguments(
+        &mut self,
+        target: EventId,
+        child: &mut Instance,
+        args: &[i32],
+        strings: &[String],
+    ) {
         for (slot, value) in args.iter().enumerate() {
             child
                 .self_vars
                 .set(crate::magic::SELF_ARG_BASE + slot, *value);
+            self.vars
+                .common_self
+                .entry(target)
+                .or_default()
+                .set(slot, *value);
         }
-        // String arguments go to CSelf5..8 (magic 1_600_005 + k), mirroring the
-        // editor's four numeric and four string input boxes
-        // (docs/OPCODE_210_RETURN.md section 8). 8,229 of the 8,260 call sites
-        // that pass a string have a callee that reads 1_600_005, so dropping
-        // them leaves every message window blank.
         for (slot, text) in strings.iter().take(SELF_ARG_STRING_SLOTS).enumerate() {
             child.self_vars.set_str(SELF_ARG_STRING_BASE + slot, text);
+            self.vars
+                .common_self
+                .entry(target)
+                .or_default()
+                .set_str(slot, text);
         }
-        child.return_to = return_to;
-        self.instances.push(child);
-        self.instances[caller].wait = WaitState::Child(id);
     }
 
     /// Drop ended coroutines and hand their return values to the parents.
@@ -1502,7 +1672,6 @@ impl Vm {
                 continue;
             };
             let mut inst = self.instances.remove(pos);
-            self.save_common_self(&inst);
             let parent = inst.parent.and_then(|pid| {
                 let idx = self.instances.iter().position(|i| i.id == pid)?;
                 if self.instances[idx].wait == WaitState::Child(inst.id) {
@@ -1523,7 +1692,15 @@ impl Vm {
                     if let Some(target) = inst.return_to.take() {
                         if let Some(slot) = return_slot(&inst.program) {
                             let value = inst.self_vars.get(slot);
-                            store_num(&mut self.instances[idx], &mut self.vars, target, value);
+                            let mut cross_writes = Vec::new();
+                            store_num(
+                                &mut self.instances[idx],
+                                &mut self.vars,
+                                target,
+                                value,
+                                &mut cross_writes,
+                            );
+                            Self::apply_cross_writes(&mut self.instances, &cross_writes);
                         }
                     }
                     self.instances[idx].wait = WaitState::None;
@@ -1579,11 +1756,10 @@ fn eval_num(raw: i32, inst: &Instance, vars: &Variables) -> i32 {
         MagicKind::SelfVar => inst.self_vars.get(magic.index() as usize),
         MagicKind::Var => vars.get(magic.index() as usize),
         MagicKind::SysVar => vars.get_sys(magic.index() as usize),
-        // 15_000_000+... is the address of a cross-event string cell and is also
-        // used as a plain base constant in arithmetic (CE265-270 compute their
-        // target as 15_000_000 + 100*id + slot). Only the string paths dereference
-        // it; numeric reads keep the raw value, as the plugin expects.
-        MagicKind::CommonSelf => raw,
+        MagicKind::CommonSelf => vars
+            .common_self
+            .get(&magic.common_event())
+            .map_or(0, |bank| bank.get(magic.common_slot())),
         // A string bank read as a number is 0 (the editor never does this).
         MagicKind::StrVar => 0,
         // Database cells need a host to read; callers that can resolve them use
@@ -1609,11 +1785,25 @@ fn eval_num(raw: i32, inst: &Instance, vars: &Variables) -> i32 {
 /// Evaluate an opcode-121 arithmetic operand. The exact base value 1_000_000
 /// is a literal constant here (see the CE94/CE79 multiply sites); every other
 /// operand in the self bank is still resolved through eval_num.
+#[allow(dead_code)]
 fn eval_arith_operand(raw: i32, inst: &Instance, vars: &Variables) -> i32 {
     if raw == crate::magic::SELF_BASE {
         raw
     } else {
         eval_num(raw, inst, vars)
+    }
+}
+
+fn eval_arith_operand_host(
+    raw: i32,
+    inst: &Instance,
+    vars: &Variables,
+    host: &mut dyn Host,
+) -> i32 {
+    if raw == crate::magic::SELF_BASE {
+        raw
+    } else {
+        eval_num_host(raw, inst, vars, host)
     }
 }
 
@@ -1693,39 +1883,46 @@ fn eval_str(raw: i32, inst: &Instance, vars: &Variables) -> String {
 }
 
 /// Write one magic operand.
-fn store_num(inst: &mut Instance, vars: &mut Variables, raw: i32, value: i32) {
+fn store_num(
+    inst: &mut Instance,
+    vars: &mut Variables,
+    raw: i32,
+    value: i32,
+    cross_writes: &mut Vec<CrossWrite>,
+) {
     let magic = Magic::decode(raw);
     match magic.kind() {
-        MagicKind::SelfVar => inst.self_vars.set(magic.index() as usize, value),
+        MagicKind::SelfVar => {
+            let slot = magic.index() as usize;
+            inst.self_vars.set(slot, value);
+            if inst.program.self_base == crate::program::COMMON_SELF_BASE
+                && (600..700).contains(&slot)
+            {
+                vars.common_self
+                    .entry(inst.event)
+                    .or_default()
+                    .set(slot - 600, value);
+            }
+        }
         MagicKind::Var => vars.set(magic.index() as usize, value),
         MagicKind::SysVar => vars.set_sys(magic.index() as usize, value),
-        MagicKind::CommonSelf => vars
-            .common_self
-            .entry(magic.common_event())
-            .or_default()
-            .set(magic.common_slot(), value),
+        MagicKind::CommonSelf => {
+            let ev = magic.common_event();
+            let slot = magic.common_slot();
+            vars.common_self.entry(ev).or_default().set(slot, value);
+            if inst.program.self_base == crate::program::COMMON_SELF_BASE && inst.event == ev {
+                inst.self_vars
+                    .set(crate::program::COMMON_SELF_BASE + slot, value);
+            }
+            cross_writes.push(CrossWrite::Num {
+                event: ev,
+                slot,
+                value,
+            });
+        }
         // Writing to a literal or a sentinel is a no-op in every WOLF build.
         MagicKind::Literal | MagicKind::StrVar | MagicKind::DbCell | MagicKind::Opaque => {}
     }
-}
-
-/// Resolve a `121` destination that is itself a variable holding a bank address.
-///
-/// The balloon library first computes e.g. `15_000_000 + 100*270 + 11` into its
-/// own self10, then uses self10 as the destination of the next assignment. WOLF
-/// dereferences a self variable that already holds a cross-event address; writing
-/// straight into self10 corrupted the pointer and left CE270's window position
-/// unset. Only the `15_000_000+...` bank appears in this pattern, so the resolver
-/// stays narrow instead of treating every bank-valued number as a pointer.
-fn resolve_numeric_target(raw: i32, inst: &Instance) -> i32 {
-    let magic = Magic::decode(raw);
-    if matches!(magic.kind(), MagicKind::SelfVar) && !(5..=9).contains(&(magic.index() % 100)) {
-        let value = inst.self_vars.get(magic.index() as usize);
-        if matches!(Magic::decode(value).kind(), MagicKind::CommonSelf) {
-            return value;
-        }
-    }
-    raw
 }
 
 /// Resolve a `122` destination that is itself a variable holding a string address.
@@ -1751,19 +1948,46 @@ fn resolve_string_target(raw: i32, inst: &Instance) -> i32 {
 }
 
 /// Write one magic operand as a string.
-fn store_str(inst: &mut Instance, vars: &mut Variables, raw: i32, value: &str) {
+fn store_str(
+    inst: &mut Instance,
+    vars: &mut Variables,
+    raw: i32,
+    value: &str,
+    cross_writes: &mut Vec<CrossWrite>,
+) {
     let magic = Magic::decode(raw);
     match magic.kind() {
         MagicKind::StrVar => vars.set_str(magic.index() as usize, value),
-        MagicKind::SelfVar => inst.self_vars.set_str(magic.index() as usize, value),
+        MagicKind::SelfVar => {
+            let slot = magic.index() as usize;
+            inst.self_vars.set_str(slot, value);
+            if inst.program.self_base == crate::program::COMMON_SELF_BASE
+                && (605..=609).contains(&slot)
+            {
+                vars.common_self
+                    .entry(inst.event)
+                    .or_default()
+                    .set_str(slot - 605, value);
+            }
+        }
         MagicKind::SysVar => vars.set_sys_str(magic.index() as usize, value),
         MagicKind::CommonSelf => {
             let slot = magic.common_slot();
             if (5..=9).contains(&slot) {
+                let ev = magic.common_event();
                 vars.common_self
-                    .entry(magic.common_event())
+                    .entry(ev)
                     .or_default()
                     .set_str(slot - 5, value);
+                if inst.program.self_base == crate::program::COMMON_SELF_BASE && inst.event == ev {
+                    inst.self_vars
+                        .set_str(crate::program::COMMON_SELF_BASE + slot, value);
+                }
+                cross_writes.push(CrossWrite::Str {
+                    event: ev,
+                    slot: slot - 5,
+                    value: value.to_string(),
+                });
             }
         }
         MagicKind::Literal | MagicKind::Var | MagicKind::DbCell | MagicKind::Opaque => {}
@@ -1966,6 +2190,79 @@ fn compound(kind: i32, current: i32, value: i32) -> i32 {
     }
 }
 
+/// Floating-point binary operations for opcode 121 in real mode (`実数計算`).
+fn binary_op_f64(kind: u8, a: f64, b: f64, rng: &mut WolfRng) -> f64 {
+    match kind {
+        0x0 => a + b,
+        0x1 => a - b,
+        0x2 => a * b,
+        0x3 => {
+            if b == 0.0 {
+                a
+            } else {
+                a / b
+            }
+        }
+        0x4 => {
+            if b == 0.0 {
+                a
+            } else {
+                a % b
+            }
+        }
+        0x5 => ((a as i32) & (b as i32)) as f64,
+        0x6 => rng.range(a as i32, b as i32) as f64,
+        0x7 => ((a as i32) | (b as i32)) as f64,
+        0x8 => ((a as i32) ^ (b as i32)) as f64,
+        0x9 => ((a as i32).wrapping_shl((b as i32 & 31) as u32)) as f64,
+        _ => a,
+    }
+}
+
+/// Floating-point compound assignment for opcode 121 in real mode (`実数計算`).
+fn compound_f64(kind: i32, current: f64, value: f64) -> f64 {
+    match kind & 0x0F00 {
+        0x000 => value,
+        0x100 => current + value,
+        0x200 => current - value,
+        0x300 => current * value,
+        0x400 => {
+            if value == 0.0 {
+                current
+            } else {
+                current / value
+            }
+        }
+        0x500 => {
+            if value == 0.0 {
+                current
+            } else {
+                current % value
+            }
+        }
+        0x600 => current.max(value),
+        0x700 => current.min(value),
+        0x800 => value.abs(),
+        0x900 => {
+            let deg = value.atan2(current).to_degrees();
+            (deg * 10.0).trunc()
+        }
+        0xA00 => {
+            let deg = value / 10.0;
+            (deg.to_radians().sin() * 1000.0).trunc()
+        }
+        0xB00 => {
+            let deg = value / 10.0;
+            (deg.to_radians().cos() * 1000.0).trunc()
+        }
+        0xC00 => {
+            let root = value.max(0.0).sqrt();
+            (root * 1000.0).trunc()
+        }
+        _ => value,
+    }
+}
+
 /// `111` comparison operators, docs/OPCODE_SPEC.md §3.3.
 ///
 /// Bit 4 of the operator word is a condition-list flag, not part of the comparison.
@@ -2005,6 +2302,8 @@ fn execute(
     transition: &mut TransitionState,
     hot: bool,
     hist: &mut Vec<(usize, u64)>,
+    foreground_event: Option<i32>,
+    cross_writes: &mut Vec<CrossWrite>,
 ) -> BlockResult {
     // Holds the jump table and the instruction stream. Cloning the Arc (not the
     // Program) keeps the `&Command` borrow pointing at this local instead of at
@@ -2084,12 +2383,9 @@ fn execute(
                         // dynamic jumps, but the reverse is legal WOLF and would have
                         // killed the whole coroutine. Expand the candidates only on a
                         // miss, so the normal path pays nothing.
-                        let dynamic = program.labels.iter().find_map(|(label, target)| {
-                            label
-                                .contains('\\')
-                                .then(|| expand(label, inst, vars, host) == name)
-                                .filter(|matched| *matched)
-                                .map(|_| *target)
+                        let dynamic = program.label_defs.iter().find_map(|(label, target)| {
+                            (label.contains('\\') && expand(label, inst, vars, host) == name)
+                                .then_some(*target)
                         });
                         if let Some(target) = dynamic {
                             sync_loops_for_jump(&program, inst, target);
@@ -2197,54 +2493,116 @@ fn execute(
                 None
             }
             121 => {
-                let target = resolve_numeric_target(arg(cmd, 0), inst);
-                // A bare 1_000_000 is a literal multiplier in the data (CE79
-                // pc41 and CE94 pc323/pc331 multiply an id by one million to
-                // build a database address). The magic decoder would otherwise
-                // read that exact value as self slot V0-0 (= 0), which drops the
-                // whole term and left the save-slot name reading the wrong cell.
-                let a = eval_arith_operand(arg(cmd, 1), inst, vars);
-                let b = eval_arith_operand(arg(cmd, 2), inst, vars);
-                let bits = arg(cmd, 3) as u32;
-                let bin = ((bits >> 12) & 0x0F) as u8;
-                // 0x6000 is a random range: docs/OPCODE_SPEC.md §3.2 calls it
-                // undefined in WolfTL, but 1,101 call sites pass (min, max) pairs
-                // that only make sense as rand(min, max) — see rng.rs.
-                let result = if bin == 6 {
-                    rng.range(a, b)
+                let raw_lhs = arg(cmd, 0);
+                let raw_rhs1 = arg(cmd, 1);
+                let raw_rhs2 = arg(cmd, 2);
+                let word = arg(cmd, 3) as u32;
+
+                let flags = word & 0xFF;
+                let assign_op = (word & 0x0F00) as i32;
+                let bin = ((word >> 12) & 0x0F) as u8;
+                let batch_mode = (word & 0x10000) != 0;
+                // The range form of a self-variable operation updates the named
+                // slot only. CE94 relies on this when it scales its save-slot
+                // tenths grid: pc87 divides self22, but self23..25 (y/w/h) must
+                // stay in tenths for the renderer (9280x1152, not 928x115).
+                // Ordinary variables keep the full contiguous range below.
+                let self_range = batch_mode && Magic::decode(raw_lhs).kind() == MagicKind::SelfVar;
+
+                let v1 = if (flags & 0x04) != 0 {
+                    raw_rhs1
                 } else {
-                    binary_op(bin, a, b)
+                    let addr1 = if (flags & 0x20) != 0 {
+                        eval_num(raw_rhs1, inst, vars)
+                    } else {
+                        raw_rhs1
+                    };
+                    eval_arith_operand_host(addr1, inst, vars, host)
                 };
-                // A database-value target is written as `[base, value, bin,
-                // bits, type, row, column]`: the base alone is not the cell, so
-                // the row and column are the trailing operands.  CE242 pc17 uses
-                // `[1_100_000_000, 99, 0, 0, 0, 12, 9]` to set the action maximum,
-                // and CE259/CE284/CE298 write stamina/action the same way.
-                if target == crate::magic::DB_VALUE_BASE && argc(cmd) >= 7 {
+
+                let v2 = if (flags & 0x08) != 0 {
+                    raw_rhs2
+                } else {
+                    let addr2 = if (flags & 0x40) != 0 {
+                        eval_num(raw_rhs2, inst, vars)
+                    } else {
+                        raw_rhs2
+                    };
+                    eval_arith_operand_host(addr2, inst, vars, host)
+                };
+
+                if !batch_mode
+                    && raw_lhs == crate::magic::DB_VALUE_BASE
+                    && argc(cmd) >= 7
+                    && (flags & 0x10) == 0
+                {
                     let db_type = eval_num(arg(cmd, 4), inst, vars);
                     let row = eval_num(arg(cmd, 5), inst, vars);
                     let column = eval_num(arg(cmd, 6), inst, vars);
                     let current = host
                         .database_cell(DbContainer::CData, db_type, row, column)
                         .unwrap_or(0);
-                    let value = compound((bits & 0x0FFF) as i32, current, result);
+                    let value = if (flags & 0x02) != 0 {
+                        let rhs_f = binary_op_f64(bin, v1 as f64, v2 as f64, rng);
+                        compound_f64(assign_op, current as f64, rhs_f) as i32
+                    } else {
+                        let rhs = if bin == 6 {
+                            rng.range(v1, v2)
+                        } else {
+                            binary_op(bin, v1, v2)
+                        };
+                        compound(assign_op, current, rhs)
+                    };
+                    let value = if (flags & 0x01) != 0 {
+                        value.clamp(-999_999, 999_999)
+                    } else {
+                        value
+                    };
                     host.set_database_cell(DbContainer::CData, db_type, row, column, value);
                     inst.pc += 1;
                     None
                 } else {
-                    let current = eval_num_host(target, inst, vars, host);
-                    let value = compound((bits & 0x0FFF) as i32, current, result);
-                    if Magic::decode(target).kind() == MagicKind::DbCell {
-                        let magic = Magic::decode(target);
-                        host.set_database_cell(
-                            DbContainer::CData,
-                            0,
-                            magic.db_row(),
-                            magic.db_column(),
-                            value,
-                        );
+                    let batch_count = if batch_mode && !self_range {
+                        arg(cmd, 4).max(0) as i32
                     } else {
-                        store_num(inst, vars, target, value);
+                        0
+                    };
+                    for offset in 0..=batch_count {
+                        let lhs_raw = raw_lhs.wrapping_add(offset);
+                        let target = if (flags & 0x10) != 0 {
+                            eval_num(lhs_raw, inst, vars)
+                        } else {
+                            lhs_raw
+                        };
+                        let current = eval_num_host(target, inst, vars, host);
+                        let value = if (flags & 0x02) != 0 {
+                            let rhs_f = binary_op_f64(bin, v1 as f64, v2 as f64, rng);
+                            compound_f64(assign_op, current as f64, rhs_f) as i32
+                        } else {
+                            let rhs = if bin == 6 {
+                                rng.range(v1, v2)
+                            } else {
+                                binary_op(bin, v1, v2)
+                            };
+                            compound(assign_op, current, rhs)
+                        };
+                        let value = if (flags & 0x01) != 0 {
+                            value.clamp(-999_999, 999_999)
+                        } else {
+                            value
+                        };
+                        if Magic::decode(target).kind() == MagicKind::DbCell {
+                            let magic = Magic::decode(target);
+                            host.set_database_cell(
+                                DbContainer::CData,
+                                0,
+                                magic.db_row(),
+                                magic.db_column(),
+                                value,
+                            );
+                        } else {
+                            store_num(inst, vars, target, value, cross_writes);
+                        }
                     }
                     inst.pc += 1;
                     None
@@ -2291,37 +2649,41 @@ fn execute(
                 // Writes the shortened text back into the source variable, which is
                 // what makes the "cut" half of an operation work. A literal or
                 // keyboard source has nowhere to go and is simply ignored.
-                let write_back = |inst: &mut Instance, vars: &mut Variables, text: &str| {
-                    if let Some(address) = string_source {
-                        store_str(inst, vars, address, text);
-                    }
-                };
+                let write_back =
+                    |inst: &mut Instance,
+                     vars: &mut Variables,
+                     text: &str,
+                     cross_writes: &mut Vec<CrossWrite>| {
+                        if let Some(address) = string_source {
+                            store_str(inst, vars, address, text, cross_writes);
+                        }
+                    };
                 match operation {
                     // Assignment: `=`, `= string var`, `= number`.
                     0x0000 => {
                         let value = read_source();
-                        store_str(inst, vars, target, &value);
+                        store_str(inst, vars, target, &value, cross_writes);
                     }
                     // Append (`+=`): the existing destination is kept.
                     0x0100 => {
                         let value = read_source();
                         let mut combined = eval_str(target, inst, vars);
                         combined.push_str(&value);
-                        store_str(inst, vars, target, &combined);
+                        store_str(inst, vars, target, &combined, cross_writes);
                     }
                     // `上1行切り取り`: move the first line to the destination and
                     // remove it (plus its newline) from the source.
                     0x0010 => {
                         let text = read_source();
                         let (line, rest) = split_first_line(&text);
-                        store_str(inst, vars, target, line);
-                        write_back(inst, vars, rest);
+                        store_str(inst, vars, target, line, cross_writes);
+                        write_back(inst, vars, rest, cross_writes);
                     }
                     // `上1行コピー`: same split, source untouched.
                     0x0300 => {
                         let text = read_source();
                         let (line, _) = split_first_line(&text);
-                        store_str(inst, vars, target, line);
+                        store_str(inst, vars, target, line, cross_writes);
                     }
                     // `に↓から1文字切り出し`: move one character (a whole escape
                     // unit) from the front of the source into the destination. The
@@ -2331,8 +2693,8 @@ fn execute(
                         let text = read_source();
                         let count = first_unit_len(&text);
                         let (cut, rest) = text.split_at(count);
-                        store_str(inst, vars, target, cut);
-                        write_back(inst, vars, rest);
+                        store_str(inst, vars, target, cut, cross_writes);
+                        write_back(inst, vars, rest, cross_writes);
                     }
                     // `に↓から最後1文字切り出し`: move the last character (or escape
                     // unit) into the destination and remove it from the source.
@@ -2340,8 +2702,8 @@ fn execute(
                         let text = read_source();
                         let at = last_unit_start(&text);
                         let (rest, cut) = text.split_at(at);
-                        store_str(inst, vars, target, cut);
-                        write_back(inst, vars, rest);
+                        store_str(inst, vars, target, cut, cross_writes);
+                        write_back(inst, vars, rest, cross_writes);
                     }
                     // `から↓の文字列を全消去`: delete every occurrence.
                     0x0800 => {
@@ -2350,7 +2712,7 @@ fn execute(
                         if !needle.is_empty() {
                             text = text.replace(&needle, "");
                         }
-                        store_str(inst, vars, target, &text);
+                        store_str(inst, vars, target, &text, cross_writes);
                     }
                     // `から以下の文字列を置換`: two string operands.
                     0x0900 => {
@@ -2368,7 +2730,7 @@ fn execute(
                         } else {
                             text.replace(&from, &to)
                         };
-                        store_str(inst, vars, target, &replaced);
+                        store_str(inst, vars, target, &replaced, cross_writes);
                     }
                     // `から指定文字まで切り出し`: keep the text before the first
                     // marker. The manual specifies `<<NotFound>>` for a miss.
@@ -2379,7 +2741,7 @@ fn execute(
                             Some(at) if !marker.is_empty() => text[..at].to_owned(),
                             _ => "<<NotFound>>".to_owned(),
                         };
-                        store_str(inst, vars, target, &value);
+                        store_str(inst, vars, target, &value, cross_writes);
                     }
                     // `の指定文字以降を切り出し`: keep the text after the first marker.
                     0x0B00 => {
@@ -2389,13 +2751,13 @@ fn execute(
                             Some(at) if !marker.is_empty() => text[at + marker.len()..].to_owned(),
                             _ => "<<NotFound>>".to_owned(),
                         };
-                        store_str(inst, vars, target, &value);
+                        store_str(inst, vars, target, &value, cross_writes);
                     }
                     // Unknown operation: keep the old plain-assignment behaviour
                     // rather than silently blanking the destination.
                     _ => {
                         let value = read_source();
-                        store_str(inst, vars, target, &value);
+                        store_str(inst, vars, target, &value, cross_writes);
                     }
                 }
                 inst.pc += 1;
@@ -2412,8 +2774,17 @@ fn execute(
                 // which keys count, whether the poll waits, and which device it reads.
                 let target = arg(cmd, 0);
                 let query = KeyQuery::decode(arg(cmd, 1) as u32);
-                let code = host.key_code_auto(query, input.auto_keys, input.ban_keys);
-                store_num(inst, vars, target, code);
+                let effective_auto =
+                    if input.auto_keys != 0 && !input.auto_keys_delivered.contains(&inst.id) {
+                        input.auto_keys
+                    } else {
+                        0
+                    };
+                let code = host.key_code_auto(query, effective_auto, input.ban_keys);
+                if input.auto_keys != 0 && !input.auto_keys_delivered.contains(&inst.id) {
+                    input.auto_keys_delivered.push(inst.id);
+                }
+                store_num(inst, vars, target, code, cross_writes);
                 // A wait poll (`入力を待つ`) blocks the coroutine until a key it accepts
                 // arrives. Event 249's pause overlay polls 0x91 and never reads the
                 // result: it exists purely to hold the scene until the player presses a
@@ -2442,7 +2813,11 @@ fn execute(
                 } else {
                     arg(cmd, 2)
                 };
-                let value = match sub {
+                // The high nibble selects the query family; bits 8..11 are the
+                // compound-assignment operator (0 assign, 1 add, 2 sub, 3 mul,
+                // 4 div, 5 rem). CE48 uses the plain forms, but the editor also
+                // emits 0x1200/0x4400 when a script reads and updates one field.
+                let value = match sub & 0xF000 {
                     0x3000 => {
                         // Fields 17/18 name the running event, which only the
                         // interpreter knows. 17 is "this common-event id" (-1 for a
@@ -2455,16 +2830,22 @@ fn execute(
                         if field == 17 {
                             Some(if common { inst.event as i32 } else { -1 })
                         } else if field == 18 {
-                            Some(if common {
-                                inst.event as i32 + 500_000
+                            if let Some(val) = host.engine_state(18) {
+                                Some(val)
+                            } else if let Some(val) = foreground_event {
+                                Some(val)
                             } else {
-                                inst.event as i32
-                            })
+                                Some(if common {
+                                    inst.event as i32 + 500_000
+                                } else {
+                                    inst.event as i32
+                                })
+                            }
                         } else {
                             host.engine_state(field)
                         }
                     }
-                    0x1000 | 0x1200 => {
+                    0x1000 => {
                         let object = if argc(cmd) >= 4 {
                             eval_num(arg(cmd, 2), inst, vars)
                         } else {
@@ -2472,7 +2853,7 @@ fn execute(
                         };
                         host.character_state(object, field)
                     }
-                    0x4000 | 0x4400 => {
+                    0x4000 => {
                         let object = if argc(cmd) >= 4 {
                             eval_num(arg(cmd, 2), inst, vars)
                         } else {
@@ -2480,10 +2861,10 @@ fn execute(
                         };
                         host.picture_state(object, field)
                     }
-                    other => {
+                    _ => {
                         host.log(
                             LogLevel::Info,
-                            &format!("124 SetVariableEx: sub-op {other:#x} unused in this game"),
+                            &format!("124 SetVariableEx: sub-op {sub:#x} unused in this game"),
                         );
                         None
                     }
@@ -2491,7 +2872,9 @@ fn execute(
                 // `None` deliberately leaves the destination alone: the original engine does
                 // not write anything when the queried object does not exist (§3.1).
                 if let Some(value) = value {
-                    store_num(inst, vars, target, value);
+                    let current = eval_num(target, inst, vars);
+                    let value = compound(sub, current, value);
+                    store_num(inst, vars, target, value, cross_writes);
                 }
                 inst.pc += 1;
                 None
@@ -2501,7 +2884,10 @@ fn execute(
                 // (WOLF layout: decide 1, cancel 2, sub 4, down 0x10, left 0x20,
                 // right 0x40, up 0x80). Only the host can force a press, because it
                 // owns the real keyboard.
-                input.auto_keys = arg(cmd, 0) as u32 & 0xFF;
+                let bits = arg(cmd, 0) as u32 & 0xFF;
+                input.auto_keys = bits;
+                input.auto_keys_ttl = if bits != 0 { 2 } else { 0 };
+                input.auto_keys_delivered.clear();
                 inst.pc += 1;
                 None
             }
@@ -2526,10 +2912,10 @@ fn execute(
             130 => {
                 // Raw layout is target, x, y, map, options - not map-first.
                 host.teleport(
-                    arg(cmd, 0),
-                    arg(cmd, 3),
-                    arg(cmd, 1),
-                    arg(cmd, 2),
+                    eval_num(arg(cmd, 0), inst, vars),
+                    eval_num(arg(cmd, 3), inst, vars),
+                    eval_num(arg(cmd, 1), inst, vars),
+                    eval_num(arg(cmd, 2), inst, vars),
                     arg(cmd, 4),
                 );
                 // The map load is instant in the original; one frame of slack
@@ -2539,98 +2925,112 @@ fn execute(
                 Some(Signal::Blocked)
             }
             140 => {
-                // Raw layout (wolfrpg-map-parser sound_command). The first word is
-                //   options (1 byte) | system-db entry (u16, LE) | sound-type (1 byte):
-                //   options high nibble = operation (0 BGM, 1 BGS, 2 SE),
-                //   options low  nibble = process type (0 playback, 1 preload, 3 free),
-                //   sound-type = 0 DB entry, 1 variable, 2 file name, 0xFF stop sentinel.
-                //   [1] = fade time (BGM/BGS) or delay (SE)
-                //   [2] = variable, [3] = start time
-                //   [4] = volume, [5] = tempo, [6] = loop point (BGM/BGS only)
-                // Old code mistook [1] for the volume, which silenced every track whose
-                // fade time was 0 and rendered 10 as 10%. The retail data's [4] values
-                // are the sane 0..100 (200 for the loud SE), so read [4] here.
-                //
-                // Play vs stop: the parser models a stop as `State::FreeAll`
-                // (`SoundFreeAll` / `SoundFreeAllVariable`), which carries no file name
-                // or voice id. A census of all 247 opcode-140 commands in
-                // BasicData/CommonEvent.dat + MapData/*.mps found 73 commands with no
-                // file-name state (62 genuine FreeAll variants: 60 0xFF sentinels plus 2
-                // variable forms; 11 DB-entry plays). Every one has `strings == []`; the
-                // 174 commands carrying a file are all plays (sound-type == file name).
-                // So stop means "clear the whole channel", and bit 25 (sound-type's
-                // file-name bit) is a faithful play discriminator for every command this
-                // title ships. The 11 DB-entry plays land in the Stop arm; resolving
-                // system-db SE ids is a separate follow-up, not a per-voice stop.
                 let bits = arg(cmd, 0);
-                // options high nibble 2 = SE; BGS (1) shares the BGM bus in this mixer.
-                // options high nibble: 0 BGM, 1 BGS, 2 SE. BGS is its own ambience bus in
-                // WOLF; folding it into BGM made rain/wind stop or restart the music.
+                let fade_or_delay = eval_num(arg(cmd, 1), inst, vars).max(0);
+                let db_id = eval_num(arg(cmd, 2), inst, vars);
+                let raw_vol = if argc(cmd) >= 5 {
+                    eval_num(arg(cmd, 4), inst, vars)
+                } else {
+                    0
+                };
+                let raw_pitch = if argc(cmd) >= 6 {
+                    eval_num(arg(cmd, 5), inst, vars)
+                } else {
+                    0
+                };
+
                 let channel = match bits & 0xF0 {
                     0x10 => SoundChannel::Bgs,
                     0x20 => SoundChannel::Se,
                     _ => SoundChannel::Bgm,
                 };
-                // The sound-type byte and the 16-bit SystemDB row are packed above the
-                // options byte. Sound-type 0 with row 0xFFFF is the BGM stop sentinel,
-                // not row 65535: the editor writes 0x00FFFF00 for "stop BGM" and
-                // 0xFFFFFFxx for the explicit FreeAll variants.
                 let sound_type = ((bits >> 24) & 0xFF) as u8;
+                let process_type = (bits & 0x0F) as u8;
                 let entry = ((bits >> 8) & 0xFFFF) as u16;
                 let db_type = match bits & 0xF0 {
                     0x10 => 2, // BGS list
                     0x20 => 3, // SE list
                     _ => 1,    // BGM list
                 };
-                let db_play = sound_type == 0 && entry != 0xFFFF;
-                // The explicit play flag is only meaningful on the non-negative form;
-                // 0xFFFFFFxx encodes FreeAll and has bit 25 set too.
-                let is_play = db_play || (bits >= 0 && bits & 0x0200_0000 != 0);
-                let (action, file, volume, frames) = if is_play {
-                    let (file, volume) = if db_play {
-                        let (file, db_volume) = host.sound_db(db_type, entry).unwrap_or_default();
-                        // The row's 再生音量 is the default; an explicit [4] operand wins
-                        // when the editor stored one. Every DB-entry site in this title
-                        // carries only arg0, so the row volume is what plays.
-                        let volume = if argc(cmd) >= 6 {
-                            arg(cmd, 4)
-                        } else {
-                            db_volume
-                        };
-                        (file, volume)
-                    } else {
-                        let file = expand(
-                            cmd.strings.first().map_or("", String::as_str),
-                            inst,
-                            vars,
-                            host,
-                        );
-                        let volume = if argc(cmd) >= 6 { arg(cmd, 4) } else { 100 };
-                        (file, volume)
-                    };
-                    // Shared fade/delay slot: fade-in for BGM, start delay for SE. Both
-                    // are honoured by `AudioEngine::apply_sound_cmd`.
-                    let frames = if argc(cmd) >= 6 {
-                        arg(cmd, 1).max(0)
-                    } else {
-                        0
-                    };
-                    (SoundAction::Play, file, volume, frames)
+
+                if process_type == 1 && sound_type != 0xFF {
+                    // Preload is a no-op
+                    inst.pc += 1;
+                    None
                 } else {
-                    // Stop-all: retail FreeAll has no identity, so there is no file name
-                    // to read; `frames` is the BGM fade-out length (SE clears at once).
-                    let frames = if argc(cmd) <= 5 { arg(cmd, 1) } else { 0 };
-                    (SoundAction::Stop, String::new(), 0, frames)
-                };
-                host.sound(&SoundCmd {
-                    channel,
-                    action,
-                    file,
-                    volume,
-                    frames,
-                });
-                inst.pc += 1;
-                None
+                    let is_stop = sound_type == 0xFF
+                        || process_type == 2
+                        || process_type == 3
+                        || (sound_type == 0 && entry == 0xFFFF)
+                        || (sound_type == 1 && db_id < 0);
+
+                    if is_stop {
+                        host.sound(&SoundCmd {
+                            channel,
+                            action: SoundAction::Stop,
+                            file: String::new(),
+                            volume: 0,
+                            frames: fade_or_delay,
+                            pitch: 100,
+                        });
+                    } else {
+                        let (file, volume, pitch) = match sound_type {
+                            0 => {
+                                let (file, db_volume) =
+                                    host.sound_db(db_type, entry).unwrap_or_default();
+                                let mut vol = if argc(cmd) >= 5 && raw_vol > 0 {
+                                    raw_vol
+                                } else {
+                                    db_volume
+                                };
+                                if vol == 0 {
+                                    vol = 100;
+                                }
+                                let p = if raw_pitch > 0 { raw_pitch } else { 100 };
+                                (file, vol, p)
+                            }
+                            1 => {
+                                let (file, db_volume) =
+                                    host.sound_db(db_type, db_id as u16).unwrap_or_default();
+                                let mut vol = if argc(cmd) >= 5 && raw_vol > 0 {
+                                    raw_vol
+                                } else {
+                                    db_volume
+                                };
+                                if vol == 0 {
+                                    vol = 100;
+                                }
+                                let p = if raw_pitch > 0 { raw_pitch } else { 100 };
+                                (file, vol, p)
+                            }
+                            _ => {
+                                let file = expand(
+                                    cmd.strings.first().map_or("", String::as_str),
+                                    inst,
+                                    vars,
+                                    host,
+                                );
+                                let vol = if argc(cmd) >= 5 && raw_vol > 0 {
+                                    raw_vol
+                                } else {
+                                    100
+                                };
+                                let p = if raw_pitch > 0 { raw_pitch } else { 100 };
+                                (file, vol, p)
+                            }
+                        };
+                        host.sound(&SoundCmd {
+                            channel,
+                            action: SoundAction::Play,
+                            file,
+                            volume,
+                            frames: fade_or_delay,
+                            pitch,
+                        });
+                    }
+                    inst.pc += 1;
+                    None
+                }
             }
             150 => {
                 let decoded = decode_picture(inst, vars, cmd, host);
@@ -2639,7 +3039,7 @@ fn execute(
                 None
             }
             151 => {
-                host.change_color(arg(cmd, 0), arg(cmd, 1));
+                host.change_color(arg(cmd, 0), eval_num(arg(cmd, 1), inst, vars));
                 inst.pc += 1;
                 None
             }
@@ -2647,8 +3047,8 @@ fn execute(
                 // 160 installs the setting; it does not block and draws nothing.
                 // CE48 starts every game with [-1, 0x0001_000A]: simple cut, wait,
                 // 10 frames (docs/OPCODE_SPEC.md section 5.20).
-                transition.kind = arg(cmd, 0);
-                transition.flags = arg(cmd, 1);
+                transition.kind = eval_num(arg(cmd, 0), inst, vars);
+                transition.flags = eval_num(arg(cmd, 1), inst, vars);
                 host.transition_install(transition.kind, transition.flags);
                 inst.pc += 1;
                 None
@@ -2673,11 +3073,21 @@ fn execute(
                 inst.pc += 1;
                 Some(Signal::Blocked)
             }
-            170 | 176 => {
-                // Unconditional loop heads. Control::Block pushed nothing yet:
+            170 => {
+                // Unconditional loop head. Control::Block pushed nothing yet:
                 // enter_block handles the push, so reaching here means the jump
                 // table was not built (a hand-made Program). Treat as fallthrough.
                 inst.pc += 1;
+                None
+            }
+            176 => {
+                // Continue the innermost loop (jump to head or close if counted loop exhausted).
+                if let Some(ctx) = inst.loops.last().copied() {
+                    close_loop(inst, ctx.block);
+                } else {
+                    host.log(LogLevel::Warn, "176 ContinueLoop outside any loop");
+                    inst.pc += 1;
+                }
                 None
             }
             171 => {
@@ -2704,10 +3114,15 @@ fn execute(
                 None
             }
             180 => {
-                let frames = eval_num(arg(cmd, 0), inst, vars).max(1) as u32;
-                inst.wait = WaitState::Frames(frames);
-                inst.pc += 1;
-                Some(Signal::Blocked)
+                let frames = eval_num(arg(cmd, 0), inst, vars);
+                if frames <= 0 {
+                    inst.pc += 1;
+                    None
+                } else {
+                    inst.wait = WaitState::Frames(frames as u32);
+                    inst.pc += 1;
+                    Some(Signal::Blocked)
+                }
             }
             201 => {
                 let target = arg(cmd, 0);
@@ -2764,7 +3179,8 @@ fn execute(
                     600_000..=699_999 => relative_call_target(raw, inst.event),
                     _ => raw.max(0) as EventId,
                 };
-                host.reserve(target);
+                let (args, strings, _return_to) = call_arguments(cmd, inst, vars);
+                host.reserve_with_args(target, &args, &strings);
                 inst.pc += 1;
                 None
             }
@@ -2783,8 +3199,9 @@ fn execute(
                 // section 2.1). All other operands stay raw where they are
                 // addresses (221 arg0, 221/222 arg2) and are evaluated where they
                 // are values (220 mode, 222 source, the trailing flag).
+                let is_map = inst.program.self_base == crate::program::MAP_SELF_BASE;
                 let file_raw = arg(cmd, 1);
-                let file = if matches!(Magic::decode(file_raw).kind(), MagicKind::StrVar) {
+                let file = if Magic::is_string_slot(file_raw, is_map) {
                     SaveTarget::Path(eval_str(file_raw, inst, vars))
                 } else {
                     SaveTarget::Slot(eval_num(file_raw, inst, vars))
@@ -2824,8 +3241,12 @@ fn execute(
                 let answer = host.save_load(&op);
                 if let Some(answer) = answer {
                     match answer {
-                        DbValue::Num(value) => store_num(inst, vars, op.destination, value),
-                        DbValue::Str(text) => store_str(inst, vars, op.destination, &text),
+                        DbValue::Num(value) => {
+                            store_num(inst, vars, op.destination, value, cross_writes)
+                        }
+                        DbValue::Str(text) => {
+                            store_str(inst, vars, op.destination, &text, cross_writes)
+                        }
                     }
                 }
                 inst.pc += 1;
@@ -2871,14 +3292,9 @@ fn execute(
                     DbDirection::Read if argc(cmd) >= 5 => (Some(arg(cmd, 4)), None),
                     DbDirection::Read => (None, None),
                     DbDirection::Write if argc(cmd) >= 5 => {
-                        // The fifth operand is a magic value, and the bank decides the
-                        // cell kind. CE258 pc1341/1347 write self[30] - a *string*
-                        // variable (3_000_000) - into CData 0:12:0/1 for the player's
-                        // trait name; evaluating it as a number stored the address and
-                        // left the cell empty, so "你是……\cdb[...]哥哥。" lost the
-                        // selected traits and the HUD printed no attributes.
+                        let is_map = inst.program.self_base == crate::program::MAP_SELF_BASE;
                         let raw = arg(cmd, 4);
-                        if matches!(Magic::decode(raw).kind(), MagicKind::StrVar) {
+                        if Magic::is_string_slot(raw, is_map) {
                             (None, Some(DbValue::Str(eval_str(raw, inst, vars))))
                         } else {
                             (None, Some(DbValue::Num(eval_num(raw, inst, vars))))
@@ -2912,8 +3328,8 @@ fn execute(
                     (direction, answer, destination)
                 {
                     match answer {
-                        DbValue::Num(value) => store_num(inst, vars, target, value),
-                        DbValue::Str(text) => store_str(inst, vars, target, &text),
+                        DbValue::Num(value) => store_num(inst, vars, target, value, cross_writes),
+                        DbValue::Str(text) => store_str(inst, vars, target, &text, cross_writes),
                     }
                 }
                 inst.pc += 1;
@@ -2979,7 +3395,7 @@ fn execute(
             }
             1000 => {
                 let kind = arg(cmd, 0) >> 16;
-                let milliseconds = arg(cmd, 1);
+                let milliseconds = eval_num(arg(cmd, 1), inst, vars);
                 host.pro_feature(kind, milliseconds);
                 if kind == 5 {
                     inst.wait = WaitState::Frames((milliseconds / 16).max(1) as u32);
@@ -3100,7 +3516,7 @@ fn enter_block(
 /// contexts whose block body contains `target` may stay; missing enclosing loops
 /// are added. The official manual says entering a counted loop from outside does
 /// not carry its configured count: the remainder runs once, while the endless
-/// `170`/`176` forms keep looping.
+/// `170` form keeps looping.
 fn sync_loops_for_jump(program: &Program, inst: &mut Instance, target: usize) {
     let mut enclosing: Vec<usize> = program
         .blocks
@@ -3141,7 +3557,7 @@ fn close_loop(inst: &mut Instance, block_index: usize) {
         return;
     };
     let ctx = &mut inst.loops[pos];
-    // A negative count is an endless loop (170/176), which must always jump back;
+    // A negative count is an endless loop (170), which must always jump back;
     // a counted loop (179) runs its body once per unit and exits on the last one.
     let again = if ctx.remaining < 0 {
         true
@@ -3377,6 +3793,11 @@ fn decode_picture(
     } else {
         Vec::new()
     };
+    let owner_event = if inst.program.self_base == crate::program::COMMON_SELF_BASE {
+        Some(inst.event)
+    } else {
+        None
+    };
     PictureCmd {
         number,
         kind,
@@ -3389,6 +3810,7 @@ fn decode_picture(
         animate,
         keep_shift,
         relative,
+        owner_event,
     }
 }
 
@@ -3548,6 +3970,14 @@ two"],
         sound_db_queries: Vec<(i32, u16)>,
         // Canned engine answers for 124 0x3000, keyed by field.
         engine_answers: Vec<(i32, i32)>,
+        // Canned character answers for 124 0x1000/0x1200, keyed by (target, field).
+        character_answers: Vec<(i32, i32, Option<i32>)>,
+        // Every (target, field) pair 124 actually asked about.
+        character_queries: Vec<(i32, i32)>,
+        // Every 160 TransitionInstall: (kind, flags).
+        transition_installs: Vec<(i32, i32)>,
+        // Every 1000 ProFeature: (kind, milliseconds).
+        pro_features: Vec<(i32, i32)>,
         // How many times the interpreter told the host to close the window.
         closed: usize,
         // Every 250 DatabaseAccess the interpreter decoded, in order.
@@ -3565,9 +3995,17 @@ two"],
         key_polls: Vec<(KeyQuery, u32, u32)>,
         // Every 151 ChangeColor: (packed colour, frames).
         colours: Vec<(i32, i32)>,
+        // Every 211 CommonEventReserve: (event, args, strings).
+        reserves: Vec<(EventId, Vec<i32>, Vec<String>)>,
     }
 
     impl Host for Recorder {
+        fn reserve(&mut self, event: EventId) {
+            self.reserves.push((event, Vec::new(), Vec::new()));
+        }
+        fn reserve_with_args(&mut self, event: EventId, args: &[i32], strings: &[String]) {
+            self.reserves.push((event, args.to_vec(), strings.to_vec()));
+        }
         fn show_message(&mut self, text: &str, face: Option<i32>) {
             self.messages.push(text.to_owned());
             self.faces.push(face);
@@ -3597,6 +4035,12 @@ two"],
         fn change_color(&mut self, colour: i32, frames: i32) {
             self.colours.push((colour, frames));
         }
+        fn transition_install(&mut self, kind: i32, flags: i32) {
+            self.transition_installs.push((kind, flags));
+        }
+        fn pro_feature(&mut self, kind: i32, milliseconds: i32) {
+            self.pro_features.push((kind, milliseconds));
+        }
         fn log(&mut self, level: LogLevel, message: &str) {
             self.logs.push((level, message.to_owned()));
         }
@@ -3612,6 +4056,13 @@ two"],
                 .iter()
                 .find(|(f, _)| *f == field)
                 .map(|(_, value)| *value)
+        }
+        fn character_state(&mut self, target: i32, field: i32) -> Option<i32> {
+            self.character_queries.push((target, field));
+            self.character_answers
+                .iter()
+                .find(|(t, f, _)| *t == target && *f == field)
+                .and_then(|(_, _, value)| *value)
         }
         fn database(&mut self, op: &DbOp) -> Option<DbValue> {
             self.databases.push(op.clone());
@@ -3926,6 +4377,33 @@ two"],
         vm.start_event(1).unwrap();
         vm.step_frame(&mut host);
         assert_eq!(vm.vars.get(1), 1);
+    }
+
+    #[test]
+    fn conditional_takes_the_first_matching_case() {
+        // Both conditions are true; WOLF's first-hit branch must take case 1
+        // and must not fall through to case 2.
+        let e = event(
+            1,
+            "first-hit",
+            vec![
+                cmd(111, &[2, 2_000_000, 5, 0, 2_000_001, 10, 0], &[]),
+                cmd(401, &[1], &[]),
+                cmd(121, &[2_000_002, 1, 0, 0], &[]),
+                cmd(401, &[2], &[]),
+                cmd(121, &[2_000_002, 2, 0, 0], &[]),
+                cmd(420, &[0], &[]),
+                cmd(121, &[2_000_002, 3, 0, 0], &[]),
+                cmd(499, &[], &[]),
+            ],
+        );
+        let mut vm = vm_with(vec![e]);
+        vm.vars.set(0, 9);
+        vm.vars.set(1, 20);
+        let mut host = Recorder::default();
+        vm.start_event(1).unwrap();
+        vm.step_frame(&mut host);
+        assert_eq!(vm.vars.get(2), 1);
     }
 
     #[test]
@@ -5236,5 +5714,445 @@ two"],
         vm.step_frame(&mut host);
         assert!(host.titled);
         assert_eq!(vm.instances().len(), 0);
+    }
+
+    #[test]
+    fn bug_36_continue_loop_jumps_back_or_exits_counted() {
+        let e = event(
+            1,
+            "continue_endless",
+            vec![
+                cmd(170, &[], &[]),
+                cmd(121, &[2_000_000, 1, 0, 0x0104], &[]), // var0 += 1
+                cmd(111, &[1, 2_000_000, 2, 2], &[]),      // if var0 == 2
+                cmd(401, &[1], &[]),
+                cmd(171, &[], &[]), // break
+                cmd(499, &[], &[]),
+                cmd(176, &[], &[]),                        // continue
+                cmd(121, &[2_000_001, 1, 0, 0x0104], &[]), // var1 += 1
+                cmd(498, &[], &[]),
+            ],
+        );
+        let mut vm = vm_with(vec![e]);
+        let mut host = Recorder::default();
+        vm.start_event(1).unwrap();
+        vm.step_frame(&mut host);
+        assert_eq!(vm.vars.get(0), 2);
+        assert_eq!(vm.vars.get(1), 0, "instruction after 176 must be skipped");
+
+        let e2 = event(
+            2,
+            "continue_counted",
+            vec![
+                cmd(179, &[3], &[]),
+                cmd(121, &[2_000_002, 1, 0, 0x0104], &[]), // var2 += 1
+                cmd(176, &[], &[]),                        // continue
+                cmd(121, &[2_000_003, 1, 0, 0x0104], &[]), // var3 += 1
+                cmd(498, &[], &[]),
+            ],
+        );
+        let mut vm2 = vm_with(vec![e2]);
+        vm2.start_event(2).unwrap();
+        vm2.step_frame(&mut host);
+        assert_eq!(
+            vm2.vars.get(2),
+            3,
+            "counted loop should run exactly 3 times"
+        );
+        assert_eq!(vm2.vars.get(3), 0, "instruction after 176 must never run");
+    }
+
+    #[test]
+    fn bug_27_eval_num_common_self_and_121_flags() {
+        let mut vm = vm_with(vec![]);
+        vm.vars.common_self.entry(42).or_default().set(7, 999);
+        let dummy = event(1, "test", vec![]);
+        let inst = Instance::new(1, None, Arc::new(Program::compile(&dummy)));
+        let raw = 15_000_000 + 100 * 42 + 7;
+        assert_eq!(eval_num(raw, &inst, &vm.vars), 999);
+
+        let e = event(
+            1,
+            "real_and_clamp",
+            vec![
+                // Real mode 7 / 2 = 3.5 -> 3
+                cmd(121, &[2_000_000, 7, 2, 0x300E], &[]),
+                // Clamp mode: 2_000_000 clamped to 999_999
+                cmd(121, &[2_000_001, 2_000_000, 0, 0x0005], &[]),
+                // Real mode compound *=: 30 * (2500 / 1000.0) = 75 (not 60)
+                cmd(121, &[2_000_002, 30, 0, 0x0000], &[]),
+                cmd(121, &[2_000_002, 2500, 1000, 0x3302], &[]),
+                // Batch mode: assign 42 to vars[10..=12] (count = 2)
+                cmd(121, &[2_000_010, 42, 0, 0x10004, 2], &[]),
+            ],
+        );
+        let mut vm = vm_with(vec![e]);
+        let mut host = Recorder::default();
+        vm.start_event(1).unwrap();
+        vm.step_frame(&mut host);
+        assert_eq!(vm.vars.get(0), 3);
+        assert_eq!(vm.vars.get(1), 999_999);
+        assert_eq!(vm.vars.get(2), 75);
+        assert_eq!(vm.vars.get(10), 42);
+        assert_eq!(vm.vars.get(11), 42);
+        assert_eq!(vm.vars.get(12), 42);
+        assert_eq!(vm.vars.get(13), 0);
+    }
+
+    #[test]
+    fn bug_29_live_bidirectional_sync() {
+        let e1 = event(
+            10,
+            "live_sync_sender",
+            vec![
+                cmd(121, &[1_600_000, 12345, 0, 0x0004], &[]),
+                cmd(122, &[1_600_005], &["live_string"]),
+                cmd(180, &[10], &[]),
+            ],
+        );
+        let e2 = event(
+            20,
+            "cross_writer",
+            vec![cmd(121, &[15_000_000 + 100 * 10, 7777, 0, 0x0004], &[])],
+        );
+        let mut vm = vm_with(vec![e1, e2]);
+        let mut host = Recorder::default();
+        let id1 = vm.start_event(10).unwrap();
+        vm.step_frame(&mut host);
+
+        assert_eq!(vm.vars.common_self.get(&10).unwrap().get(0), 12345);
+        assert_eq!(
+            vm.vars.common_self.get(&10).unwrap().get_str(0),
+            "live_string"
+        );
+
+        vm.set_instance_self_var(id1, 600, 54321);
+        assert_eq!(vm.instance(id1).unwrap().self_vars.get(600), 54321);
+        assert_eq!(vm.vars.common_self.get(&10).unwrap().get(0), 54321);
+
+        vm.start_event(20).unwrap();
+        vm.step_frame(&mut host);
+
+        assert_eq!(vm.instance(id1).unwrap().self_vars.get(600), 7777);
+        assert_eq!(vm.vars.common_self.get(&10).unwrap().get(0), 7777);
+    }
+
+    #[test]
+    fn bug_28_opcode_124_field_18_foreground_event() {
+        let e_fg = event(100, "fg_event", vec![cmd(180, &[10], &[])]);
+        let e_bg = event(
+            200,
+            "bg_parallel",
+            vec![cmd(124, &[2_000_000, 0x3000, 18], &[])],
+        );
+        let mut vm = vm_with(vec![e_fg, e_bg]);
+        let mut host = Recorder::default();
+        let _id_fg = vm.start_event(100).unwrap();
+        let id_bg = vm.start_event(200).unwrap();
+        vm.set_instance_parallel(id_bg, true);
+
+        vm.step_frame(&mut host);
+        assert_eq!(vm.vars.get(0), 500_100);
+    }
+
+    #[test]
+    fn bug_30_opcode_125_auto_keys_ttl_and_delivery() {
+        let e = event(
+            1,
+            "auto_key",
+            vec![
+                cmd(125, &[16], &[]),
+                cmd(123, &[2_000_000, 0x77], &[]),
+                cmd(123, &[2_000_001, 0x77], &[]),
+            ],
+        );
+        let mut vm = vm_with(vec![e]);
+        let mut host = Recorder::default();
+        vm.start_event(1).unwrap();
+        vm.step_frame(&mut host);
+
+        assert_eq!(host.key_polls.len(), 2);
+        assert_eq!(host.key_polls[0].1, 16);
+        assert_eq!(host.key_polls[1].1, 0);
+    }
+
+    #[test]
+    fn bug_31_and_38_cself_string_slots_in_250_and_save() {
+        let e = event(
+            1,
+            "cself_string_ops",
+            vec![
+                cmd(122, &[1_600_005], &["hero_name"]),
+                cmd(250, &[0, 0, 0, 0x50000, 1_600_005], &[]),
+                cmd(221, &[2_000_000, 1_600_005, 0], &[]),
+            ],
+        );
+        let mut vm = vm_with(vec![e]);
+        let mut host = Recorder::default();
+        vm.start_event(1).unwrap();
+        vm.step_frame(&mut host);
+
+        assert_eq!(host.databases.len(), 1);
+        assert_eq!(
+            host.databases[0].source,
+            Some(DbValue::Str("hero_name".to_string()))
+        );
+
+        assert_eq!(host.saves.len(), 1);
+        assert_eq!(
+            host.saves[0].file,
+            SaveTarget::Path("hero_name".to_string())
+        );
+    }
+
+    #[test]
+    fn bug_32_reserve_with_args_and_return_to_title_clears_all() {
+        let e = event(
+            1,
+            "reserve_args",
+            vec![cmd(211, &[42, 0x112, 10, 20], &["", "arg_str"])],
+        );
+        let mut vm = vm_with(vec![e]);
+        let mut host = Recorder::default();
+        vm.start_event(1).unwrap();
+        vm.step_frame(&mut host);
+
+        assert_eq!(host.reserves.len(), 1);
+        assert_eq!(host.reserves[0].0, 42);
+        assert_eq!(host.reserves[0].1, vec![10, 20]);
+        assert_eq!(host.reserves[0].2, vec!["arg_str".to_string()]);
+
+        let e_title = event(2, "title", vec![cmd(174, &[], &[])]);
+        let e_dummy = event(3, "dummy", vec![cmd(180, &[100], &[])]);
+        let mut vm2 = vm_with(vec![e_title, e_dummy]);
+        vm2.start_event(3).unwrap();
+        vm2.start_event(2).unwrap();
+        assert_eq!(vm2.instances().len(), 2);
+        vm2.step_frame(&mut host);
+        assert_eq!(
+            vm2.instances().len(),
+            0,
+            "ReturnToTitle must clear all instances"
+        );
+    }
+
+    #[test]
+    fn bug_35_wait_zero_and_picture_owner_event() {
+        let e = event(
+            77,
+            "wait_zero",
+            vec![
+                cmd(180, &[0], &[]),
+                cmd(121, &[2_000_000, 1, 0, 0x0004], &[]),
+                cmd(150, &[0, 1, 10, 20], &["pic.png"]),
+            ],
+        );
+        let mut vm = vm_with(vec![e]);
+        let mut host = Recorder::default();
+        vm.start_event(77).unwrap();
+        vm.step_frame(&mut host);
+
+        assert_eq!(vm.vars.get(0), 1, "Wait(0) must not block");
+        assert_eq!(host.pictures.len(), 1);
+        assert_eq!(host.pictures[0].owner_event, Some(77));
+    }
+
+    #[test]
+    fn bug_37_opcode_140_pitch_and_stop_conditions() {
+        let e = event(
+            1,
+            "sound_tests",
+            vec![
+                cmd(140, &[0x0200_0020, 0, 0, 0, 90, 120], &["SE/ping"]),
+                cmd(140, &[0x0200_0021, 0, 0, 0, 100, 100], &["SE/preload"]),
+                cmd(140, &[0x0200_0022, 12, 0, 0], &[]),
+            ],
+        );
+        let mut vm = vm_with(vec![e]);
+        let mut host = Recorder::default();
+        vm.start_event(1).unwrap();
+        vm.step_frame(&mut host);
+
+        assert_eq!(host.sounds.len(), 2, "preload must not emit sound");
+        assert_eq!(host.sounds[0].action, SoundAction::Play);
+        assert_eq!(host.sounds[0].volume, 90);
+        assert_eq!(host.sounds[0].pitch, 120);
+
+        assert_eq!(host.sounds[1].action, SoundAction::Stop);
+        assert_eq!(host.sounds[1].frames, 12);
+        assert_eq!(host.sounds[1].pitch, 100);
+    }
+
+    #[test]
+    fn bug_39_opcode_130_and_151_evaluation() {
+        let e = event(
+            1,
+            "teleport_and_color",
+            vec![
+                cmd(130, &[2_000_000, 2_000_001, 2_000_002, 2_000_003, 0], &[]),
+                cmd(151, &[2_629_150, 2_000_004], &[]),
+            ],
+        );
+        let mut vm = vm_with(vec![e]);
+        vm.vars.set(0, 0); // target
+        vm.vars.set(1, 15); // x
+        vm.vars.set(2, 25); // y
+        vm.vars.set(3, 3); // map
+        vm.vars.set(4, 30); // frames
+        let mut host = Recorder::default();
+        vm.start_event(1).unwrap();
+        vm.step_frame(&mut host);
+        // 130 Teleport blocks for 1 frame; advance one more frame so 151 executes.
+        vm.step_frame(&mut host);
+
+        assert_eq!(host.teleports.len(), 1);
+        assert_eq!(host.teleports[0], (0, 3, 15, 25, 0));
+
+        assert_eq!(host.colours.len(), 1);
+        assert_eq!(host.colours[0], (2_629_150, 30));
+    }
+
+    #[test]
+    fn bug_47_opcode_124_compound_assignments() {
+        let e = event(
+            1,
+            "op124_compound",
+            vec![
+                cmd(121, &[2_000_000, 140, 0, 0], &[]),
+                // 0x4400 = picture query + divide-assign: 140 / 70 = 2.
+                cmd(124, &[2_000_000, 0x4400, 7, 2], &[]),
+                cmd(121, &[2_000_001, 100, 0, 0], &[]),
+                // 0x1200 = character query + subtract-assign: 100 - 30 = 70.
+                cmd(124, &[2_000_001, 0x1200, 5, 2], &[]),
+                cmd(121, &[2_000_002, 999, 0, 0], &[]),
+                // The plain engine family still overwrites.
+                cmd(124, &[2_000_002, 0x3000, 11], &[]),
+            ],
+        );
+        let mut vm = vm_with(vec![e]);
+        let mut host = Recorder::default();
+        host.picture_answers.push((7, 2, Some(70)));
+        host.character_answers.push((5, 2, Some(30)));
+        host.engine_answers.push((11, 42));
+        vm.start_event(1).unwrap();
+        vm.step_frame(&mut host);
+
+        assert_eq!(vm.vars.get(0), 2);
+        assert_eq!(vm.vars.get(1), 70);
+        assert_eq!(vm.vars.get(2), 42);
+        assert_eq!(host.picture_queries, vec![(7, 2)]);
+        assert_eq!(host.character_queries, vec![(5, 2)]);
+    }
+
+    #[test]
+    fn bug_46_opcode_160_and_1000_evaluate_variable_arguments() {
+        let e = event(
+            9,
+            "transition_and_pro",
+            vec![
+                cmd(121, &[2_000_000, 3, 0, 0], &[]),
+                cmd(121, &[2_000_001, 0x5010, 0, 0], &[]),
+                cmd(121, &[2_000_002, 32, 0, 0], &[]),
+                cmd(160, &[2_000_000, 2_000_001], &[]),
+                cmd(1000, &[0x0005_0000, 2_000_002], &[]),
+            ],
+        );
+        let mut vm = vm_with(vec![e]);
+        let mut host = Recorder::default();
+        vm.start_event(9).unwrap();
+        vm.step_frame(&mut host);
+
+        assert_eq!(host.transition_installs, vec![(3, 0x5010)]);
+        assert_eq!(host.pro_features, vec![(5, 32)]);
+    }
+
+    #[test]
+    fn bug_32_start_event_with_args_seeds_the_child_and_durable_bank() {
+        let e = event(77, "reserved", vec![cmd(0, &[], &[])]);
+        let mut vm = vm_with(vec![e]);
+        let id = vm
+            .start_event_with_args(77, &[7, 8], &["hello".to_owned()])
+            .expect("event");
+        let instance = vm.instance(id).expect("instance");
+        assert_eq!(instance.self_vars.get(crate::magic::SELF_ARG_BASE), 7);
+        assert_eq!(instance.self_vars.get(crate::magic::SELF_ARG_BASE + 1), 8);
+        assert_eq!(instance.self_vars.get_str(SELF_ARG_STRING_BASE), "hello");
+        let bank = vm.vars.common_self.get(&77).expect("bank");
+        assert_eq!(bank.get(0), 7);
+        assert_eq!(bank.get(1), 8);
+        assert_eq!(bank.get_str(0), "hello");
+    }
+
+    #[test]
+    fn call_arguments_reach_only_the_new_child_not_existing_instances() {
+        let e = event(10, "parallel_loop", vec![cmd(0, &[], &[])]);
+        let mut vm = vm_with(vec![e]);
+
+        let existing = vm.start_event(10).expect("first instance");
+        assert_eq!(
+            vm.instance(existing)
+                .expect("existing instance")
+                .self_vars
+                .get(crate::magic::SELF_ARG_BASE),
+            0
+        );
+
+        let child = vm
+            .start_event_with_args(10, &[10], &[])
+            .expect("explicit call");
+        assert_eq!(
+            vm.instance(child)
+                .expect("new child")
+                .self_vars
+                .get(crate::magic::SELF_ARG_BASE),
+            10
+        );
+        assert_eq!(
+            vm.instance(existing)
+                .expect("existing instance")
+                .self_vars
+                .get(crate::magic::SELF_ARG_BASE),
+            0,
+            "a call argument must not be broadcast to another instance"
+        );
+    }
+
+    #[test]
+    fn op121_self_range_divides_only_the_named_slot() {
+        let e = event(
+            1,
+            "tenths_grid",
+            vec![
+                cmd(121, &[1_600_022, 480, 0, 0], &[]),
+                cmd(121, &[1_600_023, 864, 0, 0], &[]),
+                cmd(121, &[1_600_024, 9_280, 0, 0], &[]),
+                cmd(121, &[1_600_025, 1_152, 0, 0], &[]),
+                // The save-slot geometry idiom: range=3 but a self target only
+                // divides x. y/w/h stay in tenths for the renderer.
+                cmd(121, &[1_600_022, 10, 0, 0x1_0400, 3], &[]),
+                // Ordinary variables still take the full contiguous range.
+                cmd(121, &[2_000_030, 42, 0, 0x1_0000, 2], &[]),
+                cmd(180, &[2], &[]),
+            ],
+        );
+        let mut vm = vm_with(vec![e]);
+        let mut host = Recorder::default();
+        let instance = vm.start_event(1).expect("event");
+        vm.step_frame(&mut host);
+
+        let self_vars = &vm.instance(instance).expect("instance").self_vars;
+        let slot = |raw| crate::magic::self_slot(raw) as usize;
+        assert_eq!(self_vars.get(slot(1_600_022)), 48);
+        assert_eq!(self_vars.get(slot(1_600_023)), 864);
+        assert_eq!(self_vars.get(slot(1_600_024)), 9_280);
+        assert_eq!(self_vars.get(slot(1_600_025)), 1_152);
+        assert_eq!(vm.vars.get(30), 42);
+        assert_eq!(vm.vars.get(31), 42);
+        assert_eq!(vm.vars.get(32), 42);
+        assert_eq!(
+            vm.vars.get(33),
+            0,
+            "normal batch stops after arg4 variables"
+        );
     }
 }

@@ -125,6 +125,7 @@ fn open_loaded_bedroom() -> Option<Game> {
         eprintln!("skipping: bedroom HUD did not come up");
         return None;
     }
+    game.auto_events.set_enabled(false);
     Some(game)
 }
 

@@ -86,9 +86,11 @@
 //!
 //! Two conventions matter, and both exist because of how this game writes its HUD:
 //!
-//! * `Vars::text` must return the *decimal rendering of numeric slots too*. The game
-//!   writes `\f[\cself[19]]` - a font size read from a self variable - so the evaluator
-//!   asks [Vars::text] for it and parses the digits.
+//! * `Vars::text_in` receives the bank so a host can route `\s[n]`, `\self[n]` and
+//!   `\cself[n]` to different stores. Its default forwards to [Vars::text], which must
+//!   return the *decimal rendering of numeric slots too*. The game writes
+//!   `\f[\cself[19]]` - a font size read from a self variable - so the evaluator asks
+//!   [Vars::text_in] for it and parses the digits.
 //! * [Vars::num] is only used for `\v[n]`, whose bank is the normal numeric array.
 //!
 //! That split keeps the module free of any "is this slot numeric?" heuristic, which this
@@ -133,6 +135,16 @@ pub const PLAIN_TEXT_TOP_OFFSET: f32 = 4.0;
 /// every advance zero, which collapses the line to a point and loses the text. One
 /// pixel keeps the run visible and the arithmetic finite.
 pub const MIN_FONT_PX: f32 = 1.0;
+
+/// Which line-advance rule a layout uses.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Pitch {
+    /// Text pictures and HUD blocks: the 1.3 em ratio measured on the static labels.
+    Standard,
+    /// Message content copied into a picture (CE270's balloon body): the engine's
+    /// message line height, `Sys8 + scaled text_line_spacing` (23 px at Sys8 = 20).
+    Message,
+}
 
 /// Guards `\f[\cself[\cself[\cself[...]]]]`, which the tokeniser alone would
 /// happily keep unwrapping.
@@ -226,15 +238,29 @@ pub trait Vars {
     /// Must return the decimal form for slots that currently hold a number, because
     /// `\f[\cself[19]]` reads a font size through this method.
     fn text(&self, index: usize) -> String;
+
+    /// A string or self variable read from a specific bank.
+    ///
+    /// The default keeps existing hosts working: `\s[n]`, `\self[n]` and `\cself[n]`
+    /// all forward to [Vars::text]. A host that owns more than one string store overrides
+    /// this so each escape keeps the bank its tokeniser assigned.
+    fn text_in(&self, _bank: VarBank, index: usize) -> String {
+        self.text(index)
+    }
 }
 
-/// Database cell reads, `\cdb` and `\udb`.
+/// Database cell reads, `\cdb`, `\udb` and `\sdb`.
 pub trait Cells {
     /// A cell of the type-`ty` common database.
     fn cdb(&self, ty: i32, row: i32, column: i32) -> Option<String>;
 
     /// A cell of the type-`ty` user database.
     fn udb(&self, ty: i32, row: i32, column: i32) -> Option<String>;
+
+    /// A cell of the type-`ty` system database (`\sdb[ty:row:col]`).
+    fn sdb(&self, _ty: i32, _row: i32, _column: i32) -> Option<String> {
+        None
+    }
 }
 
 /// The palette `\c[n]` indexes.
@@ -326,11 +352,26 @@ pub fn fingerprint(raw: &str, ctx: &Ctx<'_>) -> u64 {
 /// (there is no asset), so the laid-out block is the box.
 #[must_use]
 pub fn block_size(raw: &str, ctx: &Ctx<'_>) -> (f32, f32) {
-    let mut builder = Builder::new(ctx, &|ch, px| choice::advance_at(ch, px));
+    block_size_with(raw, ctx, Pitch::Standard)
+}
+
+/// [block_size] with message line spacing.
+///
+/// CE270 copies the message body into picture 36013 and asks the engine for that
+/// picture's height. The body must therefore advance by the message window's 23 px
+/// pitch, not the 26 px static-label ratio, or a three-line balloon measures too tall
+/// and the last row is pushed past the frame.
+#[must_use]
+pub fn block_size_message(raw: &str, ctx: &Ctx<'_>) -> (f32, f32) {
+    block_size_with(raw, ctx, Pitch::Message)
+}
+
+fn block_size_with(raw: &str, ctx: &Ctx<'_>, pitch: Pitch) -> (f32, f32) {
+    let mut builder = Builder::for_pitch(ctx, &|ch, px| choice::advance_at(ch, px), pitch);
     builder.run(raw);
     let lines = std::mem::take(&mut builder.lines);
     let width = lines.iter().map(|line| line.width).fold(0.0_f32, f32::max);
-    let height = lines.iter().map(|line| line_pitch(ctx, line)).sum();
+    let height = lines.iter().map(|line| line_pitch(ctx, line, pitch)).sum();
     (width, height)
 }
 
@@ -353,12 +394,37 @@ pub fn layout_with(
     ctx: &Ctx<'_>,
     advance: Advance<'_>,
 ) -> Vec<Run> {
-    let mut builder = Builder::new(ctx, advance);
+    layout_with_pitch(raw, x, y, anchor, ctx, advance, Pitch::Standard)
+}
+
+/// [layout_with] with message line spacing for CE270's balloon body.
+#[must_use]
+pub fn layout_message_with(
+    raw: &str,
+    x: f32,
+    y: f32,
+    anchor: u8,
+    ctx: &Ctx<'_>,
+    advance: Advance<'_>,
+) -> Vec<Run> {
+    layout_with_pitch(raw, x, y, anchor, ctx, advance, Pitch::Message)
+}
+
+fn layout_with_pitch(
+    raw: &str,
+    x: f32,
+    y: f32,
+    anchor: u8,
+    ctx: &Ctx<'_>,
+    advance: Advance<'_>,
+    pitch: Pitch,
+) -> Vec<Run> {
+    let mut builder = Builder::for_pitch(ctx, advance, pitch);
     builder.run(raw);
     let lines = std::mem::take(&mut builder.lines);
 
     let block_w = lines.iter().map(|line| line.width).fold(0.0_f32, f32::max);
-    let block_h: f32 = lines.iter().map(|line| line_pitch(ctx, line)).sum();
+    let block_h: f32 = lines.iter().map(|line| line_pitch(ctx, line, pitch)).sum();
     let (left, mut top) = anchor_origin(anchor, x, y, block_w, block_h);
 
     let mut runs = Vec::new();
@@ -368,14 +434,21 @@ pub fn layout_with(
             .unwrap_or(line.chunks.len())
             .min(line.chunks.len());
         let line_font_px = line_font_px(ctx, line);
+        let mut line_top = top;
         let mut cursor = left;
         for chunk in &line.chunks[..split] {
+            if let Some(absolute_x) = chunk.absolute_x {
+                cursor = x + absolute_x;
+            }
+            if let Some(absolute_y) = chunk.absolute_y {
+                line_top = y + absolute_y;
+            }
             let width = width_of(&chunk.text, chunk.style.font_px, advance);
             // Retail aligns every run on a line to the line's tallest font baseline:
             // FUN_00494480 draws at `y + (line_max_font - run_font) * scale`
             // (00494480_FUN_00494480.c:682/713). Without this a small run after a
             // large one sits too high, e.g. the HUD `[32]1[14]天` block.
-            let run_y = top + (line_font_px - chunk.style.font_px);
+            let run_y = line_top + (line_font_px - chunk.style.font_px);
             let mut run = run_of(chunk, cursor, run_y, false);
             run.width = width;
             runs.push(run);
@@ -388,15 +461,21 @@ pub fn layout_with(
                 .sum();
             cursor = left + block_w - tail;
             for chunk in &line.chunks[split..] {
+                if let Some(absolute_x) = chunk.absolute_x {
+                    cursor = x + absolute_x;
+                }
+                if let Some(absolute_y) = chunk.absolute_y {
+                    line_top = y + absolute_y;
+                }
                 let width = width_of(&chunk.text, chunk.style.font_px, advance);
-                let run_y = top + (line_font_px - chunk.style.font_px);
+                let run_y = line_top + (line_font_px - chunk.style.font_px);
                 let mut run = run_of(chunk, cursor, run_y, true);
                 run.width = width;
                 runs.push(run);
                 cursor += width;
             }
         }
-        top += line_pitch(ctx, line);
+        top = line_top + line_pitch(ctx, line, pitch);
     }
     runs
 }
@@ -416,6 +495,8 @@ pub fn rgb(ctx: &Ctx<'_>, colour: Option<i32>) -> Option<[u8; 3]> {
 struct Chunk {
     text: String,
     style: Style,
+    absolute_x: Option<f32>,
+    absolute_y: Option<f32>,
 }
 
 /// One output line: its chunks, the width of the whole line, and where `<R>` cut it.
@@ -436,9 +517,15 @@ struct Line {
 struct Builder<'a, 'b> {
     ctx: &'a Ctx<'b>,
     advance: Advance<'a>,
+    pitch: Pitch,
     style: Style,
     /// Text accumulated since the last style change or line end.
     buf: String,
+    /// `\ax[n]` / `\ay[n]` position the next visible run inside the picture.
+    /// They are one-shot pen moves and do not survive the newline that closes
+    /// the line carrying them.
+    pending_absolute_x: Option<f32>,
+    pending_absolute_y: Option<f32>,
     lines: Vec<Line>,
     /// The line being built; taken when the line ends.
     line: Line,
@@ -448,10 +535,11 @@ struct Builder<'a, 'b> {
 }
 
 impl<'a, 'b> Builder<'a, 'b> {
-    fn new(ctx: &'a Ctx<'b>, advance: Advance<'a>) -> Self {
+    fn for_pitch(ctx: &'a Ctx<'b>, advance: Advance<'a>, pitch: Pitch) -> Self {
         Self {
             ctx,
             advance,
+            pitch,
             style: Style {
                 font_px: ctx.default_font_px.max(MIN_FONT_PX),
                 requested_px: ctx.default_font_px.max(MIN_FONT_PX),
@@ -460,6 +548,8 @@ impl<'a, 'b> Builder<'a, 'b> {
                 outline: false,
             },
             buf: String::new(),
+            pending_absolute_x: None,
+            pending_absolute_y: None,
             lines: Vec::new(),
             line: Line::default(),
             line_gap: None,
@@ -469,6 +559,15 @@ impl<'a, 'b> Builder<'a, 'b> {
 
     /// Build every line of `raw`.
     fn run(&mut self, raw: &str) {
+        // CE270 prefixes the balloon body with `\ax[...]\n` solely to move the pen;
+        // the empty line it leaves behind must not consume a row. Strip only leading
+        // position-escape + newline pairs, leaving a bare `\ay[...]` attached to the
+        // first visible run (the layout honours it as an absolute pen move).
+        let raw = if self.pitch == Pitch::Message {
+            strip_leading_positioning(raw)
+        } else {
+            raw
+        };
         for token in tokenize(raw) {
             self.token(&token);
         }
@@ -493,6 +592,14 @@ impl<'a, 'b> Builder<'a, 'b> {
             // the slot-name block kept the legacy 1.3 em pitch (measured 20.8 px at 16 px
             // instead of the retail 16).
             TextToken::LineGap(gap) => self.line_gap = Some(*gap as f32),
+            TextToken::AbsoluteX(x) => {
+                self.flush();
+                self.pending_absolute_x = Some(*x as f32);
+            }
+            TextToken::AbsoluteY(y) => {
+                self.flush();
+                self.pending_absolute_y = Some(*y as f32);
+            }
             TextToken::Align(Align::Right) => self.right_align(),
             // `<C>` (centre) and `<L>` (left) are line-start alignment for the message window.
             // Inside a picture box the host already knows where the block goes, and this game
@@ -592,11 +699,23 @@ impl<'a, 'b> Builder<'a, 'b> {
                     self.style.colour = Some(index);
                 }
             }
-            // `\ax[n]` / `\ay[n]` place the *next character* absolutely inside the picture.
-            // This game uses them 13 times, always alongside a `\n` that already puts the text
-            // where the author wanted it, and honouring them would need a second layout pass.
-            // Recorded here so the omission is visible rather than silent.
-            CodeKind::AbsoluteX | CodeKind::AbsoluteY => {}
+            // `\ax[n]` / `\ay[n]` move the pen of the next visible run to an
+            // absolute coordinate inside the picture. CE270's balloon prefix
+            // `\ax[...]\n\ay[0]...` depends on this: without the Y reset the
+            // newline before it consumes one line pitch and the third body row
+            // falls below the 576 px screen.
+            CodeKind::AbsoluteX => {
+                if let Some(x) = args.first().and_then(|arg| self.int_raw(arg)) {
+                    self.flush();
+                    self.pending_absolute_x = Some(x as f32);
+                }
+            }
+            CodeKind::AbsoluteY => {
+                if let Some(y) = args.first().and_then(|arg| self.int_raw(arg)) {
+                    self.flush();
+                    self.pending_absolute_y = Some(y as f32);
+                }
+            }
             // `\space[n]` must be honoured: the save-slot name block writes
             // `\space[0]` before its two lines and the retail pitch is then exactly one
             // em, not the legacy 1.3 em. Ignoring it put the second line 10 px too low.
@@ -621,6 +740,8 @@ impl<'a, 'b> Builder<'a, 'b> {
         self.line.chunks.push(Chunk {
             text,
             style: self.style,
+            absolute_x: self.pending_absolute_x.take(),
+            absolute_y: self.pending_absolute_y.take(),
         });
     }
 
@@ -630,6 +751,8 @@ impl<'a, 'b> Builder<'a, 'b> {
         let mut line = std::mem::take(&mut self.line);
         line.gap = self.line_gap;
         self.lines.push(line);
+        self.pending_absolute_x = None;
+        self.pending_absolute_y = None;
     }
 
     /// `<R>`: everything after this point hugs the block's right edge.
@@ -656,11 +779,15 @@ impl<'a, 'b> Builder<'a, 'b> {
 
     fn var_text_inner(&mut self, var: &VarRef) -> String {
         match var.bank {
-            // The type-`a` database and the system database share a bank on the VM side;
-            // `\sdb` resolves through the same call because WOLF stores both in one array.
-            VarBank::VarDb | VarBank::SysDb => {
+            // Common database (`\cdb`).
+            VarBank::VarDb => {
                 let [ty, row, column] = self.db_coords(var);
                 self.ctx.cells.cdb(ty, row, column).unwrap_or_default()
+            }
+            // System database (`\sdb`).
+            VarBank::SysDb => {
+                let [ty, row, column] = self.db_coords(var);
+                self.ctx.cells.sdb(ty, row, column).unwrap_or_default()
             }
             VarBank::UserDb => {
                 let [ty, row, column] = self.db_coords(var);
@@ -670,11 +797,10 @@ impl<'a, 'b> Builder<'a, 'b> {
                 Some(index) => self.ctx.vars.num(index).to_string(),
                 None => String::new(),
             },
-            // Strings, self variables and `\cself` all reach the same string bank from the
-            // host's point of view; which bank is *live* is the caller's business (see
-            // [Vars::text]).
+            // Keep the bank in the call: `\s`, `\self` and `\cself` may name different
+            // stores. The default [Vars::text_in] still forwards to [Vars::text].
             VarBank::Str | VarBank::SelfVar | VarBank::CommonSelf => match self.slot(var) {
-                Some(index) => self.ctx.vars.text(index),
+                Some(index) => self.ctx.vars.text_in(var.bank, index),
                 None => String::new(),
             },
             // Reserve numbers, XY coordinates and named XY have no picture-side meaning.
@@ -776,13 +902,39 @@ fn line_font_px(ctx: &Ctx<'_>, line: &Line) -> f32 {
     }
 }
 
-fn line_pitch(ctx: &Ctx<'_>, line: &Line) -> f32 {
+fn line_pitch(ctx: &Ctx<'_>, line: &Line, pitch: Pitch) -> f32 {
     let font_px = line_font_px(ctx, line);
+    if pitch == Pitch::Message {
+        return crate::message::line_height(font_px);
+    }
     // `\space[n]` is the author's explicit line gap; retail then advances by exactly
     // font + gap. Without it the HUD labels keep the legacy 1.3 em approximation.
     match line.gap {
         Some(gap) => font_px + gap.max(0.0),
         None => font_px * DEFAULT_LINE_PITCH_RATIO,
+    }
+}
+
+/// Removes a leading run of `\ax[...]\n` / `\ay[...]\n` positioning preambles.
+///
+/// These escapes move the pen and are normally written as their own line, so the
+/// newline after them would otherwise add an empty row. Only escapes that end in a
+/// newline are removed; a bare `\ay[0]` stays attached to the visible text and the
+/// layout's absolute-position handling applies it.
+fn strip_leading_positioning(mut raw: &str) -> &str {
+    loop {
+        let rest = raw
+            .strip_prefix("\\ax[")
+            .or_else(|| raw.strip_prefix("\\ay["));
+        let Some(rest) = rest else { return raw };
+        let Some(end) = rest.find(']') else {
+            return raw;
+        };
+        let tail = &rest[end + 1..];
+        let Some(after) = tail.strip_prefix('\n').or_else(|| tail.strip_prefix("\\n")) else {
+            return raw;
+        };
+        raw = after;
     }
 }
 
@@ -843,6 +995,36 @@ mod tests {
         }
     }
 
+    /// Proves every string escape carries its own bank into [Vars::text_in].
+    struct BankVars;
+    impl Vars for BankVars {
+        fn num(&self, _index: usize) -> i32 {
+            0
+        }
+        fn text(&self, index: usize) -> String {
+            format!("legacy{index}")
+        }
+        fn text_in(&self, bank: VarBank, index: usize) -> String {
+            match bank {
+                VarBank::Str => format!("str{index}"),
+                VarBank::SelfVar => format!("self{index}"),
+                VarBank::CommonSelf => format!("cself{index}"),
+                _ => self.text(index),
+            }
+        }
+    }
+
+    /// Implements only the old [Vars::text] method, so the new bank-aware default is used.
+    struct LegacyVars;
+    impl Vars for LegacyVars {
+        fn num(&self, _index: usize) -> i32 {
+            0
+        }
+        fn text(&self, index: usize) -> String {
+            format!("legacy{index}")
+        }
+    }
+
     struct NoCells;
     impl Cells for NoCells {
         fn cdb(&self, _ty: i32, _row: i32, _column: i32) -> Option<String> {
@@ -866,6 +1048,12 @@ mod tests {
         fn udb(&self, ty: i32, row: i32, column: i32) -> Option<String> {
             match (ty, row, column) {
                 (0, 4, 2) => Some("ゆう".to_string()),
+                _ => None,
+            }
+        }
+        fn sdb(&self, ty: i32, row: i32, column: i32) -> Option<String> {
+            match (ty, row, column) {
+                (1, 2, 3) => Some("SysVal".to_string()),
                 _ => None,
             }
         }
@@ -1148,6 +1336,34 @@ mod tests {
     }
 
     #[test]
+    fn string_escapes_keep_their_bank_for_text_in() {
+        let vars = BankVars;
+        let ctx = Ctx {
+            vars: &vars,
+            cells: &NO_CELLS,
+            colours: &NO_COLOURS,
+            default_font_px: 20.0,
+            base_font_px: 20.0,
+        };
+        let runs = layout(r"\s[5]\self[5]\cself[5]", 0.0, 0.0, 0, &ctx);
+        assert_eq!(runs[0].text, "str5self5cself5");
+    }
+
+    #[test]
+    fn text_in_defaults_to_the_legacy_text_method() {
+        let vars = LegacyVars;
+        let ctx = Ctx {
+            vars: &vars,
+            cells: &NO_CELLS,
+            colours: &NO_COLOURS,
+            default_font_px: 20.0,
+            base_font_px: 20.0,
+        };
+        let runs = layout(r"\s[5]\cself[5]", 0.0, 0.0, 0, &ctx);
+        assert_eq!(runs[0].text, "legacy5legacy5");
+    }
+
+    #[test]
     fn computed_font_size_reads_a_self_variable() {
         // The shape every HUD label uses: \f[\cself[19]], with the size living in a
         // self variable.
@@ -1184,6 +1400,38 @@ mod tests {
         assert_eq!(runs[0].text, "Lv3");
         let runs = layout(r"\udb[0:4:2]", 0.0, 0.0, 0, &ctx);
         assert_eq!(runs[0].text, "ゆう");
+        let runs = layout(r"\sdb[1:2:3]", 0.0, 0.0, 0, &ctx);
+        assert_eq!(runs[0].text, "SysVal");
+    }
+
+    #[test]
+    fn sdb_cell_calls_sdb_rather_than_cdb() {
+        struct MockCells;
+        impl Cells for MockCells {
+            fn cdb(&self, _ty: i32, _row: i32, _column: i32) -> Option<String> {
+                Some("from_cdb".to_string())
+            }
+            fn udb(&self, _ty: i32, _row: i32, _column: i32) -> Option<String> {
+                None
+            }
+            fn sdb(&self, ty: i32, row: i32, column: i32) -> Option<String> {
+                if (ty, row, column) == (1, 2, 3) {
+                    Some("from_sdb".to_string())
+                } else {
+                    None
+                }
+            }
+        }
+        let cells = MockCells;
+        let ctx = Ctx {
+            vars: &NO_VARS,
+            cells: &cells,
+            colours: &NO_COLOURS,
+            default_font_px: 20.0,
+            base_font_px: 20.0,
+        };
+        let runs = layout(r"\sdb[1:2:3]", 0.0, 0.0, 0, &ctx);
+        assert_eq!(runs[0].text, "from_sdb");
     }
 
     #[test]
@@ -1232,11 +1480,37 @@ mod tests {
     }
 
     #[test]
-    fn absolute_position_escape_is_parsed_but_ignored() {
-        // \ax/\ay would need a second layout pass; they must not leak into the text.
+    fn absolute_position_escape_moves_the_next_run() {
         let runs = layout(r"\ax[100]\ay[50]A", 0.0, 0.0, 0, &bare());
         assert_eq!(runs.len(), 1);
         assert_eq!(runs[0].text, "A");
-        assert!(approx(runs[0].x, 0.0));
+        assert!(approx(runs[0].x, 100.0));
+        assert!(approx(runs[0].y, 50.0));
+    }
+
+    #[test]
+    fn balloon_absolute_y_does_not_leave_a_blank_row_pitch() {
+        // CE270 writes `\ax[...]\n\ay[0]body`. The ax run is empty, so it must
+        // not move the following body; ay resets the body to the picture's text
+        // origin and the blank line before it must not add another pitch. The
+        // third body row must still start at the normal second pitch from that
+        // origin instead of falling below the 576 px screen.
+        let runs = layout(
+            concat!(r"\ax[1112]", "\n", r"\ay[0]A", "\n", "B", "\n", "C"),
+            238.0,
+            512.0,
+            0,
+            &bare(),
+        );
+        assert_eq!(runs.len(), 3);
+        assert_eq!(runs[0].text, "A");
+        assert_eq!(runs[1].text, "B");
+        assert_eq!(runs[2].text, "C");
+        assert!(approx(runs[0].x, 238.0));
+        assert!(approx(runs[0].y, 512.0));
+        assert!(approx(runs[1].x, 238.0));
+        assert!(approx(runs[1].y, 538.0));
+        assert!(approx(runs[2].x, 238.0));
+        assert!(approx(runs[2].y, 564.0));
     }
 }

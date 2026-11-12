@@ -196,6 +196,7 @@ fn engine_null_backend_renders_and_handles_cmds() {
         file: String::new(),
         volume: 100,
         frames: 0,
+        pitch: 100,
     };
     engine.apply_sound_cmd(&stop_se);
     let stop_bgm = SoundCmd {
@@ -204,6 +205,7 @@ fn engine_null_backend_renders_and_handles_cmds() {
         file: String::new(),
         volume: 0,
         frames: 0,
+        pitch: 100,
     };
     engine.apply_sound_cmd(&stop_bgm);
 }

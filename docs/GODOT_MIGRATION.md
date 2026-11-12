@@ -135,9 +135,9 @@ Godot_v4.7.2-stable_win64_console.exe --path godot -- \
   无错误）。首个实测命令：`BGM/asa_otozure.ogg` volume 40 fade-in 200 帧。
 - headless 联合冒烟：`tools/smoke-godot.sh` 依次跑标题菜单、标题鼠标点击、
   键码映射、零售存档读档、读档界面、新游戏存档往返，`smoke: pictures=4 sprites=4` +
-  `mouse_title: ... reached_map003=true` + `key_map: checks=97 failures=0` +
+  `mouse_title: ... reached_map003=true` + `key_map: checks=98 failures=0` +
   `load_save: pictures=50 texts=14` + `load_menu: ... pictures=50 texts=14` +
-  `roundtrip: ... resumed_pictures=40`，exit 0。
+  `roundtrip: ... resumed_pictures=38`，exit 0。
 
 ### P2 输入 / 文字 / 长程 parity（2026-11-10）
 
@@ -222,6 +222,36 @@ Godot_v4.7.2-stable_win64_console.exe --path godot -- \
   基线随即失真。本轮已把玩家存档备份到 `work/out/player_saves_2026-11-10/`，
   并用 50-picture 出货状态恢复 Save 目录；`m14_visual_regression` 增加
   `depends_on_save` 守卫，以后玩家再覆盖 SaveData01 时跳过依赖它的三个场景。
+
+### 2026-11-12 深度审查补丁与 T13 瓦片退场
+
+- **历史方案（T12，已由 T13 删除；不得作为当前验收）**：`WolfGame::frame()` 曾把
+  19k–27k 个 tile quad 烘焙成一张 1024×576 RGBA8 纹理；缓存键为
+  `(tilemap generation, atlas revision, autotile phase)`，packet 曾带
+  `tile_pixels` / `tile_revision` / `tile_quads` / `tile_tint`，`GameView` 曾先画
+  1 张瓦片纹理再画动态 picture/text。当时读档 60 帧约 0.42 s、600 帧约 0.61 s，
+  `m14_visual_regression` 5/5，`parity-godot.sh 600` PASS；`max_sprites` 曾按
+  dynamic sprites + tile_quads 统计为 27,653。上述实现、packet 字段和
+  `t12_tile_bake*` 测试均已被 T13 删除，`Atlas::composite_tile_layer()` 也不在
+  当前源码中；这些数字只保留为历史证据。
+- **当前方案（T13）**：`wolf-gdext` / `GameView.gd` 不请求、不接收也不绘制
+  `tile_quads` / `tile_pixels` / `tile_revision` / `tile_tint`，玩法前端每帧只发
+  picture、text 与 HUD；`Game::tile_quads()`、`Atlas` 合成与 CLI
+  `capture --map` 仍保留给取证/诊断。不要再把“每帧 1 个瓦片 quad”“27,653 sprites”
+  或 tile packet 写成当前实现。
+- **Atlas 上传**：早期整页 4096² RGBA8 上传为 **64 MiB/次**，是启动/菜单 hitch
+  的历史来源；T13 已改为只发送已打包内容的包围盒。当前
+  `m17_render_regressions` 示例为 2607×576 / **5.7 MiB**，19:07 读档 600 帧为
+  `sync_uploads=1` / `sync_MiB=4.1`、`wolf_avg_ms=0.443`、`draw_avg_ms=0.302`、
+  `physics_avg_ms=0.752`（历史日志 `work/out/t13_final_loadsave_600.log`）。最终
+  DLL（20:09:05，SHA-256 `fee3e727…efadd1`）已重跑：读档 180 帧
+  `wolf_avg_ms=0.565` / `draw_avg_ms=0.287` / `sync_MiB=4.1`，新游戏 300 帧
+  `wolf_avg_ms=0.342` / `draw_avg_ms=0.058`；smoke 全绿、parity 600 PASS。
+- **混合/退出**：`SpriteQuad.blend` 经 atlas/gdext 透传到 `GameView.gd` 的
+  ADD/SUB/MUL 批处理；`save_settings()` 在窗口关闭/退出树时持久化，CE132
+  本身仍不写盘。
+- **标题**：CE43 现在是标题菜单进入沿的一次性渲染器，Godot 标题菜单匹配
+  Rust 的 4-picture 状态；鼠标/滚轮高亮仍通过显式 restart 重绘。
 
 ## 5. 已知缺口
 

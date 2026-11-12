@@ -59,6 +59,7 @@ fn cmd(
         file: file.to_owned(),
         volume,
         frames,
+        pitch: 100,
     }
 }
 

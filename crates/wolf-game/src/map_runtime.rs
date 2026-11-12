@@ -333,10 +333,29 @@ impl MapRuntime {
     ///
     /// Returns the event id that was started, so the caller can record the hit.
     pub fn action_key_at(&mut self, vm: &mut Vm, x: i32, y: i32) -> Option<u32> {
+        self.action_key_at_excluding(vm, x, y, &[])
+    }
+
+    /// Like [`Self::action_key_at`], but ignores the named event hotspots.
+    ///
+    /// The HUD picture buttons have their own, tighter picture rectangles. When a
+    /// visible picture owns one of those events, the engine must not keep the old
+    /// tile rectangle live around it: clicking the transparent margin between the
+    /// icon and the map event's collision box used to reach the button anyway.
+    pub fn action_key_at_excluding(
+        &mut self,
+        vm: &mut Vm,
+        x: i32,
+        y: i32,
+        excluded: &[u32],
+    ) -> Option<u32> {
         // Phase 1 only reads the VM: pick the smallest action-key hotspot under
         // the point whose event is not already running.
         let mut best: Option<(i64, usize, usize)> = None;
         for (index, state) in self.events.iter().enumerate() {
+            if excluded.contains(&state.id) {
+                continue;
+            }
             if state.instance.is_some_and(|id| vm.instance(id).is_some()) {
                 continue;
             }
@@ -361,6 +380,54 @@ impl MapRuntime {
         }
         let (_, index, page_index) = best?;
 
+        self.start_action_page(vm, index, page_index)
+    }
+
+    /// Start the currently active action-key page of one event by id.
+    ///
+    /// Picture buttons are not placed on the event's tile rectangle: ev21's end
+    /// arrow covers `(935,505) 90x70`, while its map collision box starts at
+    /// `(976,544)`. The picture renderer already owns the visible rectangle, so
+    /// the click bridge resolves that slot to this event and starts the same page
+    /// the action-key path would have selected.
+    pub fn action_key_event(&mut self, vm: &mut Vm, event: u32) -> Option<u32> {
+        let index = self.events.iter().position(|state| state.id == event)?;
+        let state = self.events.get(index)?;
+        if state.instance.is_some_and(|id| vm.instance(id).is_some()) {
+            return None;
+        }
+        let page_index = select_page(state, vm)?;
+        let page = state.pages.get(page_index)?;
+        if page.trigger != Trigger::ActionKey || page.program.is_none() {
+            return None;
+        }
+        self.start_action_page(vm, index, page_index)
+    }
+
+    /// Start an action-key page by event id even when its page conditions are not
+    /// currently active.
+    ///
+    /// The night end arrow is a visible picture button that belongs to action page
+    /// 21. Entering a touch/clothes submenu changes v100 from the top-page value 1
+    /// to 10, which makes the map page selector hide event 21; the arrow is still
+    /// drawn and remains the player's only visible way out of the interaction. Its
+    /// event owns the confirmation UI and teardown, so the picture bridge must be
+    /// able to start that page from any submenu. This is intentionally narrow:
+    /// normal map hotspots keep their condition gates.
+    pub fn action_key_event_ignoring_conditions(&mut self, vm: &mut Vm, event: u32) -> Option<u32> {
+        let index = self.events.iter().position(|state| state.id == event)?;
+        let state = self.events.get(index)?;
+        if state.instance.is_some_and(|id| vm.instance(id).is_some()) {
+            return None;
+        }
+        let page_index = state
+            .pages
+            .iter()
+            .position(|page| page.trigger == Trigger::ActionKey && page.program.is_some())?;
+        self.start_action_page(vm, index, page_index)
+    }
+
+    fn start_action_page(&mut self, vm: &mut Vm, index: usize, page_index: usize) -> Option<u32> {
         // Phase 2 mutates: mirror the page-switch and start bookkeeping of
         // `start_pending`, but without the autorun/once-per-page gates because an
         // action-key page runs once per press.
@@ -440,25 +507,24 @@ impl MapRuntime {
                 // Deactivation while the page's coroutine is parked in a blocking
                 // 210/300 CALL must wait: the call is synchronous, so the page is
                 // still running its own command list and has not reached a point
-                // A page condition is only re-evaluated when its event is *not* running: in
-                // WOLF a 210/300 call is synchronous, so a variable the child writes
-                // cannot switch the parent's page until the parent's own command list
-                // reaches the end. Dropping the instance here tore the coroutine down
-                // mid-script: SampleMapA event 1 is blocked in CE245 (the night menu)
-                // when affection changes select another page, and killing it skipped
-                // the two cleanup commands that clear the close-up portrait and the
-                // full-screen room layer, leaving the sister invisible in an empty
-                // room. Event 15's nine command-list pages are likewise killed between
-                // their 150 commands, which is what made the sidebar handle flicker.
-                // Keep the old page active; the next frame's finished-instance sweep
-                // retires it and only then applies `want`.
-                if let Some(id) = state.instance {
-                    if let Some(instance) = vm.instance(id) {
-                        // A page that has not executed its first instruction yet is not
-                        // mid-script: replacing it cannot skip any command. Once it has
-                        // advanced (or parked on a wait) let it run to completion.
-                        if instance.pc > 0 || !matches!(instance.wait, wolf_vm::WaitState::None) {
-                            continue;
+                // where tearing it down is safe (e.g. SampleMapA event 1 blocked in CE245).
+                // However, for Trigger::Parallel pages (e.g. SampleMapA event 17 Page 0),
+                // holding off the switch while blocked deadlocks the page switch; parallel
+                // pages must be stopped and switched immediately.
+                let active_trigger = state
+                    .active
+                    .and_then(|idx| state.pages.get(idx))
+                    .map(|p| p.trigger);
+                if !matches!(active_trigger, Some(Trigger::Parallel)) {
+                    if let Some(id) = state.instance {
+                        if let Some(instance) = vm.instance(id) {
+                            // A page that has not executed its first instruction yet is not
+                            // mid-script: replacing it cannot skip any command. Once it has
+                            // advanced (or parked on a wait) let it run to completion.
+                            if instance.pc > 0 || !matches!(instance.wait, wolf_vm::WaitState::None)
+                            {
+                                continue;
+                            }
                         }
                     }
                 }
@@ -509,6 +575,9 @@ impl MapRuntime {
             }
             let self_vars = state.self_vars.clone().unwrap_or_default();
             if let Some(id) = vm.start_program_with_self(program, self_vars) {
+                if trigger == Trigger::Parallel {
+                    vm.set_instance_parallel(id, true);
+                }
                 state.instance = Some(id);
                 state.starts += 1;
                 state.starts_on_page += 1;
@@ -950,5 +1019,109 @@ mod tests {
         runtime.stop_all(&mut vm);
         runtime.start_pending(&mut vm);
         assert_eq!(runtime.action_key_at(&mut vm, 5, 5), None);
+    }
+
+    #[test]
+    fn parallel_page_switches_immediately_mid_script_while_action_key_defers() {
+        // Event 1: Parallel page (trigger=2), Page 0 always true, Page 1 conditional on var 10 == 1.
+        // Event 2: ActionKey page (trigger=0), Page 0 always true, Page 1 conditional on var 20 == 1.
+        let map = map_with(vec![
+            MapEvent {
+                id: 1,
+                name: "parallel".to_owned(),
+                x: 0,
+                y: 0,
+                pages: vec![
+                    page(2, vec![Slot::Blank]),
+                    page_with(
+                        2,
+                        [0x21, 0, 0, 0],
+                        [2_000_010, 0, 0, 0],
+                        [1, 0, 0, 0],
+                        vec![Slot::Blank],
+                    ),
+                ],
+            },
+            MapEvent {
+                id: 2,
+                name: "action".to_owned(),
+                x: 1,
+                y: 1,
+                pages: vec![
+                    page_collision(0, (0, 0), vec![Slot::Blank, Slot::Blank]),
+                    page_with(
+                        0,
+                        [0x21, 0, 0, 0],
+                        [2_000_020, 0, 0, 0],
+                        [1, 0, 0, 0],
+                        vec![Slot::Blank],
+                    ),
+                ],
+            },
+        ]);
+        let mut runtime = MapRuntime::collect(&map);
+        let mut vm = Vm::new(ProgramSet::default());
+
+        // Start pending: parallel page starts on Page 0.
+        runtime.start_pending(&mut vm);
+        assert_eq!(runtime.slots()[0].page, 0);
+        let par_id = runtime.slots()[0]
+            .instance()
+            .expect("parallel instance started");
+
+        // Start action key page on Page 0 by clicking at (16, 16) (tile 1,1).
+        assert_eq!(runtime.action_key_at(&mut vm, 16, 16), Some(2));
+        assert_eq!(runtime.slots()[1].page, 0);
+        let act_id = runtime.slots()[1]
+            .instance()
+            .expect("action instance started");
+
+        // Simulate both being blocked mid-script:
+        // Parallel page is blocked at pc > 0 and WaitState::Frames.
+        vm.instance_mut(par_id).unwrap().wait = wolf_vm::WaitState::Frames(5);
+        vm.instance_mut(par_id).unwrap().pc = 1;
+
+        // ActionKey page is blocked at pc > 0 and WaitState::Child.
+        vm.instance_mut(act_id).unwrap().wait = wolf_vm::WaitState::Child(999);
+        vm.instance_mut(act_id).unwrap().pc = 1;
+
+        // Now change conditions for both so both want to switch to Page 1:
+        vm.vars.set(10, 1);
+        vm.vars.set(20, 1);
+
+        runtime.start_pending(&mut vm);
+
+        // Parallel page must have switched to Page 1 immediately, stopping old instance.
+        assert_eq!(
+            runtime.slots()[0].page,
+            1,
+            "parallel page should switch immediately despite being blocked mid-script"
+        );
+        assert!(
+            vm.instance(par_id).is_none(),
+            "old parallel instance must be stopped"
+        );
+
+        // ActionKey page must still be on Page 0 (deferred because it is mid-script).
+        assert_eq!(
+            runtime.slots()[1].page,
+            0,
+            "action key page must defer switch while blocked mid-script"
+        );
+        assert!(
+            vm.instance(act_id).is_some(),
+            "action instance must still be alive"
+        );
+
+        // Now let action instance finish:
+        vm.stop_instance(act_id);
+        runtime.start_pending(&mut vm);
+
+        // Now ActionKey page can switch to Page 1!
+        assert_eq!(
+            runtime.slots()[1].page,
+            1,
+            "action key page should switch after old coroutine finishes"
+        );
     }
 }

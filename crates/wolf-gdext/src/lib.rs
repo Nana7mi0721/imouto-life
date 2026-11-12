@@ -63,10 +63,18 @@ impl WolfGame {
     #[func]
     fn open(&mut self, root: GString) -> bool {
         let root = PathBuf::from(root.to_string());
+        let started = std::time::Instant::now();
         match Game::with_overlays(&root, Vec::new()) {
             Ok(mut game) => {
+                let load_ms = started.elapsed().as_secs_f64() * 1000.0;
                 game.apply_settings();
+                let font_started = std::time::Instant::now();
                 install_font_metrics(&mut game, &root);
+                let font_ms = font_started.elapsed().as_secs_f64() * 1000.0;
+                godot_print!(
+                    "wolf-gdext: open game={load_ms:.1}ms font={font_ms:.1}ms total={:.1}ms",
+                    started.elapsed().as_secs_f64() * 1000.0
+                );
                 self.root = Some(root);
                 self.game = Some(game);
                 true
@@ -241,7 +249,7 @@ impl WolfGame {
     /// Advances the VM by one 1/60 s frame and returns this frame's draw packet.
     ///
     /// The returned dictionary contains:
-    /// * `sprites`: array of `{rect: Rect2, src: Rect2, alpha: float, tint: Color}`;
+    /// * `sprites`: dynamic picture quads (`{rect, src, alpha, tint, blend, number}`);
     /// * `texts`: array of `{text, rect, alpha, font_px, colour, outline, weight}`;
     /// * `overlays`: array of `{kind: "colour"|"frozen", color: Color, alpha: float}`;
     /// * `sounds`: array of `{channel, action, file, volume, frames}`;
@@ -305,7 +313,11 @@ impl WolfGame {
             }
         }
 
-        let cursor_data = game.message_layout().and_then(|layout| {
+        // Both the cursor and the native text runs consume this layout. Compute it
+        // once; in balloon mode it is `None`, and in article mode the layout work is
+        // otherwise duplicated every frame.
+        let message_layout = game.rendered_message_layout();
+        let cursor_data = message_layout.as_ref().and_then(|layout| {
             layout
                 .cursor
                 .map(|at| (at, game.messages.last().map_or(0, |message| message.frames)))
@@ -348,7 +360,7 @@ impl WolfGame {
             text.set("z", UI_Z);
             texts.push(&text);
         }
-        if let Some(layout) = game.message_layout() {
+        if let Some(layout) = &message_layout {
             for run in &layout.runs {
                 let text = message_run_dict(run);
                 texts.push(&text);
@@ -392,6 +404,7 @@ impl WolfGame {
             );
             dict.set("file", cmd.file.clone());
             dict.set("volume", cmd.volume as i64);
+            dict.set("pitch", cmd.pitch as i64);
             dict.set("frames", cmd.frames as i64);
             sounds.push(&dict);
         }
@@ -413,10 +426,18 @@ impl WolfGame {
         packet.set("texts", &texts);
         packet.set("overlays", &overlays);
         packet.set("sounds", &sounds);
+        packet.set("bgm_volume", game.bgm_volume() as i64);
+        packet.set("se_volume", game.se_volume() as i64);
         packet.set("freeze", freeze);
         packet.set("transition_active", game.screen_transition.is_active());
         packet.set("pictures", outcome.pictures as i64);
         packet.set("idle", outcome.idle);
+        if let Some((current, maximum)) = game.hud_energy() {
+            let mut energy = VarDictionary::new();
+            energy.set("current", current as i64);
+            energy.set("max", maximum as i64);
+            packet.set("energy", &energy);
+        }
         // Opcode 175 (title → おわる) asks the process to exit; the front-end owns the
         // window, so it polls this instead of the engine calling exit() mid-frame.
         packet.set("quit", game.quit_requested);
@@ -452,21 +473,25 @@ impl WolfGame {
         self.atlas.revision() as i64
     }
 
-    /// Atlas dimensions in pixels (always the packed 4096x4096 surface for now).
+    /// Uploaded atlas dimensions in pixels: the smallest rectangle containing every
+    /// packed entry, in the original 4096x4096 coordinate space.
+    ///
+    /// `sprite_dict` keeps converting UVs against the full backing page, so the
+    /// source rectangles remain valid even though the empty right/bottom tail is not
+    /// copied to Godot.
     #[func]
     fn atlas_size(&self) -> Vector2i {
-        let [width, height] = self.atlas.size();
+        let [width, height] = self.atlas.content_size();
         Vector2i::new(width as i32, height as i32)
     }
 
-    /// Raw RGBA8 pixels of the packed atlas, row-major, top-left origin.
+    /// Raw RGBA8 pixels cropped to [`WolfGame::atlas_size`], row-major, top-left origin.
+    ///
+    /// This is deliberately not `Atlas::pixels()`: uploading the full empty 4096² page
+    /// cost 64 MiB per atlas revision and was the dominant startup/menu hitch.
     #[func]
     fn atlas_pixels(&self) -> PackedByteArray {
-        let pixels = self.atlas.pixels();
-        let mut bytes = PackedByteArray::new();
-        bytes.resize(pixels.len());
-        bytes.as_mut_slice().copy_from_slice(pixels);
-        bytes
+        packed_rgba(&self.atlas.content_pixels())
     }
 
     /// Runs the one-shot engine initialisation (common event 48) before a save load.
@@ -493,6 +518,27 @@ impl WolfGame {
             }
             Err(err) => {
                 godot_error!("wolf-gdext: save failed: {err}");
+                false
+            }
+        }
+    }
+
+    /// Persists live system settings on front-end shutdown, when they changed.
+    ///
+    /// Returns true when the settings are already on disk or were written; false
+    /// when there is no session or the write failed.
+    #[func]
+    fn save_settings(&mut self) -> bool {
+        let Some(game) = self.game.as_mut() else {
+            return false;
+        };
+        if !game.settings_dirty() {
+            return true;
+        }
+        match game.save_system_settings() {
+            Ok(()) => true,
+            Err(err) => {
+                godot_error!("wolf-gdext: settings save failed: {err}");
                 false
             }
         }
@@ -546,7 +592,14 @@ impl WolfGame {
 fn sprite_dict(quad: &SpriteQuad, atlas_size: [u32; 2]) -> VarDictionary {
     let mut dict = VarDictionary::new();
     dict.set("number", quad.number as i64);
-    dict.set("z", quad.number as i64);
+    // CE237 draws the two gauge frames at 1994/1998 and then the decorative
+    // sleeping overlay at 2000. Slot-order painting let the overlay erase the
+    // right end of the BAD frame. The frame art is hollow, so lifting only the
+    // two frame slots above the decoration restores the retail outline without
+    // covering the gauge labels or fill.
+    let z = sprite_z(quad.number);
+    dict.set("z", z as i64);
+    dict.set("blend", quad.blend as i64);
     dict.set("rect", rect2(quad.rect));
     dict.set(
         "src",
@@ -564,6 +617,13 @@ fn sprite_dict(quad: &SpriteQuad, atlas_size: [u32; 2]) -> VarDictionary {
     dict.set("alpha", quad.alpha);
     dict.set("tint", tint_colour(quad.tint));
     dict
+}
+
+fn sprite_z(number: i32) -> i64 {
+    match number {
+        1994 | 1998 => 2001,
+        number => i64::from(number),
+    }
 }
 
 /// Draw order for the engine's own menu chrome (choice panel/text, message text and
@@ -604,6 +664,13 @@ fn message_run_dict(run: &MessageRun) -> VarDictionary {
     dict.set("weight", 700_i64);
     dict.set("z", UI_Z);
     dict
+}
+
+fn packed_rgba(pixels: &[u8]) -> PackedByteArray {
+    let mut bytes = PackedByteArray::new();
+    bytes.resize(pixels.len());
+    bytes.as_mut_slice().copy_from_slice(pixels);
+    bytes
 }
 
 fn rect2(rect: [f32; 4]) -> Rect2 {
@@ -649,4 +716,16 @@ fn install_font_metrics(game: &mut Game, root: &Path) {
         }
     }
     godot_warn!("wolf-gdext: no usable font metrics found");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sprite_z;
+
+    #[test]
+    fn shared_status_frames_stay_above_the_sleeping_decoration() {
+        assert!(sprite_z(1994) > sprite_z(2000));
+        assert!(sprite_z(1998) > sprite_z(2000));
+        assert_eq!(sprite_z(1996), 1996);
+    }
 }

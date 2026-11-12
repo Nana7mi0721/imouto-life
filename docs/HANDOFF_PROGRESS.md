@@ -784,7 +784,7 @@ M0–M7 与 C 任务每一步的改动、验证数字与踩过的坑。它只记
 * 2026-11-10（Godot 迁移 P0：GDExtension 混合骨架）——用户 m「rust编译占用过大，以及bug诸多，现在我想将游戏引擎换成godot」；选定 **GDExtension 混合 + 忠实复刻**：
   * **架构**：Rust 保留 `wolf-format` / `wolf-vm` / `wolf-save` / `wolf-game`，新增 `crates/wolf-gdext`（cdylib，gdext 0.5.5 + `api-4-7`）；Godot 4.7.2 负责窗口/渲染/输入/音频/UI。运行时不再编译 wgpu/winit/glyphon/cosmic-text/symphonia/cpal。
   * **新增**：`crates/wolf-gdext/src/lib.rs` 的 `WolfGame`（open/boot/start_title/set_input/frame/atlas_len/atlas_size/atlas_pixels/save_to/load_save/screen_size/data_root）；每帧返回 `sprites`（atlas UV 换算成像素 src）、`texts`（含 message runs）、`overlays`、`sounds`、`freeze`、`pictures`、`diagnostics`。`Game::picture_quads` + `choice::overlay_at_sized` + message cursor 的 engine 层绘制在 facade 内复用，避免与 CLI 漂移。
-  * **Godot 工程**：`godot/project.godot`（1024x576 / canvas_items / GL Compatibility / nearest filter / 60Hz physics）、`main.tscn`、`scripts/GameView.gd`（输入、帧循环、4096² RGBA8 atlas 上传、TextParagraph 绘制、`--data-root` / `--entry=menu|boot` / `--capture` / `--frames`）、`tests/smoke.gd`、`bin/wolf_gdext.gdextension`。
+  * **Godot 工程**：`godot/project.godot`（1024x576 / canvas_items / GL Compatibility / nearest filter / 60Hz physics）、`main.tscn`、`scripts/GameView.gd`（输入、帧循环、早期 4096² RGBA8 atlas 整页上传、TextParagraph 绘制、`--data-root` / `--entry=menu|boot` / `--capture` / `--frames`）、`tests/smoke.gd`、`bin/wolf_gdext.gdextension`。**该整页上传是历史实现；T13 已改为只上传内容包围盒（见 2026-11-12 T13 条），旧 64 MiB/次描述不再代表当前路径。**
   * **构建**：`tools/build-godot.sh` 默认 `--profile godot`（`opt-level=2, debug=0, incremental=false`）；`tools/smoke-godot.sh` 构建 + 首次 `--import` + headless 冒烟。
   * **验证**：`cargo build -p wolf-gdext` / `cargo fmt` 无警告；`bash tools/smoke-godot.sh` → `smoke: pictures=4 sprites=4 texts=0`，exit 0；Godot 窗口 `--entry=menu --frames=120` 截图与 `work/out/_archive/evidence/title.png`（Rust capture 基线）**99.779% 像素完全一致，最大通道差 1，MAE 0.0022**；说明 atlas/UV/RGBA8 上传/tint/alpha/绘制顺序/nine-slice 面板全部正确。
   * **尺寸**：`target/godot` ≈ 893 MB（gdext core rlib 约 224 MB），DLL ≈ 7.3 MB；目标是把 wgpu/winit 时代 4.1 GB 的构建压到可接受范围。`cargo build -p wolf-gdext` 1m23s（冷 profile）。清理后工作区 `du -sh .` = **4.9 GB**（target 4.6 G = debug 3.7 G（Rust CLI/测试全量 + 旧 wgpu 栈）+ godot 893 M；work 264 M）。
@@ -877,7 +877,7 @@ M0–M7 与 C 任务每一步的改动、验证数字与踩过的坑。它只记
   * **清理**：删除 `target/debug/incremental`、`target/release`、`target/ver6`、`work/out/saveprobe`、`work/out/title_peak.png`、`work/out/godot_roundtrip.sav` 及本轮 trace；`du -sh .` = **7.4 GB**（work 334 M = Data 176 M + out 158 M；target 7.1 G = debug 6.2 G + godot 894 M）。未 commit。
 
 * 2026-11-11（BUG-02 交接归档）：
-  * `docs/HANDOFF_NEXT_AGENT.md` 已改为“已完成”归档：顶部标注 BUG-02 闭环、§3 标为历史排查记录并写入 op112 bit-24 根因、title peak 校正为 8、调试打印删除与全部验证/清理结果均已确认。
+  * `docs/archive/HANDOFF_NEXT_AGENT.md`（原 `docs/HANDOFF_NEXT_AGENT.md`）已改为“已完成”归档：顶部标注 BUG-02 闭环、§3 标为历史排查记录并写入 op112 bit-24 根因、title peak 校正为 8、调试打印删除与全部验证/清理结果均已确认。
   * `docs/HANDOFF_M0.md` §11.3 删除“气泡可能停靠屏外/依赖 character_state”的过时开放项，改为指向 §11.1 的已闭环说明。
   * 本轮只改文档，未改代码、未重跑测试；上一轮全量验证结论继续有效。未 commit。
 
@@ -903,3 +903,110 @@ M0–M7 与 C 任务每一步的改动、验证数字与踩过的坑。它只记
     * 统一 BUG-04 为 NOT-A-BUG（原版设计规范，日常顶栏只有文本）。
     * 重写更新 `work/out/review/POST_DEEPSEEK_BUGS_INVESTIGATION_REPORT.md`，缺陷台账扩充至 24 项，升级为五批次分步修复规划。
   * **验证**：`cargo test -q --workspace` **exit 0**；`m15_balloon_name` **1 passed**；全量数据及 Godot 冒烟测试基线保持。未 commit。
+
+* 2026-11-12（深度审查 BUG-25~BUG-40 修复，进行中）：
+  * Wave 1 已完成并验证：`crates/wolf-vm`（Op176 ContinueLoop、Op121 完整 flags/实数/钳制/批量、CommonSelf 与 self_vars 实时双射、Field18 前台事件、Op125 TTL、CSelf5..9 字符串判定、reserve_with_args、Op180 Wait(0)、Op140 pitch/stop 判定、Op130/151 求值）→ `cargo test -p wolf-vm` 120+ 全绿；`wolf-audio` 测试适配后全绿；`auto_events.rs`（电平触发）、`map_runtime.rs`（Parallel 页立即换页、ActionKey 仍延迟）、`textpic.rs`（`\sdb` 走 `sdb`）完成；`docs/BASELINE.json` 与 `tools/audit_bytecode.py` 按 Op176 修正，`wolf-cli precompile` PASS 19/0。
+  * Wave 2 大部分落地但工作区当前 `cargo check` 失败（7 errors）：`SpriteQuad.blend` 缺于 `choice.rs:335/349`、`tilemap.rs:303/326`；`game.rs:675/1345` 的 `retail_rng_seed` 类型；`game.rs:1812` 的 `PictureVars.owner_event` 字段。
+  * 详细交接（含 7 处编译错误的精确修法、剩余 10 项确认、实测修正的语义差异、验证命令）见 **docs/HANDOFF_DEEP_REVIEW_FIX.md**。
+
+* 2026-11-12（文档整理：审查报告与交接归档）：
+  * 现行审查报告统一为 **`docs/reviews/CODE_REVIEW_4ROUND.md`**（第一至四轮完整版，BUG-25~BUG-48，含历史 BUG-20~24 与第一/二轮全文）；第一、二轮单行本（`imouto_life_deep_code_review_report.md`）已归档为 `docs/archive/reviews/CODE_REVIEW_1_2ROUND_superseded.md`，仅作证据链。
+  * 已完成交接 `docs/HANDOFF_NEXT_AGENT.md` 移入 `docs/archive/HANDOFF_NEXT_AGENT.md`；新增 `docs/reviews/README.md`（轮次/编号对照）与 `docs/archive/README.md`（归档规则与替代文档）。
+  * `docs/README.md` 索引、`docs/HANDOFF_DEEP_REVIEW_FIX.md` 的来源/范围说明同步：后者只覆盖 BUG-25..40，第三/四轮 BUG-41..48 尚未开始。本次只动文档，未改代码、未跑测试。
+
+* 2026-11-12（剩余缺陷修复任务编排）：
+  * 新增 **`docs/TASKS_REMAINING_BUGS.md`**：按实测把未解决项拆成 T0–T11（编译恢复、BUG-35/43、BUG-42、BUG-44、BUG-32、BUG-47、BUG-46、BUG-48、BUG-41、BUG-45/34、m16 回归、全量验收），含写作用域、依赖、验收命令、并行轨道与回归红线。
+  * 实测确认的“只落地一半”项：`pending_sounds` 只入队未 flush；`engine_state(10)` 仍为 0；`character_state` 仍返回 None；`picture_state` field 2/3 仍为 scale；`Erase` 仍立即删除；`wolf-gdext` 未调用 `tile_quads`；`return_to_title`/`reserve` 仍为 stub；`wants_text` 仍只判 `STR_BASE`。
+  * 仅新增编排文档，未改代码、未跑测试；执行顺序以该文档 §8 为准（先修 7 个编译错误）。
+
+* 2026-11-12（深度审查 BUG-25~48 最终收口，T0–T11 完成）：
+  * **执行方式**：主代理按写作用域拆分，两个 `auto/deepseek-v4.1-flash` 子代理并行处理；主线修复 `auto_events/game/picture/exec`，Lead 负责冲突整合、基线与验收。未 commit、未 reset。
+  * **编译与运行时**：补齐 `SpriteQuad.blend`、`retail_rng_seed` 的 `(u32,u32,Vec<u8>)`、`PictureVars.owner_event`；文本/DB 字符串槽、读档 BGM 同帧 flush、滚轮/鼠标帧差、174/211、picture_state/Op124、character_state/Op160/1000、Erase 淡出、Godot 瓦片层、blend、退出设置持久化均已接通。
+  * **CE43 one-shot**：`AutoEvents::sync` 只按标题菜单 false→true 沿启动 CE43；菜单仍打开时实例结束不再按电平立即重放，光标变化继续由 `Game::restart(43)` 重绘。真实数据标题三项测试（park / confirm advance / booting）全过，`advances` 的 248 指令恢复 `<200`。测试期望同步改为本作资产 `SystemFile/TitleGraphic2.png` 与 `Picture/menu*_*.png`。
+  * **CE94 tenths 几何**：根因是 Op121 的 range 位把 `121 [self22,10,0,0x10400,3]` 当成 self22..25 连续写入，提前把 y/w/h 从 `864/9280/1152` 除成 `86/928/115`，导致 `ui_scale_for` 失效。VM 现在对 self range 只更新命名槽，普通变量 batch 不变；内置 system graphic 在 tenths block 中只缩 x/y、保留真实图形尺寸。saveui 恢复 **9280x1152** 槽盒、13 text pictures / 54 glyphs / 27728 textured / atlas 21，`<TRI-RIGHT>` quad 与命中盒均为 `[985,300,25,24]`，`<GRADY>` 仍为 `[0,0,1024,576]`。
+  * **回归测试**：新增 `m16_vm_scheduler` 4、`m16_runtime_state` 8、`m16_parallel_input` 5；另补 Op121 self range、CE43 one-shot、tenths arrow/hitbox 单测。真实数据下全过。
+  * **最终验证**：
+    * `cargo fmt --all -- --check` / `git diff --check` 通过；`cargo check -q --workspace` 0 error。
+    * 默认 `cargo test -q --workspace` **exit 0**。
+    * `WOLF_DATA_ROOT=<abs>/work/Data cargo test -q --workspace --no-fail-fast`：唯一失败 target 为 `wolf-game --lib`，**348 passed / 2 failed**（`db` 英雄默认名与头像图形类型，既有姊妹作期望差异）；其余 target 全绿。AutoEvents 3 项与 game title 2 项历史差异已消除。
+    * `wolf-cli verify` **PASS 64 / 1 SKIP**；`precompile` **PASS 19 / 0**（blocks 5416 / loops 881 / implicit_closes 0 / dynamic_labels 3）。
+    * `m14_visual_regression` **5 passed（T13 前记录；T13 最终验收仍为 5 passed）**：title peak8 / map_idle peak6 / saveui peak9 / day_command peak8 / hud peak8；saveui nonblack 576221、27728 textured、atlas21。
+    * `build-godot.sh`、`smoke-godot.sh` exit 0（smoke 地图帧 sprites=19080，瓦片层已进入 Godot 绘制包；load_save 50/14；roundtrip 38/38）。
+    * `parity-godot.sh 600 --pixel-check=0` **PASS**：60,194 instructions / 7,508 pictures / 15 messages / 3 choices / 0 warnings / 3 sounds；unmodelled=1。
+  * **文档与清理**：更新 `HANDOFF_DEEP_REVIEW_FIX.md`、`TASKS_REMAINING_BUGS.md` §0、`HANDOFF_M0.md` §11.1、`docs/README.md`、根 `README.md`；删除 `target/debug/incremental`、`work/out/diag_c_t11`、`work/out/saveprobe`、本轮临时 log/sav/probe（`target/release`、`target/ver6` 已不存在）。清理后 `du -sh .` = **8.1 GB**（work 796 M = Data 176 M + out 621 M；target 7.3 G）。未提交。
+
+* 2026-11-12（T12：Godot 瓦片性能与旧编号复核；以下为被 T13 取代的历史记录）：
+  * **用户现象**：BUG-41 接入地图瓦片后，Godot 加载明显变慢且持续卡顿。性能审计确认不是磁盘/存档解析：`SampleMapA` 每帧复制 27,648 个 tile quad，GDExt 为每个 quad 建 7 字段 `VarDictionary`，GDScript 再为每个元素建包装字典并 `sort_custom`，最后逐 quad 绘制；headless **不执行 `_draw`** 时读档 60 帧已约 4.8–5.0 s。
+  * **历史修复（已被 T13 取代）**：`Atlas::composite_tile_layer()` 按 map generation / atlas revision / autotile phase 把瓦片层烘焙成一张 1024x576 RGBA8 纹理。`WolfGame` 只在缓存键变化时发送 `tile_pixels`，packet 另带 `tile_revision/tile_quads/tile_tint`；`GameView` 每帧只画 1 次瓦片纹理，动态 picture/text 才进入原排序与 blend 批处理。瓦片 tint 用整张纹理 modulate，因此 `151 ChangeColor` 变化不会重烘。当前源码和测试已无这些符号。
+  * **历史验证**：官方 `build-godot.sh` / `smoke-godot.sh` 通过（smoke/mouse/key_map/wheel/load_save/load_menu/save_roundtrip 全 exit 0），`max_sprites` 仍以 dynamic + tile_quads 统计为 27,653；官方 headless 读档 60 帧 **约 0.42 s**（含 open/prime/load），600 帧 **约 0.61 s**。新增 `t12_tile_bake` 锁定缓存键；`t12_tile_bake_render` 用 `wolf-render` GPU 对照真实 27,648 quads，全部 **1,769,472 个通道 `max_diff=0`**。`m14_visual_regression` 当时 5/5。`parity-godot.sh 600 --pixel-check=0` PASS；后台窗口捕获两次逐字节一致，与 Rust primed capture 的 MAE=0.8817、±8 99.17%、±32 99.36%，差异只在既有 HUD 文字区。以上数字不得作为 T13 当前验收依据。
+  * **T13 后续（2026-11-12，当前方案）**：上面的 tile 单纹理方案已被取代。玩法前端（`wolf-gdext`/`GameView.gd`）不再发 tile packet，只有 `picture_quads`/`text_quads` 进入渲染；核心 `tile_quads` 与 `capture --map` 保留用于取证。atlas 上传改为只发打包内容包围盒：旧整页上传为 64 MiB/次，当前 `m17_render_regressions` 示例为 2607x576 / 5.7 MiB；19:07 读档 600 帧为 `sync_uploads=1` / `sync_MiB=4.1`，`wolf_avg_ms=0.443` / `draw_avg_ms=0.302` / `physics_avg_ms=0.752`。UI 侧新增 `m17_ui_regressions` / `m17_t13_ui_audit` / `m17_render_regressions` / `m17_text_layer`，覆盖黑脸、黄绿瓦片、首次提示、按钮命中、BAD 负缩放、妹妹轮廓命中、身份-CG；中央对话 `36013` 已改用消息行距、移除 `\ax/\ay` 空行、气球向上增长并在气球可见时过滤原生 `19500/19501`，`m17_text_layer` 当前 3 passed。**`t12_tile_bake*` 已删除，历史记录保留在本条，不代表现行实现。**
+  * **旧编号复核**：新增 `m16_old_bug_review`（2 passed / 2 ignored）。历史台账 BUG-20 确认闭环；历史台账 BUG-24 确认不是缺陷（默认档 2→Sys15/16=14/8，设置档 4→9/4）。被忽略的 `bug21` 是**报告 §六 BUG-21**（独立 map-self 合成场景，真实零售影响未证实）；被忽略的 `old_bug23` 是**历史台账 BUG-23 的空范围合成探针**，不是零售演出丢失。旧 BUG-21（滚轮）与旧 BUG-22（鼠标帧差）不在此文件，分别有生产测试和手册语义证据。
+  * **剩余（已由下方 20:09 最终验收取代）**：当时 `m14_visual_regression` 记 4/5，
+    saveui 的 101 像素差后在最终验收归因为 `SaveData03.sav` fixture 漂移；人工
+    Godot 窗口复核已在新 DLL 上执行。侧栏当时只有 48x96 strip 点击，最终已扩展为
+    整条可见滑条；哥哥体力条、保存 hover、BAD 外框厚度仍缺原版素材/槽位证据。
+
+* 2026-11-12（T13 文档封板复核）：
+  * 复核 `docs/reviews/T13_UI_REGRESSION_AUDIT.md`、`work/out/T13_OLD_BUG_DOC_AUDIT.md` 与当前代码/回归，确认：
+    * 玩法前端已无 tile texture/packet 路径；T12 的 `composite_tile_layer`、`tile_pixels`、
+      `tile_revision`、`tile_tint`、`t12_tile_bake*` 只保留在历史记录中；
+    * 旧整页 atlas 上传为 64 MiB/次，当前为 content bbox（600 帧日志 4.1 MiB）；
+    * `m16_old_bug_review` 的 2 个 ignored 测试分别属于报告 §六 BUG-21 与历史台账
+      BUG-23 合成探针，不能再混写；
+    * `m17_text_layer` 3/3、`m17_ui_regressions` 13/13、`m17_t13_ui_audit` 3/3、
+      `m17_render_regressions` 5/5、`m3_map_click` 8/8 在真实数据下通过；
+    * `m14_visual_regression` 当时记 4/5；其中的 101 像素差异已在 20:09 最终验收
+      归因为 `SaveData03.sav` fixture 漂移（见下条），最终 DLL 已重建并通过。
+  * 本次只改文档，未改 Rust/GDScript/数据文件，未 commit/reset/checkout。
+
+* 2026-11-12（T13 最终验收，20:09 DLL）：
+  * **构建产物**：`godot/bin/wolf_gdext.dll` 20:09:05、7,651,840 字节，
+    SHA-256 `fee3e727f7ad964a8ccd2b57aaf600d743c1405a2eb702eed5d41ea794efadd1`，
+    与 `target/godot` 同哈希。此前 19:37 的 DLL 确实早于 `game.rs`/`textpic.rs`；
+    用户若在重建前已打开 Godot，Windows 仍会持有旧库，必须完全退出后重开。
+  * **回归**：`m17_text_layer` 3、`m17_ui_regressions` 13、`m17_t13_ui_audit` 3、
+    `m17_render_regressions` 5、`m15_balloon_name` 1、`m4_night_gaps` 3、
+    `m3_map_click` 8、`m3_hud_buttons` 9、`m17_identity_branch` 5、
+    `m16_old_bug_review` 2+2 ignored、`m14_visual_regression` 5（saveui fixture skip）
+    在真实数据下通过；`cargo fmt --all -- --check` 与 `git diff --check` 通过。
+  * **`saveui` 101 像素归因**：基线对应 `SaveData01/02` 两格；工作区测试遗留的
+    `SaveData03.sav` 增加第四格（2 live pictures / 2 text runs / 约 98 像素）。
+    只读隔离数据根仅保留 01/02 时为 25 live / 13 text、576227，与基线 576221
+    差 6 像素（光标/栅格相位）。`m14_visual_regression` 已加
+    `depends_on_save_grid` 守卫，不改基线。
+  * **侧栏**：`try_status_panel_strip` 从原版 48x96 热点扩展为整条 25px 可见滑条，
+    仅排除物品栏 y 288..384；可见图片按钮先解析，保存图标 (10,510) 80x60 不会被抢。
+    新增 `status_sliver_opens_above_and_below_the_original_hotspot_band` 与
+    `status_sliver_does_not_steal_the_save_icon`，`m3_hud_buttons` 9/9。
+  * **Godot 窗口复核**：读档 180 帧 `wolf_avg_ms=0.565` / `draw_avg_ms=0.287` /
+    `sync_uploads=1` / `sync_MiB=4.1`，截图中 yellowish=0、greenish=0；新游戏
+    300 帧 `wolf_avg_ms=0.342` / `draw_avg_ms=0.058`，三行正文在 493/516/539，
+    无原生 `19500/19501`。`smoke-godot.sh` 全绿、`parity-godot.sh 600` PASS。
+  * **并行优化**：`wolf-gdext::frame()` 只计算一次 `rendered_message_layout()`，
+    光标与原生文本运行共用；原生 101 文章模式不再每帧重复布局。
+  * **仍证据不足/未做**：保存 hover 高亮（无独立素材）、哥哥图形体力条
+    （CE214 只有 `行动力/精力` 文本，v74/v75 无绘图引用）、BAD 外框厚度
+    （几何存在，CE237 右端被中央 `sleeping_staus.png` 覆盖，数据层序不应臆改）、
+    `36014` 的 `message` 字面量语义、侧栏按住拖拽手势。以上需原版截图/操作录像。
+
+* 2026-11-12（T14 实机 UI/性能回归收口）：
+  * **用户实机现象复核**：先用最新冷构建抓新游戏/读档 `1/2/3/6/10` 帧，10 张截图
+    `yellowish=0 / greenish=0`；读档第 1 帧起即可见 `(760,34)` 的 100x8 白框体力条。
+    旧 Godot 进程未退出时 Windows 会继续持有旧 DLL，是“修了仍复现”的首要排查项。
+  * **交互**：相册 `-7/ev35` 加入图片命中表；侧栏关闭态命中由 x=5 扩到 x=0；
+    ev21 结束按钮在动作子菜单 `v100=10` 时走窄范围 page-condition bypass，
+    仍保留确认/收尾脚本；混合批处理给体力条/overlay 固定 normal-blend 末尾批层。
+  * **性能**：`GameView` 的 161 冻结帧改为一次 `get_image()` 捕获，整个
+    `transition_active` 复用 `ImageTexture`，不再每帧全屏 GPU 回读；另移除每帧
+    lambda 排序分配。600 帧实测读档 `ready=114.3ms`、`wolf_avg=0.536ms`、
+    `draw_avg=0.315ms`、`physics_avg=0.629ms`；新游戏
+    `ready=110.1ms`、`wolf_avg=0.484ms`、`draw_avg=0.308ms`、`physics_avg=0.690ms`。
+  * **回归**：`m17_ui_regressions` 16、`m17_t13_ui_audit` 5、
+    `m17_render_regressions` 5、`m17_text_layer` 3、`m4_hud_status` 2、
+    `m3_night_interaction_e2e` 6、`m17_identity_branch` 5、gdext unit 1 全过；
+    `smoke-godot.sh` 全绿；`parity-godot.sh 600 --pixel-check=600` PASS
+    （MAE 1.3852，within8 98.41%）。
+  * **未改/未证实**：保存 hover 高亮（原版截图纠正为“可点击但不亮”，故不伪造）；
+    侧栏拖拽手势、BAD 外框最终端点、36002 锚定仍需原版实机证据。默认 workspace
+    仍有一项既有 `m3_manual_rules::late_night_bedtime...`（17:00 vs 19:00）失败，
+    真实数据下两项 `db` 姊妹作占位串差异也仍在；均未在本轮改期望。

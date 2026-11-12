@@ -201,6 +201,29 @@ impl Magic {
     pub const fn is_string(self) -> bool {
         matches!(self.kind, MagicKind::StrVar)
     }
+
+    /// True when this operand names a system string variable (`9_900_000..=9_999_999`).
+    #[must_use]
+    pub const fn is_sys_str(self) -> bool {
+        matches!(self.kind, MagicKind::SysVar) && self.index >= 900_000
+    }
+
+    /// True when this raw operand addresses a string storage slot in the given context.
+    #[must_use]
+    pub fn is_string_slot(raw: i32, is_map_context: bool) -> bool {
+        let magic = Self::decode(raw);
+        match magic.kind {
+            MagicKind::StrVar => true,
+            MagicKind::SysVar if magic.index >= 900_000 => true,
+            MagicKind::SelfVar
+                if !is_map_context && (5..=9).contains(&(magic.index as usize % 100)) =>
+            {
+                true
+            }
+            MagicKind::CommonSelf if (5..=9).contains(&magic.common_slot()) => true,
+            _ => false,
+        }
+    }
 }
 
 /// Classify a flag-stripped value.
@@ -310,5 +333,35 @@ mod tests {
         assert_eq!(m.flags(), 2);
         assert_eq!(m.kind(), MagicKind::SelfVar);
         assert_eq!(m.index(), 612);
+    }
+
+    #[test]
+    fn string_slot_detection() {
+        // StrVar
+        assert!(Magic::is_string_slot(3_000_005, false));
+        assert!(Magic::is_string_slot(3_000_005, true));
+
+        // SysVar: string slots start at 9_900_000
+        assert!(Magic::decode(9_900_000).is_sys_str());
+        assert!(Magic::is_string_slot(9_900_000, false));
+        assert!(Magic::is_string_slot(9_900_000, true));
+        assert!(!Magic::decode(9_000_000).is_sys_str());
+        assert!(!Magic::is_string_slot(9_000_000, false));
+
+        // SelfVar CSelf5..=9 (group 6: 1_600_005..=1_600_009)
+        assert!(Magic::is_string_slot(1_600_005, false));
+        assert!(Magic::is_string_slot(1_600_009, false));
+        assert!(!Magic::is_string_slot(1_600_000, false));
+        assert!(!Magic::is_string_slot(1_600_004, false));
+        assert!(!Magic::is_string_slot(1_600_010, false));
+        // In map context, self variables 5..9 are NOT string slots
+        assert!(!Magic::is_string_slot(1_600_005, true));
+
+        // CommonSelf: 15_000_000 + 100*ev + slot
+        let cs_str = 15_000_000 + 100 * 42 + 7;
+        let cs_num = 15_000_000 + 100 * 42 + 2;
+        assert!(Magic::is_string_slot(cs_str, false));
+        assert!(Magic::is_string_slot(cs_str, true));
+        assert!(!Magic::is_string_slot(cs_num, false));
     }
 }

@@ -176,8 +176,26 @@ pub fn apply(game: &mut Game, save: &SaveFile) -> LoadedSave {
             let gain = (volume.clamp(0, 100) as f32) / 100.0;
             let _ = audio.play_bgm_with_fade(&file, true, gain, 0);
         }
-    } else if let Some(audio) = game.audio.as_mut() {
-        audio.stop_bgm(0);
+        game.pending_sounds.push(wolf_vm::SoundCmd {
+            channel: wolf_vm::SoundChannel::Bgm,
+            action: wolf_vm::SoundAction::Play,
+            file,
+            volume,
+            frames: 0,
+            pitch: 100,
+        });
+    } else {
+        if let Some(audio) = game.audio.as_mut() {
+            audio.stop_bgm(0);
+        }
+        game.pending_sounds.push(wolf_vm::SoundCmd {
+            channel: wolf_vm::SoundChannel::Bgm,
+            action: wolf_vm::SoundAction::Stop,
+            file: String::new(),
+            volume: 0,
+            frames: 0,
+            pitch: 100,
+        });
     }
 
     // Rebuild the picture layer. The save stores every live slot, including hidden ones

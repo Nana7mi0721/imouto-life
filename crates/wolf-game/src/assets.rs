@@ -109,6 +109,55 @@ impl ImageData {
         let slice = self.rgba.get(offset..offset + 4)?;
         Some([slice[0], slice[1], slice[2], slice[3]])
     }
+
+    /// Bounding box of pixels whose alpha is above the requested threshold.
+    ///
+    /// Returns `[x, y, width, height]` in source-image pixels, not an exclusive
+    /// right/bottom edge. The UI controls in this game are drawn on transparent
+    /// canvases (80x60 for the HUD icons), so their picture rectangles contain
+    /// large dead margins. Callers that need a click surface matching the visible
+    /// art can map this box through the same destination rectangle the renderer
+    /// uses.
+    #[must_use]
+    pub fn alpha_bounds(&self, threshold: u8) -> Option<[u32; 4]> {
+        self.alpha_bounds_in([0, 0, self.width, self.height], threshold)
+    }
+
+    /// Bounding box of opaque pixels inside one source-image rectangle.
+    ///
+    /// Sprite sheets need this for click surfaces: a standing-character atlas is
+    /// much larger than one visible pose, so scanning the whole file would turn the
+    /// transparent margins of every other cell into dead-but-clickable space.
+    #[must_use]
+    pub fn alpha_bounds_in(&self, region: [u32; 4], threshold: u8) -> Option<[u32; 4]> {
+        let [region_x, region_y, region_w, region_h] = region;
+        let region_right = region_x.checked_add(region_w)?;
+        let region_bottom = region_y.checked_add(region_h)?;
+        if region_w == 0
+            || region_h == 0
+            || region_right > self.width
+            || region_bottom > self.height
+        {
+            return None;
+        }
+        let threshold = threshold.min(255);
+        let mut left = region_right;
+        let mut top = region_bottom;
+        let mut right = region_x;
+        let mut bottom = region_y;
+        for y in region_y..region_bottom {
+            for x in region_x..region_right {
+                let offset = (y as usize * self.width as usize + x as usize) * 4 + 3;
+                if self.rgba[offset] > threshold {
+                    left = left.min(x);
+                    top = top.min(y);
+                    right = right.max(x);
+                    bottom = bottom.max(y);
+                }
+            }
+        }
+        (right >= left && bottom >= top).then_some([left, top, right - left + 1, bottom - top + 1])
+    }
 }
 
 /// Why an asset could not be produced.

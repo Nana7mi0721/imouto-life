@@ -21,7 +21,10 @@
 //! * `212 SetLabel` names are collected into a map. **Labels are strings, not
 //!   indices** (docs/PLAN.md §3.2). 5 of the 1,543 `213 JumpLabel` instructions
 //!   embed a `cself[n]` and are only resolvable at run time, so they are marked
-//!   dynamic instead of being resolved to `None`.
+//!   dynamic instead of being resolved to `None`. A repeated label name resolves
+//!   to its **first definition in source order**; the original interpreter scans
+//!   `212` slots from command 0 to end and stops at the first matching expansion
+//!   (`FUN_0045f180`), rather than choosing the nearest definition.
 //!
 //! Structure resolution is deliberately tolerant (docs/OPCODE_SPEC.md §4.3):
 //! 131 case markers in this data have no open block at all, and 123 block ends
@@ -44,14 +47,14 @@ pub enum BlockKind {
     Condition,
     /// `102 ShowChoices` — player choice.
     Choices,
-    /// `170 StartLoop`, `176 StartLoop2`, `179 LoopTimes`.
+    /// `170 StartLoop`, `179 LoopTimes`.
     Loop,
 }
 
 /// One resolved control-flow construct.
 #[derive(Clone, Debug)]
 pub struct Block {
-    /// pc of the head instruction (`111`, `102`, `170/176/179`).
+    /// pc of the head instruction (`111`, `102`, `170/179`).
     pub head: usize,
     /// What opened this block.
     pub kind: BlockKind,
@@ -133,7 +136,7 @@ pub struct PrecompileStats {
     pub cancel_cases: usize,
     /// `499`/`498` that closed nothing.
     pub orphan_ends: usize,
-    /// Blocks closed implicitly by an outer terminator (`176` relies on this).
+    /// Blocks closed implicitly by an outer terminator.
     pub implicit_closes: usize,
     /// Blocks still open at the end of the event.
     pub unclosed_blocks: usize,
@@ -226,8 +229,18 @@ pub struct Program {
     pub control: Vec<Control>,
     /// Resolved blocks.
     pub blocks: Vec<Block>,
-    /// `212` labels: name -> pc *after* the `212` instruction.
+    /// `212` labels: name -> pc *after* the first matching `212` instruction.
+    ///
+    /// A name may legally occur more than once in one event. The retail
+    /// interpreter scans labels from the start of the event and stops at the
+    /// first match, so the map must not be overwritten by a later definition.
     pub labels: HashMap<String, usize>,
+    /// Every `212` label definition in source order.
+    ///
+    /// Dynamic labels may expand to different strings at run time, so their
+    /// duplicate definitions cannot be reduced to a single map entry. The
+    /// interpreter walks this vector when the direct map lookup misses.
+    pub label_defs: Vec<(String, usize)>,
     /// pcs of `213` instructions whose label needs run-time expansion.
     pub dynamic_jumps: Vec<usize>,
     /// Structure counts for this event.
@@ -277,7 +290,7 @@ impl Program {
                 // closes that branch early - which is exactly how the inheritance menu
                 // of SampleMapA event 0 ended up with a case table full of its nested
                 // string comparisons and an end 150 slots too early.
-                111 | 112 | 102 | 170 | 176 | 179 => {
+                111 | 112 | 102 | 170 | 179 => {
                     let kind = match cmd.opcode {
                         102 => BlockKind::Choices,
                         111 | 112 => BlockKind::Condition,
@@ -380,6 +393,7 @@ impl Program {
         // forwards to one that comes later, so targets are only known once the
         // whole stream has been walked.
         let mut labels: HashMap<String, usize> = HashMap::new();
+        let mut label_defs = Vec::new();
         let mut static_jumps: Vec<String> = Vec::new();
         for (pc, slot) in slots.iter().enumerate() {
             let Slot::Command(cmd) = slot else {
@@ -388,7 +402,9 @@ impl Program {
             match cmd.opcode {
                 // The target is the instruction *after* the SetLabel.
                 212 => {
-                    labels.insert(cmd.strings.first().cloned().unwrap_or_default(), pc + 1);
+                    let name = cmd.strings.first().cloned().unwrap_or_default();
+                    labels.entry(name.clone()).or_insert(pc + 1);
+                    label_defs.push((name, pc + 1));
                 }
                 213 => {
                     let name = cmd.strings.first().cloned().unwrap_or_default();
@@ -417,6 +433,7 @@ impl Program {
             control,
             blocks,
             labels,
+            label_defs,
             dynamic_jumps,
             stats,
         }
@@ -530,9 +547,7 @@ fn strip_tag(title: &str) -> &str {
 
 /// Close blocks from the top of the stack down to (and including) `index`.
 ///
-/// Returns how many *outer* blocks were closed implicitly, which is what
-/// `176 StartLoop2` does in this data (docs/OPCODE_SPEC.md §4.6: its `498` has a
-/// negative indent diff and rolls back several layers at once).
+/// Returns how many *outer* blocks were closed implicitly.
 fn close_from(blocks: &mut [Block], open: &mut Vec<usize>, index: usize, pc: usize) -> usize {
     let mut implicit = 0;
     while let Some(top) = open.pop() {
@@ -712,6 +727,52 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_labels_keep_the_first_definition() {
+        // Retail `FUN_0045f180` scans from command 0 and stops at the first
+        // matching 212. CE251 has two `学生` labels; choosing the later one sends
+        // the student branch into the salaryman office CG block.
+        let slots = vec![
+            cmd(212, &[], &["student"]),
+            cmd(180, &[1], &[]),
+            cmd(213, &[], &["student"]),
+            cmd(212, &[], &["student"]),
+            cmd(180, &[2], &[]),
+        ];
+        let p = Program::compile(&fake_event(9, "duplicate-label", slots));
+        assert_eq!(p.labels.get("student"), Some(&1));
+        assert_eq!(
+            p.label_defs,
+            vec![("student".to_owned(), 1), ("student".to_owned(), 4)]
+        );
+    }
+
+    #[test]
+    fn nested_condition_else_markers_attach_to_the_innermost_block() {
+        let slots = vec![
+            cmd(111, &[1, 2_000_000, 1, 0], &[]), // 0 outer if
+            cmd(401, &[1], &[]),                  // 1 outer case
+            cmd(111, &[1, 2_000_001, 1, 0], &[]), // 2 inner if
+            cmd(401, &[1], &[]),                  // 3 inner case
+            cmd(121, &[2_000_002, 1, 0, 0], &[]), // 4 inner then
+            cmd(420, &[0], &[]),                  // 5 inner else
+            cmd(121, &[2_000_002, 2, 0, 0], &[]), // 6 inner else body
+            cmd(499, &[], &[]),                   // 7 close inner
+            cmd(420, &[0], &[]),                  // 8 outer else
+            cmd(121, &[2_000_002, 3, 0, 0], &[]), // 9 outer else body
+            cmd(499, &[], &[]),                   // 10 close outer
+        ];
+        let p = Program::compile(&fake_event(10, "nested-if", slots));
+        let outer = p.block_at(0).expect("outer block");
+        let inner = p.block_at(2).expect("inner block");
+        assert_eq!(outer.cases, vec![(1, 2)]);
+        assert_eq!(outer.else_pc, Some(9));
+        assert_eq!(outer.end_pc, 10);
+        assert_eq!(inner.cases, vec![(1, 4)]);
+        assert_eq!(inner.else_pc, Some(6));
+        assert_eq!(inner.end_pc, 7);
+    }
+
+    #[test]
     fn unresolved_label_is_counted() {
         let slots = vec![cmd(213, &[], &["nope"])];
         let p = Program::compile(&fake_event(7, "badlabel", slots));
@@ -779,5 +840,17 @@ mod tests {
         let p = Program::compile(&fake_event(8, "blanks", slots));
         assert_eq!(p.blocks.len(), 0);
         assert_eq!(p.stats.slots, 3);
+    }
+
+    #[test]
+    fn continue_loop_176_does_not_open_block() {
+        // 0: 170 loop  1: 176 continue  2: 498
+        let slots = vec![cmd(170, &[], &[]), cmd(176, &[], &[]), cmd(498, &[], &[])];
+        let event = fake_event(1, "loop_continue", slots);
+        let p = Program::compile(&event);
+        assert_eq!(p.blocks.len(), 1);
+        assert_eq!(p.stats.loops, 1);
+        assert_eq!(p.stats.implicit_closes, 0);
+        assert_eq!(p.stats.unclosed_blocks, 0);
     }
 }

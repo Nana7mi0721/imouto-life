@@ -72,6 +72,7 @@ fn bedroom() -> Result<Game, String> {
     game.prime_engine();
     let save = data_root().join("Save").join("SaveData01.sav");
     game.load_save(&save)?;
+    game.auto_events.set_enabled(false);
     for _ in 0..5 {
         game.frame();
     }

@@ -14,6 +14,18 @@
 | [../README.md](../README.md) | 现行 | 仓库总览、当前状态、快速开始、目录结构 |
 | [PROJECT_ASSETS.md](PROJECT_ASSETS.md) | 现行 · 资产盘点 | 停止重构后的清理记录与可复用资产清单（源码/数据/文档/逆向/证据） |
 
+### 1.1 审查报告与归档
+
+| 文件 | 状态 | 内容 |
+|---|---|---|
+| [reviews/CODE_REVIEW_4ROUND.md](reviews/CODE_REVIEW_4ROUND.md) | **现行 · 唯一审查事实源** | 第一至四轮完整审查（2026-11）：历史基线 BUG-20..24、第一轮 BUG-25..35、第二轮 BUG-36..40、第三轮 BUG-41..46、第四轮 BUG-47..48 + 架构建议 |
+| [HANDOFF_DEEP_REVIEW_FIX.md](HANDOFF_DEEP_REVIEW_FIX.md) | **现行 · 完成交接** | BUG-25..48 的 T0–T11 完成状态、实施细节、官方手册/反编译语义证据、最终验证结果；历史中断快照保留 |
+| [TASKS_REMAINING_BUGS.md](TASKS_REMAINING_BUGS.md) | **现行 · 执行完成** | 原 T0–T12 任务卡与写作用域；§0 为 2026-11-12 完成状态（含 T12 性能/旧编号复核），§1 起为历史编排快照 |
+| [reviews/README.md](reviews/README.md) | 现行 · 导读 | 审查轮次/缺陷编号对照、阅读注意、报告命名规则 |
+| [archive/README.md](archive/README.md) | 归档 · 索引 | 归档规则与全部归档项（旧交接、旧审查报告） |
+| [archive/HANDOFF_NEXT_AGENT.md](archive/HANDOFF_NEXT_AGENT.md) | 已归档 · 已完成 | 2026-11-11 POST_DEEPSEEK 19 项修复交接（BUG-02 闭环），仅作追溯 |
+| [archive/reviews/CODE_REVIEW_1_2ROUND_superseded.md](archive/reviews/CODE_REVIEW_1_2ROUND_superseded.md) | 已归档 · 被取代 | 第一、二轮审查单行本（BUG-25..40）；内容已并入现行四轮总报告 |
+
 ## 2. 基线
 
 | 文件 | 状态 | 内容 |
@@ -130,7 +142,7 @@
 |---|---|---|
 | [GODOT_MIGRATION.md](GODOT_MIGRATION.md) | **现行 · P0/P1/P2 完成** | GDExtension 混合架构：Godot 负责窗口/渲染/音频/UI，Rust 保留 `wolf-format`/`wolf-vm`/`wolf-save`/`wolf-game`。含工程布局、`build/smoke/parity-godot.sh`、标题像素对照、输入/读档/文字校准与长程 parity 结果、剩余缺口 |
 | [../godot/](../godot/) | 现行 | Godot 4.7 工程（`project.godot`、`main.tscn`、`GameView.gd`、`WolfKeys/WolfText`、headless smoke/parity） |
-| [../crates/wolf-gdext/](../crates/wolf-gdext/) | 现行 | `WolfGame` GDExtension 类：每帧返回 sprites/texts/overlays/sounds 绘制包 |
+| [../crates/wolf-gdext/](../crates/wolf-gdext/) | 现行 | `WolfGame` GDExtension 类：每帧返回动态 sprites/texts/overlays/sounds，以及缓存的地图瓦片 RGBA 纹理 |
 | [GODOT_DEBUGGING.md](GODOT_DEBUGGING.md) | 现行 | 操作/显示/对话缺失的排查手册：输入契约、`--log-input/--log-events/--log-messages`、截图 diff、字形覆盖、存档 fixture 坑 |
 
 ## 7. 翻译目录
@@ -172,7 +184,10 @@
 ## 11. 文档维护规则
 
 - 新里程碑说明命名 `M<N>_<主题>.md`，新专题审计放 `docs/` 根，并**在本索引登记**。
-- 完成且被取代的文档不删除，标「历史」保留证据链。
+- 完成且被取代的文档不删除：移入 `docs/archive/`（审查报告放 `docs/archive/reviews/`），
+  在 [archive/README.md](archive/README.md) 登记原因与替代文档，并更新本索引。
+- 现行代码审查报告统一放 `docs/reviews/`，同一时间只保留一份现行总报告；
+  新报告须在 [reviews/README.md](reviews/README.md) 标注轮次与缺陷编号范围。
 - 会改变玩家可见行为或 verify 数值的改动：同时更新 [HANDOFF_M0.md](HANDOFF_M0.md) §11.1、
   [HANDOFF_PROGRESS.md](HANDOFF_PROGRESS.md) 末尾新增一条，以及本索引对应条目状态。
 - 反编译/实测证据进 `docs/re/`；调研背景进 `docs/research/`；两者都不与规范文档混放。

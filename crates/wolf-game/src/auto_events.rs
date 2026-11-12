@@ -8,10 +8,12 @@
 //! [`crate::game::ENGINE_AUTO_START`]. This module owns the remaining 97: each one
 //! is created when its condition becomes true and destroyed when it becomes false.
 //!
-//! The scheduler is edge-triggered. A condition that stays true does not restart a
-//! coroutine that ended on its own, and a condition that stays false does nothing.
-//! That matches WOLF's page lifecycle ("created while the condition holds, discarded
-//! when it fails") without turning a one-shot event into a per-frame loop.
+//! The scheduler is level-triggered. A condition that stays true restarts a
+//! coroutine that ended on its own (matching WOLF's looping parallel execution for
+//! `run_condition == 2` events), while a condition that becomes false immediately
+//! stops and discards any running coroutine. Event 43 is the lone one-shot exception;
+//! it is started on the false-to-true edge of the title-menu gate and is replayed
+//! explicitly by [`crate::game::Game::frame`] when the cursor changes.
 //!
 //! ## The title menu renderer (event 43)
 //!
@@ -20,18 +22,19 @@
 //! it draws the three hand-drawn image buttons `Picture/menu1_b`/`menu2_b`/`menu3_b`
 //! at x=10, y=400/450/500, and overlays the dark selected variant (`menu*_a`) of
 //! whichever row system variable 20 selects. The `_b` files are the lighter,
-//! unselected buttons; `_a` is the dark highlight. Its run condition (global v0 == 0) holds only at the title,
-//! so it must be scheduled exactly like every other `run_condition == 2` event; the port
-//! then mirrors the choice cursor into Sys20 each frame so the highlight tracks the
-//! player's selection (see [`crate::game::Game::frame`]). The previous port excluded it
-//! as a "dead title variant" and painted an inferred text panel instead, which is why the
-//! title menu looked wrong; see docs/M3_TITLE_UX.md.
+//! unselected buttons; `_a` is the dark highlight. Its run condition (global v0 == 0)
+//! holds only at the title, but the event itself draws once and ends. It therefore
+//! starts on the title-menu gate's rising edge, not whenever the level stays true;
+//! [`crate::game::Game::frame`] replays it on a cursor change so the highlight tracks
+//! the player's selection. The previous port excluded it as a "dead title variant" and
+//! painted an inferred text panel instead, which is why the title menu looked wrong;
+//! see docs/M3_TITLE_UX.md.
 
 use std::collections::BTreeMap;
 
 use wolf_format::commonevent::CommonEventData;
 use wolf_vm::exec::InstanceId;
-use wolf_vm::magic::VAR_BASE;
+use wolf_vm::magic::{SELF_ARG_BASE, VAR_BASE};
 use wolf_vm::Vm;
 
 /// Event id -> condition operator / variable / value, taken from the event header.
@@ -47,6 +50,11 @@ pub struct AutoEvent {
     pub variable: u32,
     /// Right-hand side of the comparison.
     pub value: u32,
+    /// Declared numeric default arguments, truncated to `arg_num_count`.
+    ///
+    /// A bare scheduler start has no caller to supply `210` arguments, so the
+    /// event header's defaults are the only correct initial self values.
+    pub default_args: Vec<i32>,
 }
 
 /// Events this scheduler deliberately does not start.
@@ -87,11 +95,13 @@ pub struct SyncReport {
 #[derive(Debug, Default)]
 pub struct AutoEvents {
     events: Vec<AutoEvent>,
-    /// Last observed truth value, so a transition can be detected.
+    /// Last observed truth value, so a transition can be detected. For event 43 this
+    /// records the title-menu gate edge rather than the raw header condition.
     latched: BTreeMap<u32, bool>,
-    /// Instance ids of coroutines this scheduler owns. An entry stays here even
-    /// after the coroutine ends naturally: the condition must go false before a
-    /// second start is allowed (edge trigger).
+    /// Instance ids of coroutines this scheduler owns. When a coroutine ends
+    /// naturally while its condition remains true, the scheduler starts a fresh
+    /// copy on the next pass (level-triggered parallel execution). When the condition
+    /// becomes false, the coroutine is stopped and removed.
     running: BTreeMap<u32, InstanceId>,
     enabled: bool,
     /// Whether the title menu is actually up. The title menu renderer (event 43) has a
@@ -112,12 +122,21 @@ impl AutoEvents {
                     && (event.run_condition() == 2
                         || (event.run_condition() == 0 && GATED_CALL_ONLY.contains(&event.id)))
             })
-            .map(|event| AutoEvent {
-                id: event.id,
-                title: event.title.clone(),
-                operator: event.condition_operator(),
-                variable: event.condition_variable,
-                value: event.condition_value,
+            .map(|event| {
+                let default_args = event
+                    .default_values
+                    .iter()
+                    .copied()
+                    .take(event.arg_num_count as usize)
+                    .collect();
+                AutoEvent {
+                    id: event.id,
+                    title: event.title.clone(),
+                    operator: event.condition_operator(),
+                    variable: event.condition_variable,
+                    value: event.condition_value,
+                    default_args,
+                }
             })
             .collect();
         Self {
@@ -186,6 +205,13 @@ impl AutoEvents {
         self.running.keys().copied().collect()
     }
 
+    /// Resets runtime state of the scheduler.
+    pub fn reset(&mut self) {
+        self.latched.clear();
+        self.running.clear();
+        self.title_menu_active = false;
+    }
+
     /// Restarts one owned event from its first instruction.
     ///
     /// The title menu renderer (event 43) draws one frame and ends, so moving the
@@ -199,8 +225,14 @@ impl AutoEvents {
         if let Some(instance) = self.running.remove(&event) {
             vm.stop_instance(instance);
         }
-        match vm.start_event(event) {
+        let defaults: &[i32] = self
+            .events
+            .iter()
+            .find(|tracked| tracked.id == event)
+            .map_or(&[], |tracked| &tracked.default_args);
+        match start_event_with_defaults(vm, event, defaults) {
             Some(instance) => {
+                vm.set_instance_parallel(instance, true);
                 self.running.insert(event, instance);
                 self.latched.insert(event, true);
                 true
@@ -221,17 +253,29 @@ impl AutoEvents {
             });
             // Event 43 is the title menu renderer: only run it while the title menu is up.
             let now = header_condition && (event.id != 43 || self.title_menu_active);
+            let alive = self
+                .running
+                .get(&event.id)
+                .is_some_and(|id| vm.instance(*id).is_some());
             let before = self.latched.get(&event.id).copied().unwrap_or(false);
-            if now && !before {
-                if let Some(instance) = vm.start_event(event.id) {
-                    self.running.insert(event.id, instance);
-                    report.started += 1;
-                }
-            } else if !now && before {
-                if let Some(instance) = self.running.remove(&event.id) {
-                    if vm.stop_instance(instance) {
-                        report.stopped += 1;
+            if now {
+                // CE43 is a one-shot renderer: it paints the three rows/highlight and
+                // ends. Restart it only when the title menu becomes active (or on the
+                // explicit `restart(43)` from a cursor change), never merely because
+                // the level-triggered header condition is still true.
+                let should_start = if event.id == 43 { !before } else { !alive };
+                if should_start {
+                    if let Some(instance) =
+                        start_event_with_defaults(vm, event.id, &event.default_args)
+                    {
+                        vm.set_instance_parallel(instance, true);
+                        self.running.insert(event.id, instance);
+                        report.started += 1;
                     }
+                }
+            } else if let Some(instance) = self.running.remove(&event.id) {
+                if vm.stop_instance(instance) {
+                    report.stopped += 1;
                 }
             }
             self.latched.insert(event.id, now);
@@ -243,6 +287,24 @@ impl AutoEvents {
             .count();
         report
     }
+}
+
+/// Starts an owned event and replaces only its declared numeric arguments.
+///
+/// `Vm::start_event` seeds a fresh instance from the durable common-self bank.
+/// That bank may hold an explicit `210` caller's arguments, which must not leak
+/// into a bare scheduler start. The defaults are written directly into this new
+/// instance's group-6 call-argument slots; the durable bank and sibling instances
+/// of the same event are left alone, so an explicit call cannot contaminate a
+/// parallel scheduler instance (and vice versa).
+fn start_event_with_defaults(vm: &mut Vm, event: u32, defaults: &[i32]) -> Option<InstanceId> {
+    let instance = vm.start_event(event)?;
+    if let Some(inst) = vm.instance_mut(instance) {
+        for (slot, value) in defaults.iter().enumerate() {
+            inst.self_vars.set(SELF_ARG_BASE + slot, *value);
+        }
+    }
+    Some(instance)
 }
 
 /// Reads a normal-variable operand used by a run condition.
@@ -279,7 +341,14 @@ pub fn condition_met(operator: u8, left: i32, right: u32) -> bool {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+    use wolf_format::command::Slot;
+    use wolf_format::commonevent::CommonEvent;
+    use wolf_vm::program::NO_RETURN_VALUE;
     use wolf_vm::{ProgramSet, Vm};
+
+    struct Quiet;
+
+    impl wolf_vm::Host for Quiet {}
 
     fn data_root() -> PathBuf {
         if let Ok(value) = std::env::var("WOLF_DATA_ROOT") {
@@ -308,45 +377,103 @@ mod tests {
         ))
     }
 
+    fn synthetic_parallel_data(arg_num_count: u8, default_values: Vec<i32>) -> CommonEventData {
+        CommonEventData {
+            version_header: 0x55,
+            version: 0xC9,
+            events: vec![CommonEvent {
+                id: 10,
+                raw_condition: 0x22, // run_condition 2, operator ==
+                condition_variable: VAR_BASE as u32,
+                condition_value: 1,
+                arg_num_count,
+                arg_str_count: 0,
+                title: "parallel_loop".to_string(),
+                commands: vec![Slot::Blank],
+                memo: String::new(),
+                arg_names: Vec::new(),
+                arg_special_spec: Vec::new(),
+                arg_string_pages: Vec::new(),
+                arg_value_pages: Vec::new(),
+                default_values,
+                color: 0,
+                self_variable_names: Vec::new(),
+                return_name: String::new(),
+                return_value_id: NO_RETURN_VALUE,
+            }],
+            footer: 0x90,
+        }
+    }
+
+    fn synthetic_title_menu_data() -> CommonEventData {
+        let mut data = synthetic_parallel_data(0, Vec::new());
+        let event = &mut data.events[0];
+        event.id = 43;
+        event.condition_value = 0;
+        event.title = "title menu".to_string();
+        data
+    }
+
+    fn assert_default_arg(vm: &Vm, instance: InstanceId, event: u32, slot: usize, value: i32) {
+        assert_eq!(
+            vm.instance(instance)
+                .expect("instance must be alive")
+                .self_vars
+                .get(SELF_ARG_BASE + slot),
+            value,
+            "CE{event} call-argument slot {slot}"
+        );
+    }
+
     #[test]
-    fn the_scheduler_tracks_conditional_and_gated_events_and_skips_the_dead_one() {
+    fn the_scheduler_tracks_every_run_condition_two_event() {
         let Some((data, _)) = have_data() else { return };
         let auto = AutoEvents::from_common_events(&data);
-        assert_eq!(auto.len(), 98, "96 run=2 events plus gated 242/243");
+        let run_two = data
+            .events
+            .iter()
+            .filter(|event| event.run_condition() == 2)
+            .count();
+        assert_eq!(auto.len(), run_two, "all run=2 events must be tracked");
         assert!(auto
             .events()
             .iter()
             .all(|event| matches!(event.operator, 1..=3)));
-        assert!(auto.events().iter().any(|event| event.id == 38));
-        assert!(!auto.events().iter().any(|event| event.id == 43));
+        assert!(auto.events().iter().any(|event| event.id == 43));
+        assert!(auto.events().iter().any(|event| event.id == 223));
         assert!(auto.events().iter().any(|event| event.id == 242));
         assert!(auto.events().iter().any(|event| event.id == 243));
+        assert!(!auto.events().iter().any(|event| event.id == 38));
     }
 
     #[test]
-    fn gated_run_zero_events_start_on_their_variable_and_stay_dormant_at_boot() {
+    fn ce242_and_ce243_follow_their_shared_trigger() {
         let Some((data, _)) = have_data() else { return };
         let programs = ProgramSet::from_common_events(&data);
         let mut vm = Vm::new(programs);
         let mut auto = AutoEvents::from_common_events(&data);
-        // Dormant at boot: 2000350 == 0, so neither 242 (==1) nor 243 (==2) fires.
+        let clock = auto
+            .events()
+            .iter()
+            .find(|event| event.id == 243)
+            .expect("CE243");
+        let condition = usize::try_from(clock.variable - VAR_BASE as u32).expect("variable");
+        let trigger = clock.value as i32;
+
+        // Dormant at boot: both display events share the clock's trigger variable.
         let report = auto.sync(&mut vm);
-        assert_eq!(report.started, 1, "only event 38 is true at boot");
+        assert_eq!(report.started, 0, "no run=2 event is true at boot");
         assert!(!vm.instances().iter().any(|instance| instance.event == 242));
         assert!(!vm.instances().iter().any(|instance| instance.event == 243));
-        // 2000350 == 1 starts 242 only.
-        vm.vars.set(350, 1);
+        // The display pair starts together.
+        vm.vars.set(condition, trigger);
         auto.sync(&mut vm);
         assert!(vm.instances().iter().any(|instance| instance.event == 242));
-        assert!(!vm.instances().iter().any(|instance| instance.event == 243));
-        // 2000350 == 2 stops 242 and starts 243.
-        vm.vars.set(350, 2);
+        assert!(vm.instances().iter().any(|instance| instance.event == 243));
+        // Lowering the trigger stops both.
+        vm.vars.set(condition, 0);
         auto.sync(&mut vm);
         assert!(!vm.instances().iter().any(|instance| instance.event == 242));
-        assert!(vm.instances().iter().any(|instance| instance.event == 243));
-        // Back to 0 stops 243.
-        vm.vars.set(350, 0);
-        auto.sync(&mut vm);
         assert!(!vm.instances().iter().any(|instance| instance.event == 243));
     }
 
@@ -362,25 +489,249 @@ mod tests {
     }
 
     #[test]
-    fn a_true_condition_starts_event_38_and_false_stops_it() {
+    fn a_true_condition_starts_an_event_and_false_stops_it() {
         let Some((data, _)) = have_data() else { return };
         let programs = ProgramSet::from_common_events(&data);
         let mut vm = Vm::new(programs);
         let mut auto = AutoEvents::from_common_events(&data);
+        let event = auto
+            .events()
+            .iter()
+            .find(|event| event.id == 223)
+            .expect("CE223");
+        let condition = usize::try_from(event.variable - VAR_BASE as u32).expect("variable");
+        let trigger = event.value as i32;
+
+        let report = auto.sync(&mut vm);
+        assert_eq!(report.started, 0);
+        assert!(!vm.instances().iter().any(|instance| instance.event == 223));
+        vm.vars.set(condition, trigger);
+        let report = auto.sync(&mut vm);
+        assert!(report.started >= 1);
+        assert!(vm.instances().iter().any(|instance| instance.event == 223));
+        vm.vars.set(condition, trigger - 1);
+        let report = auto.sync(&mut vm);
+        assert!(report.stopped >= 1);
+        assert!(!vm.instances().iter().any(|instance| instance.event == 223));
+    }
+
+    #[test]
+    fn parallel_event_restarts_when_finished_while_condition_is_true_and_stops_when_false() {
+        let data = synthetic_parallel_data(0, Vec::new());
+
+        let mut vm = Vm::new(ProgramSet::from_common_events(&data));
+        let mut auto = AutoEvents::from_common_events(&data);
+
+        // When condition is false (var 0 == 0), event does not start.
+        let report = auto.sync(&mut vm);
+        assert_eq!(report.started, 0);
+        assert_eq!(report.running, 0);
+
+        // When condition becomes true (var 0 == 1), first sync starts it.
+        vm.vars.set(0, 1);
+        let report = auto.sync(&mut vm);
+        assert_eq!(report.started, 1);
+        assert_eq!(report.running, 1);
+        let first_id = auto.instance(10).expect("instance started");
+        assert!(vm.instance(first_id).is_some());
+
+        // Step one frame to let event 10 finish and be reaped.
+        let mut host = Quiet;
+        let _ = vm.step_frame(&mut host);
+        assert!(
+            vm.instance(first_id).is_none(),
+            "event should have finished"
+        );
+
+        // Next sync: condition remains true (var 0 == 1).
+        // Level triggering restarts the event!
         let report = auto.sync(&mut vm);
         assert_eq!(
             report.started, 1,
-            "only event 38 is true at boot (43 is skipped)"
+            "finished event must restart while condition remains true"
         );
-        assert!(vm.instances().iter().any(|instance| instance.event == 38));
-        // Normal variable 160 is event 38's condition variable; 3 fails its <= 2 test.
-        vm.vars.set(160, 3);
+        assert_eq!(report.running, 1);
+        let second_id = auto.instance(10).expect("instance restarted");
+        assert_ne!(first_id, second_id, "must be a fresh instance");
+        assert!(vm.instance(second_id).is_some());
+
+        // When condition becomes false, next sync stops it immediately.
+        vm.vars.set(0, 0);
         let report = auto.sync(&mut vm);
-        assert_eq!(report.stopped, 1);
-        assert!(!vm.instances().iter().any(|instance| instance.event == 38));
-        // Setting it back to 0 re-arms the edge and starts a fresh coroutine.
-        vm.vars.set(160, 0);
+        assert_eq!(
+            report.stopped, 1,
+            "must stop immediately when condition becomes false"
+        );
+        assert_eq!(report.running, 0);
+        assert!(vm.instance(second_id).is_none());
+    }
+
+    #[test]
+    fn ce43_starts_only_on_the_title_menu_gate_edge() {
+        let data = synthetic_title_menu_data();
+        let mut vm = Vm::new(ProgramSet::from_common_events(&data));
+        let mut auto = AutoEvents::from_common_events(&data);
+        let mut host = Quiet;
+
+        // The header condition (v0 == 0) is already true, but the title menu gate is
+        // closed, so the renderer must stay dormant.
+        let report = auto.sync(&mut vm);
+        assert_eq!(report.started, 0);
+        assert!(auto.instance(43).is_none());
+
+        // First false-to-true edge of the title menu starts it once.
+        auto.set_title_menu_active(true);
         let report = auto.sync(&mut vm);
         assert_eq!(report.started, 1);
+        let first = auto.instance(43).expect("CE43 first instance");
+        assert!(vm.instance(first).is_some());
+        let report = auto.sync(&mut vm);
+        assert_eq!(report.started, 0, "an alive renderer is not started twice");
+
+        // CE43 draws one frame and ends. The gate stays active, so the level-triggered
+        // header condition must not start another copy.
+        vm.step_frame(&mut host);
+        assert!(vm.instance(first).is_none(), "CE43 must finish its pass");
+        let report = auto.sync(&mut vm);
+        assert_eq!(report.started, 0, "active menu does not replay CE43");
+        assert!(
+            auto.instance(43).is_some(),
+            "ownership remains until the gate closes"
+        );
+
+        // Closing the gate retires the finished renderer and a later rising edge starts
+        // a fresh instance.
+        auto.set_title_menu_active(false);
+        auto.sync(&mut vm);
+        assert!(auto.instance(43).is_none());
+        auto.set_title_menu_active(true);
+        let report = auto.sync(&mut vm);
+        assert_eq!(report.started, 1);
+        let second = auto
+            .instance(43)
+            .expect("CE43 restarted on the next rising edge");
+        assert_ne!(first, second);
+
+        // Closing the gate while the renderer is still alive stops it immediately.
+        auto.set_title_menu_active(false);
+        let report = auto.sync(&mut vm);
+        assert_eq!(report.stopped, 1);
+        assert!(vm.instance(second).is_none());
+        assert!(auto.instance(43).is_none());
+    }
+
+    #[test]
+    fn sync_and_restart_replace_stale_self_args_with_declared_defaults() {
+        let data = synthetic_parallel_data(1, vec![0]);
+        let mut vm = Vm::new(ProgramSet::from_common_events(&data));
+        let mut auto = AutoEvents::from_common_events(&data);
+        {
+            let bank = vm.vars.common_self.entry(10).or_default();
+            bank.set(0, 10);
+            bank.set(1, 99);
+        }
+        vm.vars.set(0, 1);
+
+        let report = auto.sync(&mut vm);
+        assert_eq!(report.started, 1);
+        let first = auto.instance(10).expect("instance started");
+        assert_default_arg(&vm, first, 10, 0, 0);
+        assert_default_arg(&vm, first, 10, 1, 99);
+
+        let mut host = Quiet;
+        vm.step_frame(&mut host);
+        assert!(vm.instance(first).is_none(), "blank event must finish");
+
+        // A later caller may have put 10 back in the durable bank. The next bare
+        // scheduler start must still use the event's declared default.
+        vm.vars.common_self.entry(10).or_default().set(0, 10);
+        let report = auto.sync(&mut vm);
+        assert_eq!(report.started, 1);
+        let second = auto.instance(10).expect("instance restarted");
+        assert_ne!(first, second);
+        assert_default_arg(&vm, second, 10, 0, 0);
+        assert_default_arg(&vm, second, 10, 1, 99);
+
+        // `restart` follows the same rule and replaces only the new instance's
+        // declared argument, leaving the non-argument slot seeded from the bank.
+        vm.vars.common_self.entry(10).or_default().set(0, 10);
+        assert!(auto.restart(10, &mut vm));
+        let third = auto.instance(10).expect("instance restarted explicitly");
+        assert_ne!(second, third);
+        assert_default_arg(&vm, third, 10, 0, 0);
+        assert_default_arg(&vm, third, 10, 1, 99);
+    }
+
+    #[test]
+    fn ce243_auto_start_does_not_share_an_explicit_call_argument() {
+        let Some((data, _)) = have_data() else { return };
+        let programs = ProgramSet::from_common_events(&data);
+        let mut vm = Vm::new(programs);
+        let mut auto = AutoEvents::from_common_events(&data);
+        let event = auto
+            .events()
+            .iter()
+            .find(|event| event.id == 243)
+            .expect("CE243");
+        assert_eq!(event.default_args, vec![0]);
+        let condition = usize::try_from(event.variable - VAR_BASE as u32).expect("variable");
+        let trigger = event.value as i32;
+
+        vm.vars.set(4, 19);
+        vm.vars.set(5, 30);
+        vm.vars.set(6, 0);
+        // A previous explicit call left +10 in the durable bank. The bare
+        // scheduler start must override that with the event's declared default
+        // in its own instance only.
+        vm.vars.common_self.entry(243).or_default().set(0, 10);
+        vm.vars.set(condition, trigger);
+        auto.sync(&mut vm);
+
+        let auto_instance = auto.instance(243).expect("CE243 auto instance");
+        assert_default_arg(&vm, auto_instance, 243, 0, 0);
+
+        let explicit = vm
+            .start_event_with_args(243, &[10], &[])
+            .expect("explicit CE243 call");
+        assert_default_arg(&vm, auto_instance, 243, 0, 0);
+        assert_default_arg(&vm, explicit, 243, 0, 10);
+
+        let mut host = Quiet;
+        for _ in 0..5 {
+            vm.step_frame(&mut host);
+        }
+        assert_eq!(
+            (vm.vars.get(4), vm.vars.get(5)),
+            (19, 40),
+            "only the explicit +10 call must advance the clock"
+        );
+    }
+
+    #[test]
+    fn ce241_auto_start_applies_both_declared_default_args() {
+        let Some((data, _)) = have_data() else { return };
+        let programs = ProgramSet::from_common_events(&data);
+        let mut vm = Vm::new(programs);
+        let mut auto = AutoEvents::from_common_events(&data);
+        let event = auto
+            .events()
+            .iter()
+            .find(|event| event.id == 241)
+            .expect("CE241");
+        assert_eq!(event.default_args, vec![0, 0]);
+        let condition = usize::try_from(event.variable - VAR_BASE as u32).expect("variable");
+        let trigger = event.value as i32;
+
+        {
+            let bank = vm.vars.common_self.entry(241).or_default();
+            bank.set(0, 7);
+            bank.set(1, 8);
+        }
+        vm.vars.set(condition, trigger);
+        auto.sync(&mut vm);
+
+        let instance = auto.instance(241).expect("CE241 auto instance");
+        assert_default_arg(&vm, instance, 241, 0, 0);
+        assert_default_arg(&vm, instance, 241, 1, 0);
     }
 }

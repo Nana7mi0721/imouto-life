@@ -13,8 +13,9 @@
 //! Safety: the whole Save/ directory is snapshotted (bytes + fingerprint)
 //! before anything is written and restored by a drop guard, so SaveData01,
 //! SaveData02, System.sav are never left modified and the temporary
-//! SaveData03 is removed even if an assertion panics.  SaveData01/02 and
-//! System.sav are checked to be byte-identical afterwards.
+//! SaveData03 is removed even if an assertion panics. SaveData01/02 are checked
+//! to stay byte-identical mid-test; CE131's last-slot bookkeeping may update
+//! System.sav normal variable 0, and the guard restores it afterwards.
 //!
 //! Assertions cover: playtime, all 302 normal variables (0..302, with the
 //! per-frame engine scratch at index 0 excluded after the load), picture
@@ -28,6 +29,7 @@ use std::path::{Path, PathBuf};
 
 use wolf_game::savegame;
 use wolf_game::Game;
+use wolf_save::SaveFile;
 
 /// The empty save slot this test writes into. Only slot 3 is ever touched.
 const SLOT: u32 = 3;
@@ -286,11 +288,62 @@ impl SaveGuard {
         v
     }
 
-    /// Assert every pre-existing save file is still byte-identical.
-    fn assert_existing_unchanged(&self) {
+    /// Assert existing saves are unchanged, except for CE131's documented
+    /// last-slot update in System.sav normal variable 0.
+    fn assert_existing_safe(&self) {
         for (name, bytes) in &self.baseline {
             let current = std::fs::read(self.dir.join(name))
                 .unwrap_or_else(|e| panic!("pre-existing save {name} disappeared: {e}"));
+            if name == "System.sav" {
+                let mut expected = SaveFile::parse(bytes).expect("parse baseline System.sav");
+                let after = SaveFile::parse(&current).expect("parse current System.sav");
+                assert!(
+                    after.checksum_ok(),
+                    "updated System.sav checksum is invalid"
+                );
+                assert_eq!(
+                    after.part3.normal_var(0),
+                    Some(SLOT as i32),
+                    "System.sav must remember the slot CE131 just wrote"
+                );
+                assert!(
+                    expected
+                        .set_normal_var(0, SLOT as i32)
+                        .expect("normalize System.sav last-slot"),
+                    "System.sav normal variable 0 must exist"
+                );
+                let mut expected_header = expected.header.raw;
+                expected_header[2] = after.header.raw[2];
+                assert_eq!(
+                    expected_header, after.header.raw,
+                    "System.sav header drifted (checksum byte excluded)"
+                );
+                assert_eq!(
+                    expected.header.start_byte, after.header.start_byte,
+                    "System.sav start byte drifted"
+                );
+                assert_eq!(expected.name, after.name, "System.sav name drifted");
+                assert_eq!(
+                    expected.file_version, after.file_version,
+                    "System.sav version drifted"
+                );
+                assert_eq!(
+                    expected.is_utf8, after.is_utf8,
+                    "System.sav text encoding drifted"
+                );
+                assert_eq!(expected.part1, after.part1, "System.sav part1 drifted");
+                assert_eq!(expected.part2, after.part2, "System.sav part2 drifted");
+                assert_eq!(expected.part3, after.part3, "System.sav part3 drifted");
+                assert_eq!(expected.part4, after.part4, "System.sav part4 drifted");
+                assert_eq!(expected.part5, after.part5, "System.sav part5 drifted");
+                assert_eq!(expected.vardb, after.vardb, "System.sav vardb drifted");
+                assert_eq!(expected.part7, after.part7, "System.sav part7 drifted");
+                assert_eq!(
+                    expected.end_byte, after.end_byte,
+                    "System.sav end byte drifted"
+                );
+                continue;
+            }
             assert_eq!(
                 current.len(),
                 bytes.len(),
@@ -490,7 +543,7 @@ fn save_ui_writes_slot3_then_loads_it_back() {
     );
 
     // Existing saves must be untouched even before cleanup.
-    guard.assert_existing_unchanged();
+    guard.assert_existing_safe();
 
     // ---- LOAD phase: boot to title, load, and read slot 3 back ----------
     let mut loader = match Game::new(data_root()) {

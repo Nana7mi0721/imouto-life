@@ -64,6 +64,7 @@ fn load_stable(slot: u32) -> Option<Game> {
     }
     let mut game = Game::new(data_root()).ok()?;
     savegame::load_into(&mut game, &path).ok()?;
+    game.auto_events.set_enabled(false);
     game.auto_advance = true;
     game.auto_choice = false;
     for _ in 0..1600 {

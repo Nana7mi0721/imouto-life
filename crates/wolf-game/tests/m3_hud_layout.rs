@@ -70,6 +70,24 @@ fn open_stable(slot: u32) -> Option<Game> {
     Some(game)
 }
 
+/// Stable HUD with the AutoEvents scheduler disabled, for tests that drive one
+/// common event and must not be repainted by the resident level-triggered HUD events.
+fn open_stable_isolated(slot: u32) -> Option<Game> {
+    let mut game = open_stable(slot)?;
+    game.auto_events.set_enabled(false);
+    let running: Vec<_> = game
+        .auto_events
+        .running_ids()
+        .into_iter()
+        .filter_map(|id| game.auto_events.instance(id))
+        .collect();
+    for instance in running {
+        game.vm.stop_instance(instance);
+    }
+    game.auto_events.reset();
+    Some(game)
+}
+
 /// 剥离 WOLF 文本转义，只保留可见字符（转义名只吃 ASCII 字母）。
 fn visible(raw: &str) -> String {
     let mut out = String::new();
@@ -472,7 +490,7 @@ fn hud_events_rewrite_slots_without_layout_change() {
 
     // CE242 状态面板：重绘 220/230/240/250/251/252 等，槽集合不变。
     {
-        let Some(mut game) = open_stable(1) else {
+        let Some(mut game) = open_stable_isolated(1) else {
             return;
         };
         let base = sig(&game);
@@ -497,7 +515,7 @@ fn hud_events_rewrite_slots_without_layout_change() {
 
     // CE243 时刻显示：只刷新 200/210 两个文本槽，槽集合不变。
     {
-        let Some(mut game) = open_stable(1) else {
+        let Some(mut game) = open_stable_isolated(1) else {
             return;
         };
         let base = sig(&game);
@@ -524,7 +542,7 @@ fn hud_events_rewrite_slots_without_layout_change() {
 fn hud_event_244_delta_slot_is_transient() {
     let before = fingerprint();
 
-    let Some(mut game) = open_stable(1) else {
+    let Some(mut game) = open_stable_isolated(1) else {
         return;
     };
     let base_nums = numbers(&game);
@@ -583,9 +601,21 @@ fn hud_event_244_delta_slot_is_transient() {
         game.frame();
     }
     assert!(!running(&game, 244), "CE244 应在有限帧内结束");
+    // CE244 末尾用 `150 [2,110,20,20]` 发起 20 帧淡出擦除；事件停止当帧槽 110
+    // 仍应存在，继续推进有限帧后必须被回收。
+    assert!(
+        game.screen.get(110).is_some(),
+        "CE244 结束后槽 110 应进入淡出而不是立即消失"
+    );
+    for _ in 0..25 {
+        if game.screen.get(110).is_none() {
+            break;
+        }
+        game.frame();
+    }
     assert!(
         game.screen.get(110).is_none(),
-        "CE244 结束后槽 110 应被回收"
+        "CE244 淡出结束后槽 110 应被回收"
     );
     assert_eq!(numbers(&game), base_nums, "CE244 结束后 HUD 槽应恢复基线");
     assert_eq!(game.stats.warnings, 0, "CE244 结束后出现 warnings");

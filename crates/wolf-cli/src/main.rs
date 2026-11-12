@@ -1454,12 +1454,12 @@ fn run_precompile(root: &Path) -> ExitCode {
         // The counters below are now exactly the opcode census: conditions =
         // 111 (10,743) + 112 (123), cases = 401 (18,555), else = 420 (3,279),
         // cancel = 421 (153), and every tolerance counter is back to zero.
-        Check::num("blocks", 5_470, stats.blocks as u64),
-        // 111 / 112 / 102 / 170+179+176 marker counts from docs/BASELINE.json: the
+        Check::num("blocks", 5_416, stats.blocks as u64),
+        // 111 / 112 / 102 / 170+179 marker counts from docs/BASELINE.json: the
         // precompiler must see each marker command exactly once.
         Check::num("conditions", 4_372, stats.conditions as u64),
         Check::num("choices", 163, stats.choices as u64),
-        Check::num("loops", 935, stats.loops as u64),
+        Check::num("loops", 881, stats.loops as u64),
         Check::num("labels", 267, stats.labels as u64),
         Check::num("label_jumps", 612, stats.label_jumps as u64),
         // 3, not 5: only events 31/63/86 put \cself[n] inside a 213 label
@@ -1474,7 +1474,7 @@ fn run_precompile(root: &Path) -> ExitCode {
         // fix removed the last orphans).
         Check::num("orphan_cases", 0, stats.orphan_cases as u64),
         Check::num("orphan_ends", 0, stats.orphan_ends as u64),
-        Check::num("implicit_closes", 54, stats.implicit_closes as u64),
+        Check::num("implicit_closes", 0, stats.implicit_closes as u64),
         Check::num("unclosed_blocks", 0, stats.unclosed_blocks as u64),
         Check::num("max_depth", 25, stats.max_depth as u64),
         Check::num("programs", 350, programs.len() as u64),
@@ -3714,10 +3714,8 @@ fn build_capture_frame(game: &mut Game, include_tiles: bool) -> CaptureFrame {
     // The engine draws the 101 pause cursor itself: SystemFile/Text_Pause.png is a strip of
     // six 17x15 frames whose triangle bobs down and back up, and no picture command in the
     // game names it. It is a texture, so it joins the sprite pass, not the glyph pass.
-    let newest = game.messages.last().map(|m| (m.text.clone(), m.frames));
-    if let Some((text, frames)) = newest {
-        let vars = game.message_vars();
-        let layout = wolf_game::message::layout(&text, &vars, frames);
+    let newest_frames = game.messages.last().map(|message| message.frames);
+    if let (Some(layout), Some(frames)) = (game.rendered_message_layout(), newest_frames) {
         if let Some(at) = layout.cursor {
             let frame = wolf_game::message::cursor_frame(frames);
             let src = [
@@ -3832,7 +3830,9 @@ fn render_capture_frame(
     // The engine draws 101 message text itself: the frame comes from common event 63 as
     // ordinary pictures, the glyphs come from here. Only the newest message is visible,
     // which is the order the interpreter produces.
-    if let Some(layout) = game.message_layout() {
+    let native_layout = game.message_layout();
+    let rendered_layout = game.rendered_message_layout();
+    if let Some(layout) = native_layout {
         let message = game.messages.last().expect("layout implies a message");
         let vars = game.message_vars();
         let preview: String = message.text.chars().take(60).collect();
@@ -3853,6 +3853,11 @@ fn render_capture_frame(
             cursor
         );
         println!("    text    : {preview:?}");
+        if rendered_layout.is_none() {
+            println!("    layer   : hidden; CE270 picture-mode balloon owns the visible text");
+        }
+    }
+    if let Some(layout) = rendered_layout {
         for run in &layout.runs {
             // Give each run one em of slack: the layout measures with the half-em rule,
             // while cosmic-text shapes with the real font advance, and a box that is a

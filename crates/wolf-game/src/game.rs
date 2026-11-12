@@ -79,7 +79,7 @@ pub const ENGINE_ALWAYS: &[u32] = &[
 /// and the HUD every frame. 270 (message display), 271 (auto-skip), 214 (support
 /// dialogue) and 216 (interest monitor) are per-frame passes that terminate
 /// themselves and must be restarted, which is what 常時作動 means in WOLF.
-pub const ENGINE_RESTART: &[u32] = &[270];
+pub const ENGINE_RESTART: &[u32] = &[216, 270, 271];
 
 // 271 is the balloon-message library's initiator: it calls event 98, which registers 19
 // window pictures (10225..10248). It used to be left out, because starting it alone
@@ -123,6 +123,50 @@ pub const HISTORY_LIMIT: usize = 200;
 /// A quarter of a second is longer than any engine wait that does not poll keys, and
 /// short enough that a click cannot surprise a menu that opens much later.
 const PENDING_MOUSE_TTL: u32 = 15;
+
+/// Map events whose visible control is a picture, not the event's tile rectangle.
+///
+/// The shipped save/album/data/end buttons are drawn at one place and carry a map
+/// event collision box at another. The picture rectangle is the click surface;
+/// the tile rectangle remains only for data/editor compatibility and must not
+/// stay live around a visible icon.
+const PICTURE_ACTION_CONTROLS: &[(i32, u32, &str)] = &[
+    (-7, 35, "Picture/icon06.png"),
+    (-5, 5, "Picture/icon01.png"),
+    (-4, 30, "Picture/icon05.png"),
+    (1108, 21, "Picture/endbutton.png"),
+];
+
+/// CE270's completed body-text picture.
+///
+/// CE269 configures the balloon library with picture base 36000 and its default
+/// "picture mode", where CE270 lays the message body out as picture `base + 13`
+/// instead of using the engine's native `101` text renderer.
+const BALLOON_BODY_TEXT_PICTURE: i32 = 36013;
+
+/// CE270's balloon name text picture.
+const BALLOON_NAME_TEXT_PICTURE: i32 = 36014;
+
+/// CE270's balloon frame picture (nine-slice window base).
+const BALLOON_FRAME_PICTURE: i32 = 36000;
+
+/// Data 26 row 0 `[固定モード]サイズH`, the minimum balloon body height.
+const BALLOON_FRAME_MIN_HEIGHT: i32 = 60;
+
+/// Data 26 row 0 `余白[px]`: top and bottom breathing room inside the balloon.
+const BALLOON_FRAME_PADDING: f32 = 10.0;
+
+/// The right-edge triangle on the two parked side panels.
+///
+/// `status01.png` and `itemlist.png` are both 330x576. Their handles occupy the
+/// rightmost transparent-canvas column, below the top window border. The bands are
+/// source-image Y ranges, measured from the shipped alpha masks.
+const STATUS_HANDLE_Y: (f32, f32) = (118.0, 157.0);
+const ITEM_HANDLE_Y: (f32, f32) = (260.0, 297.0);
+/// The closed panels leave their rightmost 25 source pixels on screen. The old
+/// 20 px band started at screen x=5, leaving the left half of the visible
+/// triangle unclickable.
+const SIDE_PANEL_HANDLE_RIGHT: f32 = 25.0;
 
 /// A pending choice prompt.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -498,6 +542,13 @@ pub struct Game {
     /// dismissal, choice row). The pending edge is then spent and is cleared at the
     /// end of the frame instead of surviving into the next one.
     mouse_consumed: bool,
+    frame_mouse_blocked: bool,
+    pending_return_to_title: bool,
+    reserved_events: std::collections::VecDeque<(u32, Vec<i32>, Vec<String>)>,
+    pub pending_sounds: Vec<SoundCmd>,
+    frame_wheel_delta: i32,
+    retail_rng_seed: Option<(u32, u32, Vec<u8>)>,
+    screen_size_cached: (u32, u32),
     /// Mouse position on the previous frame, so a hover only follows the cursor when the
     /// pointer actually moved. Without this the highlight would snap back under a parked
     /// cursor and fight the keyboard up/down navigation.
@@ -660,6 +711,15 @@ impl Game {
             pending_mouse: 0,
             pending_mouse_age: 0,
             mouse_consumed: false,
+            frame_mouse_blocked: false,
+            pending_return_to_title: false,
+            reserved_events: std::collections::VecDeque::new(),
+            pending_sounds: Vec::new(),
+            frame_wheel_delta: 0,
+            retail_rng_seed: game_dat
+                .as_ref()
+                .map(|dat| (dat.random_a, dat.random_b, dat.static_randoms.clone())),
+            screen_size_cached: screen,
             previous_mouse: [-1, -1],
             engine_always: None,
             engine_events_started: false,
@@ -1161,15 +1221,24 @@ impl Game {
         // The three groups have different lifetimes: ENGINE_ALWAYS lives for the whole
         // session, ENGINE_AUTO_START runs once and ends, ENGINE_IMPLICIT belongs to an
         // engine feature. A future load-game path rebuilds only the first group.
-        let mut ids: Vec<u32> = match &self.engine_always {
+        let always_ids: Vec<u32> = match &self.engine_always {
             Some(ids) => ids.clone(),
             None => ENGINE_ALWAYS.to_vec(),
         };
-        ids.extend_from_slice(ENGINE_AUTO_START);
-        ids.extend_from_slice(ENGINE_IMPLICIT);
         let mut started = 0;
-        for id in ids {
-            if self.start_event(id) {
+        for id in always_ids {
+            if let Some(inst_id) = self.vm.start_event(id) {
+                self.vm.set_instance_parallel(inst_id, true);
+                started += 1;
+            }
+        }
+        for id in ENGINE_AUTO_START {
+            if self.start_event(*id) {
+                started += 1;
+            }
+        }
+        for id in ENGINE_IMPLICIT {
+            if self.start_event(*id) {
                 started += 1;
             }
         }
@@ -1207,7 +1276,9 @@ impl Game {
                 .iter()
                 .any(|instance| instance.event == id)
             {
-                self.start_event(id);
+                if let Some(inst_id) = self.vm.start_event(id) {
+                    self.vm.set_instance_parallel(inst_id, true);
+                }
             }
         }
     }
@@ -1264,6 +1335,68 @@ impl Game {
         } else {
             Err(GameError::MissingEvent(BOOT_EVENT))
         }
+    }
+
+    /// Resets runtime state and returns to the initial title screen.
+    pub fn reset_to_title(&mut self) {
+        self.runtime.stop_all(&mut self.vm);
+        self.runtime = MapRuntime::new();
+        self.current_map = None;
+        self.tilemap = None;
+        self.screen.clear();
+        self.screen_tint = ScreenTint::default();
+        self.screen_transition = ScreenTransition::default();
+        self.messages.clear();
+        self.history.clear();
+        self.choices = None;
+        self.replies.clear();
+        self.reserved_events.clear();
+        self.save_requests.clear();
+        self.map_requests.clear();
+        self.boot_map_active = false;
+        self.load_grid_open = false;
+        self.load_cancel_pending = false;
+        self.choice_cursor = 0;
+        self.previous_title_cursor = None;
+        self.playtime_frames = 0;
+        self.last_action_event = None;
+
+        self.current_bgm = None;
+        if let Some(a) = self.audio.as_mut() {
+            a.stop_bgm(0);
+            a.stop_bgs(0);
+        }
+        self.pending_sounds.push(SoundCmd {
+            channel: SoundChannel::Bgm,
+            action: SoundAction::Stop,
+            file: String::new(),
+            volume: 0,
+            frames: 0,
+            pitch: 100,
+        });
+        self.pending_sounds.push(SoundCmd {
+            channel: SoundChannel::Bgs,
+            action: SoundAction::Stop,
+            file: String::new(),
+            volume: 0,
+            frames: 0,
+            pitch: 100,
+        });
+
+        let programs = self.vm.programs.clone();
+        self.vm = Vm::new(programs);
+        if let Some((random_a, random_b, static_randoms)) = &self.retail_rng_seed {
+            self.vm.rng = WolfRng::from_game(*random_a, *random_b, static_randoms.clone());
+        }
+        self.seed_live_settings();
+        self.vm.vars.set_sys(115, 220);
+        self.vm.vars.set_sys(116, self.screen_size_cached.0 as i32);
+        self.vm.vars.set_sys(117, self.screen_size_cached.1 as i32);
+
+        self.databases.reset_runtime(self.screen_size_cached);
+        self.auto_events.reset();
+        self.engine_events_started = false;
+        let _ = self.boot();
     }
 
     /// Starts one map event first page as a coroutine.
@@ -1350,7 +1483,28 @@ impl Game {
     /// is drawn with linear alpha blending, and it is what makes the effect appear in
     /// `capture` output, which reads the composited frame texture.
     pub fn picture_quads(&mut self, atlas: &mut Atlas) -> Vec<SpriteQuad> {
+        self.expand_balloon_frame();
         let mut quads = atlas.sprites(&self.screen, &mut self.assets);
+        let growth = self.balloon_frame_growth();
+        if growth > 0.0 {
+            // The name plate is pinned to the top of the balloon. CE270's script
+            // shift assumes the one-line 60 px frame, so a grown frame must move the
+            // 36008..36012 plate up by the same amount or it sits on the body text.
+            for quad in &mut quads {
+                if (36_008..=36_012).contains(&quad.number) {
+                    quad.rect[1] -= growth;
+                }
+            }
+        }
+        if self.balloon_owns_message() {
+            // CE270 picture mode owns the whole message presentation. The native
+            // 101 frame and face are still live in slots 19500/19501 for input and
+            // pacing, but painting them puts a second grey window and a duplicate
+            // face behind the balloon. The frame appears a few frames before the
+            // body text is laid out, so testing only 36013 lets the native layer
+            // flash through at the start of every line.
+            quads.retain(|quad| !matches!(quad.number, crate::message::FRAME_PICTURE | 19501));
+        }
         self.apply_screen_tint(&mut quads, true);
         self.drain_asset_fallbacks();
         quads
@@ -1578,6 +1732,32 @@ impl Game {
         self.vm.vars.get_sys(index)
     }
 
+    #[must_use]
+    pub fn bgm_volume(&self) -> u32 {
+        volume_word(self.sys(100))
+    }
+
+    #[must_use]
+    pub fn se_volume(&self) -> u32 {
+        volume_word(self.sys(102))
+    }
+
+    /// Current/max stamina for the optional white HUD gauge.
+    ///
+    /// CE242 draws the "精力 current/max" text picture in slot 240 from
+    /// CDataBase 0:12:6/7. Returning `None` while that HUD picture is absent
+    /// keeps the gauge off title/menu screens and out of save thumbnails.
+    #[must_use]
+    pub fn hud_energy(&self) -> Option<(i32, i32)> {
+        let hud = self.screen.get(240)?;
+        if hud.hidden || hud.opacity <= 0 {
+            return None;
+        }
+        let current = self.databases.num(crate::db::Container::CData, 0, 12, 6)?;
+        let maximum = self.databases.num(crate::db::Container::CData, 0, 12, 7)?;
+        (maximum > 0).then_some((current.clamp(0, maximum), maximum))
+    }
+
     /// The engine's font size, from Sys8.
     ///
     /// WOLF shares one font size between 文章の表示, 選択肢 and ピクチャ text (work/yado.txt
@@ -1678,6 +1858,106 @@ impl Game {
         ))
     }
 
+    /// The native message layout a front-end should actually paint.
+    ///
+    /// The shipped dialogue uses CE270 in its default picture mode: the body text
+    /// is picture 36013, while the native `101` layer remains the input and pacing
+    /// owner. Painting both layers put the same line in the centre of the screen
+    /// and in the balloon. Return `None` only while CE270's body picture is really
+    /// on screen with text; article mode and non-balloon messages keep the native
+    /// glyphs. [`Self::message_layout`] stays available for diagnostics and tests.
+    #[must_use]
+    pub fn rendered_message_layout(&self) -> Option<crate::message::Layout> {
+        if self.balloon_owns_message() {
+            return None;
+        }
+        self.message_layout()
+    }
+
+    /// True while a live 101 message belongs to CE270's balloon presentation.
+    ///
+    /// CE269 stores its mode in common self slot 11: zero is picture mode (the
+    /// shipped default), one is the native article mode. Picture mode must own the
+    /// first frame of a line even before CE270 has created/moved 36000, otherwise
+    /// the native 101 text and face appear alone for one or two frames. Article
+    /// mode deliberately keeps the native layer.
+    fn balloon_owns_message(&self) -> bool {
+        !self.messages.is_empty() && self.balloon_picture_mode_enabled()
+    }
+
+    fn balloon_picture_mode_enabled(&self) -> bool {
+        if let Some(bank) = self.vm.vars.common_self.get(&269) {
+            return bank.get(11) == 0;
+        }
+        // Saves/tests that never ran the engine initialiser can still expose the
+        // picture-mode body slot. Its presence is enough to identify the layer.
+        self.screen
+            .get(BALLOON_BODY_TEXT_PICTURE)
+            .is_some_and(|body| body.kind.is_text())
+    }
+
+    fn balloon_picture_text_is_visible(&self) -> bool {
+        let Some(picture) = self.screen.get(BALLOON_BODY_TEXT_PICTURE) else {
+            return false;
+        };
+        if picture.hidden
+            || picture.opacity <= 0
+            || !picture.kind.is_text()
+            || picture.text.is_empty()
+        {
+            return false;
+        }
+        self.screen
+            .picture_rect(BALLOON_BODY_TEXT_PICTURE, |_| None)
+            .is_some_and(crate::picture::on_screen)
+    }
+
+    /// Grows CE270's balloon frame upward for multi-line bodies.
+    ///
+    /// Data 26's `[固定モード]サイズH = 60` is the one-line size. A three-line body
+    /// measures 69 px at the message pitch plus 10 px padding, so the retail frame is
+    /// 79–80 px tall and keeps its bottom edge fixed. Leaving the frame at 60 puts the
+    /// body text on top of a too-short bubble and clips the last row at y = 576.
+    fn expand_balloon_frame(&mut self) {
+        let Some(body) = self.screen.get(BALLOON_BODY_TEXT_PICTURE) else {
+            return;
+        };
+        if body.hidden || body.opacity <= 0 || body.text.is_empty() {
+            return;
+        }
+        let body_height = body.text_size.map_or(0.0, |(_, height)| height as f32);
+        let height = (body_height + BALLOON_FRAME_PADDING)
+            .max(BALLOON_FRAME_MIN_HEIGHT as f32)
+            .ceil() as i32;
+        let Some(frame) = self.screen.get_mut(BALLOON_FRAME_PICTURE) else {
+            return;
+        };
+        // CE270 draws 36000 with the 0x1000 centre anchor; anything else is not the
+        // shipped balloon and must keep its own geometry.
+        if frame.anchor != 1 {
+            return;
+        }
+        let Some((width, current_height)) = frame.window else {
+            return;
+        };
+        let bottom = frame.y + current_height / 2;
+        frame.window = Some((width, height));
+        frame.y = bottom - height / 2;
+    }
+
+    /// How far the balloon frame grew above its one-line height this frame.
+    fn balloon_frame_growth(&self) -> f32 {
+        if !self.balloon_picture_text_is_visible() {
+            return 0.0;
+        }
+        let body_height = self
+            .screen
+            .get(BALLOON_BODY_TEXT_PICTURE)
+            .and_then(|body| body.text_size)
+            .map_or(0.0, |(_, height)| height as f32);
+        (body_height + BALLOON_FRAME_PADDING - BALLOON_FRAME_MIN_HEIGHT as f32).max(0.0)
+    }
+
     /// Preselects an option of the current choice prompt.
     ///
     /// Headless captures use this together with [`Self::auto_choice`] to take a
@@ -1691,21 +1971,11 @@ impl Game {
     /// reproduce any of that; this is the markup-aware path the renderer uses.
     #[must_use]
     pub fn text_quads(&self) -> Vec<crate::atlas::TextQuad> {
-        let vars = PictureVars {
-            vars: &self.vm.vars,
-        };
         let cells = PictureCells {
             databases: &self.databases,
         };
         let colours = PictureColours {
             databases: &self.databases,
-        };
-        let ctx = crate::textpic::Ctx {
-            vars: &vars,
-            cells: &cells,
-            colours: &colours,
-            default_font_px: self.font_px(),
-            base_font_px: self.text_base_font_px,
         };
         // The cache lives behind a RefCell so this stays `&self`; every caller and test
         // borrows the game immutably and must keep working.
@@ -1717,6 +1987,18 @@ impl Game {
             if !picture.kind.is_text() || picture.hidden || picture.text.is_empty() {
                 continue;
             }
+            let owner_event = self.screen.get(picture.number).and_then(|p| p.owner_event);
+            let vars = PictureVars {
+                vars: &self.vm.vars,
+                owner_event,
+            };
+            let ctx = crate::textpic::Ctx {
+                vars: &vars,
+                cells: &cells,
+                colours: &colours,
+                default_font_px: self.font_px(),
+                base_font_px: self.text_base_font_px,
+            };
             // Text pictures obey the same `290` positional effects as sprites. CE95, the
             // settings-screen renderer, draws all ten row labels at one base (x,y) and
             // separates them purely with a `290` type-2 coordinate shift per row; ignoring
@@ -1819,7 +2101,22 @@ impl Game {
                 crate::choice::advance_at(ch, px)
             }
         };
-        let runs = crate::textpic::layout_with(&picture.text, x, y, anchor, ctx, &advance);
+        // The balloon frame grows upward from a fixed bottom. Its body text is
+        // anchored to the top of that frame, so when a multi-line message makes it
+        // taller the text must move up by exactly the growth; otherwise the last row
+        // sits on the bottom edge and is clipped.
+        let balloon = picture.number == BALLOON_BODY_TEXT_PICTURE;
+        let balloon_lift = if balloon || picture.number == BALLOON_NAME_TEXT_PICTURE {
+            self.balloon_frame_growth()
+        } else {
+            0.0
+        };
+        let y = y - balloon_lift;
+        let runs = if balloon {
+            crate::textpic::layout_message_with(&picture.text, x, y, anchor, ctx, &advance)
+        } else {
+            crate::textpic::layout_with(&picture.text, x, y, anchor, ctx, &advance)
+        };
         let mut quads = Vec::new();
         for run in runs {
             if run.text.is_empty() {
@@ -2129,10 +2426,313 @@ impl Game {
         {
             return;
         }
-        if let Some(id) = self.runtime.action_key_at(&mut self.vm, x, y) {
+        let governed = self.picture_governed_action_events();
+        if let Some(event) = self.picture_action_event_at(x, y) {
+            // The visible icon owns the press even when its page condition is not
+            // active: falling through would revive the old tile rectangle or hit
+            // an unrelated hotspot behind the icon.
+            self.mouse_consumed = true;
+            let mut started = self.runtime.action_key_event(&mut self.vm, event);
+            if started.is_none() && event == 21 {
+                // The night end arrow is visible in every action submenu, but its
+                // map page is gated on v100 == 1 while the submenu sets v100 = 10.
+                // The script itself owns the confirmation and teardown.
+                started = self
+                    .runtime
+                    .action_key_event_ignoring_conditions(&mut self.vm, event);
+            }
+            if let Some(id) = started {
+                self.last_action_event = Some(id);
+            }
+            return;
+        }
+        if self.try_side_panel_handle(x, y) {
+            return;
+        }
+        if let Some(event) = self.sister_body_action_event_at(x, y) {
+            if let Some(id) = self.runtime.action_key_event(&mut self.vm, event) {
+                self.last_action_event = Some(id);
+                self.mouse_consumed = true;
+                return;
+            }
+        }
+        if let Some(id) = self
+            .runtime
+            .action_key_at_excluding(&mut self.vm, x, y, &governed)
+        {
             self.last_action_event = Some(id);
             self.mouse_consumed = true;
         }
+    }
+
+    /// Opens/closes either parked side panel from its visible right-edge handle.
+    ///
+    /// The original map pages use invisible 48x96 tile rectangles for these panels;
+    /// the art itself exposes a triangle at the right edge of each 330x576 canvas.
+    /// A click on that triangle is the whole affordance the player sees, and the two
+    /// drawers are mutually exclusive. The status page has a dead `v15 == 99` gate,
+    /// so its direct CE238 fallback remains necessary.
+    fn try_side_panel_handle(&mut self, x: i32, y: i32) -> bool {
+        let status = self.side_panel_handle_hit(320, "Picture/status01.png", STATUS_HANDLE_Y, x, y);
+        let item = self.side_panel_handle_hit(2300, "Picture/itemlist.png", ITEM_HANDLE_Y, x, y);
+        if !status && !item {
+            return false;
+        }
+
+        // The visible handle owns the press even if the script gate is dead.
+        self.mouse_consumed = true;
+        if status {
+            let open = self.side_panel_is_open(320);
+            if open {
+                self.start_panel_event(238, 0);
+            } else {
+                self.start_panel_event(239, 0);
+                if let Some(id) = self.runtime.action_key_event(&mut self.vm, 10) {
+                    self.last_action_event = Some(id);
+                } else {
+                    self.start_panel_event(238, 1);
+                    self.last_action_event = Some(10);
+                }
+            }
+        } else {
+            let open = self.side_panel_is_open(2300);
+            if open {
+                self.start_panel_event(239, 0);
+            } else {
+                self.start_panel_event(238, 0);
+                if let Some(id) = self.runtime.action_key_event(&mut self.vm, 7) {
+                    self.last_action_event = Some(id);
+                } else {
+                    self.start_panel_event(239, 1);
+                    self.last_action_event = Some(7);
+                }
+            }
+        }
+        true
+    }
+
+    fn side_panel_handle_hit(
+        &mut self,
+        slot: i32,
+        file: &str,
+        band: (f32, f32),
+        x: i32,
+        y: i32,
+    ) -> bool {
+        let Some(picture) = self.screen.get(slot) else {
+            return false;
+        };
+        if picture.hidden
+            || picture.opacity <= 0
+            || picture.file != file
+            || !(-306..=1).contains(&picture.x)
+        {
+            return false;
+        }
+        let screen = &self.screen;
+        let assets = &mut self.assets;
+        let Some(rect) = screen.picture_rect(slot, |name| assets.texture_size(name)) else {
+            return false;
+        };
+        let px = x as f32;
+        let py = y as f32;
+        let left = rect[0] + rect[2] - SIDE_PANEL_HANDLE_RIGHT;
+        let right = rect[0] + rect[2] + 2.0;
+        px >= left && px < right && py >= rect[1] + band.0 && py < rect[1] + band.1
+    }
+
+    fn side_panel_is_open(&self, slot: i32) -> bool {
+        self.screen
+            .get(slot)
+            .is_some_and(|picture| !picture.hidden && picture.opacity > 0 && picture.x > -300)
+    }
+
+    /// Starts one panel transition.
+    ///
+    /// Showing is idempotent: a second click during the five-frame slide would
+    /// otherwise spawn a duplicate opener. Hiding must be allowed to supersede an
+    /// opener that is still resident, or the drawer can finish its slide back in
+    /// after the player has explicitly closed it.
+    fn start_panel_event(&mut self, event: u32, show: i32) {
+        if show != 0 {
+            if self
+                .vm
+                .instances()
+                .iter()
+                .any(|instance| instance.event == event)
+            {
+                return;
+            }
+        }
+        let _ = self.vm.start_event_with_args(event, &[show], &[]);
+    }
+
+    /// The bedroom standing-art slot is the sister's click target.
+    ///
+    /// The shipped map keeps only a 16x16 tile box per pose, far smaller than
+    /// the visible character. CE240 draws the body and face as slots 900..903
+    /// at the same origin, so their visible rectangles form the natural target.
+    /// Resolve the pose through v14 to the same action-key event the map data
+    /// defines; that event still owns its v23/v176/v238 conditions.
+    fn sister_body_action_event_at(&mut self, x: i32, y: i32) -> Option<u32> {
+        if self.vm.vars.get(100) != 0 {
+            return None;
+        }
+        let event = match self.vm.vars.get(14) {
+            0 => 1,
+            1 => 2,
+            2 => 3,
+            3 => 4,
+            6 => 25,
+            _ => return None,
+        };
+        let body = self.screen.get(900)?;
+        if body.hidden || body.opacity <= 0 || !body.file.starts_with("Picture/stand_") {
+            return None;
+        }
+
+        for slot in 900..=903 {
+            let Some(picture) = self.screen.get(slot) else {
+                continue;
+            };
+            if picture.hidden || picture.opacity <= 0 || picture.file.is_empty() {
+                continue;
+            }
+            if self.picture_alpha_hit(slot, x, y) {
+                return Some(event);
+            }
+        }
+        None
+    }
+
+    /// Action-key events whose only valid click target is their picture control.
+    ///
+    /// This stays unconditional even when the icon is hidden. The old map tile
+    /// rectangles for save/data/end are larger than the art and must never revive
+    /// a control that the current screen does not show (the night UI hides the
+    /// data icon, and CE231 can hide the save row).
+    fn picture_governed_action_events(&self) -> Vec<u32> {
+        PICTURE_ACTION_CONTROLS
+            .iter()
+            .map(|(_, event, _)| *event)
+            .collect()
+    }
+
+    /// Topmost visible picture button under `(x, y)`.
+    fn picture_action_event_at(&mut self, x: i32, y: i32) -> Option<u32> {
+        let mut best: Option<(i32, u32)> = None;
+        for &(slot, event, file) in PICTURE_ACTION_CONTROLS {
+            let Some(picture) = self.screen.get(slot) else {
+                continue;
+            };
+            if picture.hidden || picture.opacity <= 0 || picture.file != file {
+                continue;
+            }
+            let Some(rect) = self.picture_ink_rect(slot) else {
+                continue;
+            };
+            let px = x as f32;
+            let py = y as f32;
+            if px < rect[0] || px >= rect[0] + rect[2] || py < rect[1] || py >= rect[1] + rect[3] {
+                continue;
+            }
+            // Screen order is slot order. A later slot is drawn above an earlier
+            // one, so the end button wins over the data icon it overlaps.
+            if best.is_none_or(|(best_slot, _)| slot > best_slot) {
+                best = Some((slot, event));
+            }
+        }
+        best.map(|(_, event)| event)
+    }
+
+    /// Click surface of a picture's non-transparent pixels, in screen coordinates.
+    ///
+    /// The UI files are deliberately padded canvases (80x60 for 48x48 artwork), and
+    /// sprite sheets contain a whole grid of poses. Mapping the alpha bounding box
+    /// through the same destination rectangle the renderer uses makes the clickable
+    /// control follow the visible ink without changing any other picture hit box.
+    fn picture_ink_rect(&mut self, number: i32) -> Option<[f32; 4]> {
+        let picture = self.screen.get(number)?.clone();
+        if picture.file.is_empty() {
+            return None;
+        }
+        let screen = &self.screen;
+        let assets = &mut self.assets;
+        let destination = screen.picture_rect(number, |name| assets.texture_size(name))?;
+        let (source, _) =
+            crate::picture::picture_frame(&picture, &mut |name| assets.texture_size(name))?;
+        let image = assets.load(&picture.file).ok()?;
+        let bounds = image.alpha_bounds_in(source, 16)?;
+
+        let u0 = (bounds[0] as f32 - source[0] as f32) / source[2] as f32;
+        let u1 = (bounds[0] as f32 + bounds[2] as f32 - source[0] as f32) / source[2] as f32;
+        let (u0, u1) = if picture.scale < 0 {
+            (1.0 - u1, 1.0 - u0)
+        } else {
+            (u0, u1)
+        };
+        let v0 = (bounds[1] as f32 - source[1] as f32) / source[3] as f32;
+        let v1 = (bounds[1] as f32 + bounds[3] as f32 - source[1] as f32) / source[3] as f32;
+        Some([
+            destination[0] + u0 * destination[2],
+            destination[1] + v0 * destination[3],
+            (u1 - u0) * destination[2],
+            (v1 - v0) * destination[3],
+        ])
+    }
+
+    /// Exact alpha hit test for one picture layer.
+    ///
+    /// The standing character is assembled from body, face, eye and eyebrow slots;
+    /// their canvases are much wider than the visible pose. Sampling the decoded cell
+    /// at the clicked source pixel makes the clickable area follow the actual
+    /// silhouette, including transparent shoulders and gaps between layers.
+    fn picture_alpha_hit(&mut self, number: i32, x: i32, y: i32) -> bool {
+        let picture = match self.screen.get(number) {
+            Some(picture) => picture.clone(),
+            None => return false,
+        };
+        if picture.file.is_empty() {
+            return false;
+        }
+        let screen = &self.screen;
+        let assets = &mut self.assets;
+        let Some(destination) = screen.picture_rect(number, |name| assets.texture_size(name))
+        else {
+            return false;
+        };
+        let Some((source, _)) =
+            crate::picture::picture_frame(&picture, &mut |name| assets.texture_size(name))
+        else {
+            return false;
+        };
+        let px = x as f32;
+        let py = y as f32;
+        if px < destination[0]
+            || px >= destination[0] + destination[2]
+            || py < destination[1]
+            || py >= destination[1] + destination[3]
+            || destination[2] <= 0.0
+            || destination[3] <= 0.0
+        {
+            return false;
+        }
+        let u = (px - destination[0]) / destination[2];
+        let v = (py - destination[1]) / destination[3];
+        let mut sx = (u * source[2] as f32).floor() as u32;
+        let sy = (v * source[3] as f32).floor() as u32;
+        if sx >= source[2] || sy >= source[3] {
+            return false;
+        }
+        if picture.scale < 0 {
+            sx = source[2] - 1 - sx;
+        }
+        let Ok(image) = assets.load(&picture.file) else {
+            return false;
+        };
+        image
+            .pixel(source[0] + sx, source[1] + sy)
+            .is_some_and(|rgba| rgba[3] > 16)
     }
 
     /// Applies this frame's key state to the open choice prompt, if there is one.
@@ -2243,8 +2843,19 @@ impl Game {
     /// is a 123-poll screen where the wheel pages it with the left/right keys. Any
     /// other menu gets up/down, so wheel scrolling works without a per-screen list.
     fn apply_wheel(&mut self) -> u32 {
-        let notches = std::mem::take(&mut self.wheel);
+        self.frame_wheel_delta = std::mem::take(&mut self.wheel);
+        let notches = self.frame_wheel_delta;
         if notches == 0 {
+            return 0;
+        }
+        // CE223 is the message-window script that owns the wheel itself. Injecting a
+        // direction key as well would move the selected row twice for one notch.
+        if self
+            .vm
+            .instances()
+            .iter()
+            .any(|instance| instance.event == 223)
+        {
             return 0;
         }
         let choice_count = self.choices.as_ref().map(|choices| choices.options.len());
@@ -2366,6 +2977,44 @@ impl Game {
         }
     }
 
+    /// Moves queued sound commands into this frame's packet and counts them once.
+    ///
+    /// `Host::sound` counts a command as it is requested; a command that is queued
+    /// outside the interpreter (a save load, or the title reset's BGM/BGS stop)
+    /// has to be counted here so `stats.sounds` stays on the same footing.
+    fn flush_pending_sounds(&mut self) {
+        let count = self.pending_sounds.len();
+        if count == 0 {
+            return;
+        }
+        self.sounds.append(&mut self.pending_sounds);
+        self.stats.sounds += count as u64;
+    }
+
+    /// The deep-night end arrow replaces the stats button.
+    ///
+    /// Event 6 redraws the data icon every time its permanent page restarts,
+    /// including while the night UI owns the screen. ev32 erases it for v100
+    /// 0/1, but not for the touch/clothes sub-pages. Slot -4 is below the end
+    /// button (1108), so its label leaked through the arrow's transparent
+    /// cutout. Keep it hidden for exactly as long as the end button is visible.
+    fn suppress_night_data_icon(&mut self) {
+        let end_visible = self
+            .screen
+            .get(1108)
+            .is_some_and(|picture| !picture.hidden && picture.opacity > 0);
+        // v100 selects the deep-night interface and stays non-zero through its
+        // touch/clothes sub-pages. Event 6 re-creates the data icon on its
+        // permanent page, so gating only on the end arrow's visibility lets -4
+        // reappear under the arrow as soon as a sub-page redraws.
+        if !end_visible && self.vm.vars.get(100) == 0 {
+            return;
+        }
+        if let Some(data) = self.screen.get_mut(-4) {
+            data.hidden = true;
+        }
+    }
+
     /// Ends the frame's click bookkeeping: a delivered click is spent, an undelivered
     /// one waits for a poll but is dropped after [`PENDING_MOUSE_TTL`] frames.
     fn settle_pending_mouse(&mut self) {
@@ -2385,6 +3034,7 @@ impl Game {
     /// Advances one frame at 1/60 s.
     pub fn frame(&mut self) -> FrameOutcome {
         self.sounds.clear();
+        self.flush_pending_sounds();
         // Carry a press edge that arrives while no script poll runs. The front-end only
         // reports the button for the frame it went down, so without this a click during
         // a timer wait or a transition would be forgotten before opcode 123 sees it.
@@ -2399,8 +3049,9 @@ impl Game {
         self.update_key_repeat();
         // Start or stop the conditional background events before anything runs, so a
         // condition that became true last frame is running now (docs/ENGINE_EVENTS.md
-        // section 2.2). This is edge-triggered: a condition that stays true does not
-        // restart a coroutine that already ended on its own.
+        // section 2.2). Events are level-triggered and restart when they end while
+        // their condition still holds; the title renderer below is the one-shot
+        // exception and only starts on the menu's rising edge.
         // The title menu renderer (event 43) may only run while the title menu is up;
         // its `v0 == 0` script condition also holds in synthetic states where v0 was
         // never set, and running it there would paint the title buttons over a scene.
@@ -2446,6 +3097,13 @@ impl Game {
         // confirms the slot under the cursor instead of the keyboard-highlighted one.
         self.sync_save_grid_cursor();
         self.handle_action_key_input();
+        // A message that was already visible at the start of this frame owns the
+        // mouse. Script key polls may run before the message coroutine's wait is
+        // answered; without this snapshot the parallel night pollers consume the
+        // click and `message_dismissed` never sees it.
+        self.frame_mouse_blocked = !self.messages.is_empty();
+        let default_font_px = self.font_px();
+        let base_font_px = self.text_base_font_px;
         let mut report = self.vm.step_frame(&mut GameHost {
             screen: &mut self.screen,
             screen_tint: &mut self.screen_tint,
@@ -2470,14 +3128,25 @@ impl Game {
             auto_choice: self.auto_choice,
             auto_choice_delay: self.auto_choice_delay,
             cursor: self.choice_cursor,
+            default_font_px,
+            base_font_px,
             mouse: self.mouse,
+            mouse_delta: [
+                self.mouse[0] - self.previous_mouse[0],
+                self.mouse[1] - self.previous_mouse[1],
+            ],
             mouse_buttons: self.mouse_buttons,
             previous_mouse_buttons: self.previous_mouse_buttons,
+            frame_wheel_delta: self.frame_wheel_delta,
             pending_mouse: &mut self.pending_mouse,
             mouse_consumed: &mut self.mouse_consumed,
+            frame_mouse_blocked: self.frame_mouse_blocked,
             root: &self.root,
+            current_map: &self.current_map,
             save_requests: &mut self.save_requests,
             map_requests: &mut self.map_requests,
+            reserved_events: &mut self.reserved_events,
+            pending_return_to_title: &mut self.pending_return_to_title,
             quit: &mut self.quit_requested,
         });
         if had_choice && self.choices.is_none() {
@@ -2496,6 +3165,10 @@ impl Game {
                     match crate::savegame::load_into(self, &path) {
                         Ok(loaded) => {
                             loaded_save = true;
+                            // The load queues its BGM Play/Stop in `pending_sounds`, but
+                            // the frame-start flush has already run. Drain it now so the
+                            // very packet that reports this frame carries the new track.
+                            self.flush_pending_sounds();
                             // A loaded game is gameplay, not the boot/title flow, even
                             // when the load was requested from the title load screen.
                             self.boot_map_active = false;
@@ -2582,6 +3255,7 @@ impl Game {
                 }
             }
         }
+        self.suppress_night_data_icon();
         // The title menu is a one-shot op102 inside CE42. Cancelling CE131 unwinds
         // CE14 -> CE42 -> the TitleMap event 2 page, leaving a menu-less title
         // background with nothing running (docs/M3_TITLE_UX.md section 2.5). Re-enter
@@ -2615,6 +3289,25 @@ impl Game {
             }
         }
         self.load_grid_open = load_grid_now;
+        // `174 ReturnToTitle` and `211 CommonEventReserve` both wait for the VM step
+        // and the queued save/map work to finish. A return-to-title discards every
+        // instance and reservation, so it wins over a pending reservation.
+        if std::mem::take(&mut self.pending_return_to_title) {
+            self.reset_to_title();
+        } else if !self.foreground_busy() {
+            if let Some((event, args, strings)) = self.reserved_events.pop_front() {
+                if self
+                    .vm
+                    .start_event_with_args(event, &args, &strings)
+                    .is_none()
+                {
+                    self.diagnostics.insert(
+                        format!("211 Reserve: event {event} is not in CommonEvent.dat"),
+                        1,
+                    );
+                }
+            }
+        }
         // One more frame of play time; the save stores this in SavePart2.vars3_21[0].
         self.playtime_frames = self.playtime_frames.saturating_add(1);
         // Age the UI state after the VM ran, so a message shown this frame is 0 frames old.
@@ -2681,6 +3374,18 @@ impl Game {
         // Keep the interpreter note list empty: everything worth keeping went through
         // Host::log, which deduplicates. A per-frame Vec would otherwise grow forever.
         FrameOutcome { report, ..outcome }
+    }
+
+    /// True while a foreground coroutine is still doing something.
+    ///
+    /// Parallel engine/auto events do not hold a `211` reservation back; a called
+    /// event only starts once the non-parallel stack (a menu, a map page or a
+    /// waiting message) is completely idle.
+    fn foreground_busy(&self) -> bool {
+        self.vm.instances().iter().any(|instance| {
+            !instance.is_parallel
+                && (instance.pc < instance.program.len() || instance.wait != WaitState::None)
+        })
     }
 }
 
@@ -2892,6 +3597,7 @@ fn resolve_cell(
 /// fallback for a string the expander could not resolve.
 struct PictureVars<'a> {
     vars: &'a wolf_vm::Variables,
+    owner_event: Option<u32>,
 }
 
 impl crate::textpic::Vars for PictureVars<'_> {
@@ -2908,6 +3614,44 @@ impl crate::textpic::Vars for PictureVars<'_> {
         } else {
             raw.to_owned()
         }
+    }
+
+    fn text_in(&self, bank: wolf_format::messagetext::VarBank, index: usize) -> String {
+        if matches!(
+            bank,
+            wolf_format::messagetext::VarBank::CommonSelf
+                | wolf_format::messagetext::VarBank::SelfVar
+        ) {
+            if let Some(event) = self.owner_event {
+                if let Some(bank) = self.vars.common_self.get(&event) {
+                    return if (5..=9).contains(&index) {
+                        bank.get_str(index - 5).to_owned()
+                    } else if index <= 4 {
+                        bank.get(index).to_string()
+                    } else {
+                        self.text(index)
+                    };
+                }
+            }
+        }
+        self.text(index)
+    }
+}
+
+/// A variable source for text that was already expanded by the VM.
+///
+/// `150` ships its markup with every `\v`/`\s`/`\cself` escape already resolved, so
+/// measuring the measured block must not read the live banks a second time. The empty
+/// answers only exist so the shared layout code can keep one `Vars` shape.
+struct EmptyVars;
+
+impl crate::textpic::Vars for EmptyVars {
+    fn num(&self, _index: usize) -> i32 {
+        0
+    }
+
+    fn text(&self, _index: usize) -> String {
+        String::new()
     }
 }
 
@@ -2996,16 +3740,30 @@ struct GameHost<'a> {
     auto_choice: bool,
     auto_choice_delay: u32,
     cursor: usize,
+    /// Sys8 font size at the start of the frame, for text-picture measurement.
+    default_font_px: f32,
+    /// Retail raster face size, for the `\A-` path.
+    base_font_px: f32,
     mouse: [i32; 2],
+    /// Mouse movement since the previous frame, for `124 0x3000` fields 11/12.
+    mouse_delta: [i32; 2],
     mouse_buttons: u32,
     previous_mouse_buttons: u32,
+    /// Wheel notches consumed by this frame, for `124 0x3000` field 10.
+    frame_wheel_delta: i32,
     /// Press edges carried from earlier frames (see `Game::pending_mouse`).
     pending_mouse: &'a mut u32,
     /// Set when the host consumes the click (message dismissal or a key poll).
     mouse_consumed: &'a mut bool,
+    /// A message window owns this frame's mouse press.
+    frame_mouse_blocked: bool,
     root: &'a Path,
+    /// The installed map, for the `124 0x1000` coordinate queries.
+    current_map: &'a Option<Map>,
     save_requests: &'a mut Vec<crate::savegame::SaveRequest>,
     map_requests: &'a mut Vec<MapRequest>,
+    reserved_events: &'a mut std::collections::VecDeque<(u32, Vec<i32>, Vec<String>)>,
+    pending_return_to_title: &'a mut bool,
     /// Set by opcode 175; the front-end polls [`Game::quit_requested`].
     quit: &'a mut bool,
 }
@@ -3044,16 +3802,37 @@ impl GameHost<'_> {
         if self.screen.get(number).is_none() {
             return -1;
         }
+        // A side panel is a click-to-toggle drawer, not a hover-triggered one.
+        // Events 8/11 poll this field every frame while the panel is open and used
+        // to close it whenever the pointer crossed a transparent edge, producing a
+        // visible open/park flicker. Once open, the panel deliberately reports a
+        // stable hover; the handle click in `try_side_panel_handle` closes it.
+        if matches!(number, 320 | 2300)
+            && self
+                .screen
+                .get(number)
+                .is_some_and(|picture| !picture.hidden && picture.opacity > 0 && picture.x > -300)
+        {
+            return 1;
+        }
         // The hit box is the same rectangle the renderer draws: text metrics, window
         // box / native texture size, anchor, independent X/Y scale, the running 290
         // shift/shake and the tenths UI block scale. Sharing `picture_rect` keeps a
         // click and the pixels it lands on in one law. In particular a negative slot
         // is *not* automatically a full-screen layer: picture -7 is the 48x48 album
         // icon, and giving it the viewport as its box stole clicks from the data icon.
-        let screen = &self.screen;
-        let assets = &mut self.assets;
-        let Some(dst) = screen.picture_rect(number, |file| assets.texture_size(file)) else {
-            return -1;
+        let dst = if matches!(number, -7 | -5 | -4 | 1108) {
+            match self.picture_ink_rect(number) {
+                Some(rect) => rect,
+                None => return 0,
+            }
+        } else {
+            let screen = &self.screen;
+            let assets = &mut self.assets;
+            let Some(rect) = screen.picture_rect(number, |file| assets.texture_size(file)) else {
+                return -1;
+            };
+            rect
         };
         let (left, top) = (dst[0], dst[1]);
         let (size_x, size_y) = (dst[2], dst[3]);
@@ -3067,11 +3846,45 @@ impl GameHost<'_> {
         i32::from(over)
     }
 
+    /// [`Game::picture_ink_rect`] for the VM poll path.
+    fn picture_ink_rect(&mut self, number: i32) -> Option<[f32; 4]> {
+        let picture = self.screen.get(number)?.clone();
+        if picture.file.is_empty() {
+            return None;
+        }
+        let destination = self
+            .screen
+            .picture_rect(number, |name| self.assets.texture_size(name))?;
+        let (source, _) =
+            crate::picture::picture_frame(&picture, &mut |name| self.assets.texture_size(name))?;
+        let image = self.assets.load(&picture.file).ok()?;
+        let bounds = image.alpha_bounds_in(source, 16)?;
+
+        let u0 = (bounds[0] as f32 - source[0] as f32) / source[2] as f32;
+        let u1 = (bounds[0] as f32 + bounds[2] as f32 - source[0] as f32) / source[2] as f32;
+        let (u0, u1) = if picture.scale < 0 {
+            (1.0 - u1, 1.0 - u0)
+        } else {
+            (u0, u1)
+        };
+        let v0 = (bounds[1] as f32 - source[1] as f32) / source[3] as f32;
+        let v1 = (bounds[1] as f32 + bounds[3] as f32 - source[1] as f32) / source[3] as f32;
+        Some([
+            destination[0] + u0 * destination[2],
+            destination[1] + v0 * destination[3],
+            (u1 - u0) * destination[2],
+            (v1 - v0) * destination[3],
+        ])
+    }
+
     /// Mouse buttons as fresh key bits for this frame.
     ///
     /// Only a press edge counts (see crate::key::mouse_bits); a held button looks
     /// like nothing so a menu polled every frame fires exactly once.
     fn mouse_key_bits(&mut self) -> u32 {
+        if self.frame_mouse_blocked || !self.messages.is_empty() {
+            return 0;
+        }
         // The poll consumes the click, so a carried-over edge is delivered exactly once
         // and cleared at the end of the frame. The edge from this frame joins it.
         let pending = *self.pending_mouse;
@@ -3121,9 +3934,9 @@ impl Host for GameHost<'_> {
         // edges: a held button/key must not run through a whole conversation. The
         // confirm key used to be level-triggered, so holding Enter skipped every
         // consecutive line the moment it appeared.
-        let clicked = self.mouse_buttons & 1 != 0
-            && self.previous_mouse_buttons & 1 == 0
-            && !*self.mouse_consumed;
+        let fresh_click = self.mouse_buttons & 1 != 0 && self.previous_mouse_buttons & 1 == 0;
+        let carried_click = *self.pending_mouse & crate::key::OK != 0;
+        let clicked = (fresh_click || carried_click) && !*self.mouse_consumed;
         let confirmed = self.key_bits & !self.previous_keys & crate::key::OK != 0;
         if clicked {
             *self.mouse_consumed = true;
@@ -3199,6 +4012,36 @@ impl Host for GameHost<'_> {
     fn picture(&mut self, cmd: &PictureCmd) {
         self.screen.apply(cmd);
         self.stats.pictures += 1;
+        // Text pictures size themselves from their laid-out block. The VM has already
+        // expanded every escape, so a blank variable source is enough here; use the live
+        // database and palette for `\cdb`/`\c` that survive the expansion.
+        if cmd.action != wolf_vm::PictureAction::Erase
+            && PictureKind::from_code(cmd.kind).is_text()
+            && !cmd.text.is_empty()
+        {
+            let vars = EmptyVars;
+            let cells = PictureCells {
+                databases: self.databases,
+            };
+            let colours = PictureColours {
+                databases: self.databases,
+            };
+            let ctx = crate::textpic::Ctx {
+                vars: &vars,
+                cells: &cells,
+                colours: &colours,
+                default_font_px: self.default_font_px,
+                base_font_px: self.base_font_px,
+            };
+            let (width, height) = if cmd.number == BALLOON_BODY_TEXT_PICTURE {
+                crate::textpic::block_size_message(&cmd.text, &ctx)
+            } else {
+                crate::textpic::block_size(&cmd.text, &ctx)
+            };
+            if let Some(picture) = self.screen.get_mut(cmd.number) {
+                picture.text_size = Some((width.ceil() as i32, height.ceil() as i32));
+            }
+        }
         // Warm the image cache for file pictures while the frame is running, so the
         // render path never blocks on a decode: by the time the frame ends, every picture
         // on screen already has its size (and usually its pixels) resident.
@@ -3389,9 +4232,9 @@ impl Host for GameHost<'_> {
             let count = self.databases.row_count(container, db_type).unwrap_or(0);
             return Some(DbValue::Num(i32::try_from(count).unwrap_or(i32::MAX)));
         }
-        let wants_text = op.destination.is_some_and(|target| {
-            (wolf_vm::magic::STR_BASE..wolf_vm::magic::STR_BASE + 1_000_000).contains(&target)
-        });
+        let wants_text = op
+            .destination
+            .is_some_and(|target| wolf_vm::magic::Magic::is_string_slot(target, false));
         if column == crate::db::FIRST_EMPTY_COLUMN {
             // CE58 pc10 looks for the first row with no fields set before learning a
             // skill; the engine answers with a row index of this table.
@@ -3400,6 +4243,24 @@ impl Host for GameHost<'_> {
                 .first_empty_row(container, db_type)
                 .unwrap_or(0);
             return Some(DbValue::Num(row));
+        }
+        if row == crate::db::ROW_NAME_COLUMN && column == crate::db::ROW_NAME_COLUMN {
+            // Type metadata, not a row name. The original handler (0x460bb0) checks
+            // `row == -3 && column == -3`, then branches on flags bit 16:
+            //   * set: answer the resolved type number (CE270 asks for the numeric
+            //     id of メッセージウィンドウ種類 and stores it in self[90]);
+            //   * clear: answer the type's editor name.
+            // CE265's `(26, -1, 0)` row-count read and `(26, 0, -3)` row-name read
+            // are different forms and must keep their existing branches below.
+            if op.flags & 0x1_0000 != 0 {
+                return Some(DbValue::Num(db_type));
+            }
+            return Some(DbValue::Str(
+                self.databases
+                    .type_name(container, db_type)
+                    .unwrap_or_default()
+                    .to_owned(),
+            ));
         }
         if column == crate::db::ROW_NAME_COLUMN {
             // CE265/CE267 read the editor name of one row, not a field: type 26 is
@@ -3450,9 +4311,9 @@ impl Host for GameHost<'_> {
             // empty rather than missing. The destination decides which empty: a read into
             // a string variable wants "", a numeric one wants 0.
             self.stats.database_slots += 1;
-            let wants_text = op.destination.is_some_and(|target| {
-                (wolf_vm::magic::STR_BASE..wolf_vm::magic::STR_BASE + 1_000_000).contains(&target)
-            });
+            let wants_text = op
+                .destination
+                .is_some_and(|target| wolf_vm::magic::Magic::is_string_slot(target, false));
             return Some(if wants_text {
                 DbValue::Str(String::new())
             } else {
@@ -3662,7 +4523,17 @@ impl Host for GameHost<'_> {
     }
 
     fn reserve(&mut self, event: wolf_vm::exec::EventId) {
-        self.note(format!("211 Reserve: event {event} not scheduled yet"));
+        self.reserve_with_args(event, &[], &[]);
+    }
+
+    fn reserve_with_args(
+        &mut self,
+        event: wolf_vm::exec::EventId,
+        args: &[i32],
+        strings: &[String],
+    ) {
+        self.reserved_events
+            .push_back((event, args.to_vec(), strings.to_vec()));
     }
 
     /// 106 ShowDebugMessage. Benign on purpose: this is the script's own debug print, not a
@@ -3678,7 +4549,7 @@ impl Host for GameHost<'_> {
     fn clear_debug(&mut self) {}
 
     fn return_to_title(&mut self) {
-        self.note("174 ReturnToTitle: the title closure does not use it yet".to_owned());
+        *self.pending_return_to_title = true;
     }
 
     fn end_game(&mut self) {
@@ -3759,8 +4630,31 @@ impl Host for GameHost<'_> {
         match field {
             0 => Some(picture.x),
             1 => Some(picture.y),
-            2 => Some(picture.scale),
-            3 => Some(picture.scale_y),
+            2 | 3 => {
+                let kind = picture.kind;
+                let file = picture.file.clone();
+                let split = picture.split;
+                let window = picture.window.unwrap_or((0, 0));
+                let measured = picture.text_size;
+                let (width, height) = if let Some(size) = measured {
+                    size
+                } else if kind.is_window() {
+                    window
+                } else {
+                    self.assets
+                        .texture_size(&file)
+                        .map(|(width, height)| {
+                            let columns = split.0.max(1);
+                            let rows = split.1.max(1);
+                            (
+                                i32::try_from(width / columns).unwrap_or(i32::MAX),
+                                i32::try_from(height / rows).unwrap_or(i32::MAX),
+                            )
+                        })
+                        .unwrap_or(window)
+                };
+                Some(if field == 2 { width } else { height })
+            }
             4 => picture.extras.first().copied(),
             10 => Some(if PictureKind::from_code(picture.kind as u8).is_text() {
                 1
@@ -3772,10 +4666,25 @@ impl Host for GameHost<'_> {
     }
 
     fn character_state(&mut self, target: i32, field: i32) -> Option<i32> {
-        // No map layer until M2: leaving the destination alone is honest, while
-        // fabricating coordinates would silently break follower logic.
-        let _ = (target, field);
-        None
+        // Map events carry tile coordinates; fields 6/7 are the same position in
+        // pixels (16 px per tile). Negative targets are the player/screen sentinels
+        // in this data and have no event record, so they stay unanswered.
+        if target < 0 {
+            return None;
+        }
+        let event = self
+            .current_map
+            .as_ref()?
+            .events
+            .iter()
+            .find(|event| event.id == target as u32)?;
+        match field {
+            2 => Some(event.x as i32),
+            3 => Some(event.y as i32),
+            6 => Some(event.x as i32 * crate::tilemap::TILE_PX as i32),
+            7 => Some(event.y as i32 * crate::tilemap::TILE_PX as i32),
+            _ => None,
+        }
     }
 
     fn engine_state(&mut self, field: i32) -> Option<i32> {
@@ -3795,7 +4704,9 @@ impl Host for GameHost<'_> {
                 self.mouse_buttons & 4 != 0,
                 self.previous_mouse_buttons & 4 != 0,
             )),
-            10 => Some(0),
+            10 => Some(self.frame_wheel_delta),
+            11 => Some(self.mouse_delta[0]),
+            12 => Some(self.mouse_delta[1]),
             20 => Some(self.mouse[0]),
             21 => Some(self.mouse[1]),
             _ => None,
@@ -3807,7 +4718,6 @@ impl Host for GameHost<'_> {
 mod tests {
     use super::*;
     use crate::key;
-    use crate::picture::ANCHOR_CENTRE;
 
     fn data_root() -> PathBuf {
         if let Ok(value) = std::env::var("WOLF_DATA_ROOT") {
@@ -4088,29 +4998,104 @@ mod tests {
             peak = peak.max(last.report.running);
         }
         // The real title script: draw one full-screen graphic, start one BGM, open a
-        // three-option prompt. Everything the old capture showed beyond that came from a
-        // branch fall-through bug that reached the save/load screen chain.
+        // three-option prompt, and let one-shot CE43 paint the three image buttons.
+        // CE43 finishes after its single pass; only the title event and the prompt
+        // remain, so the parked screen must stop doing work.
         assert!(
             (30..=120).contains(&game.stats.instructions),
             "{} instruction(s)",
             game.stats.instructions
         );
-        assert_eq!(peak, 1, "the title event is a single coroutine");
+        assert_eq!(peak, 2, "the title event plus CE43's single render pass");
         assert!(game.choices.is_some(), "the title prompt should be open");
-        assert_eq!(game.stats.pictures, 1);
+        // One full-screen title graphic, then CE43's single pass: it paints all three
+        // dim (`_b`) rows and overdraws the selected row with its dark (`_a`) variant,
+        // so four on-screen pictures come from five draw calls.
+        assert_eq!(
+            game.stats.pictures,
+            5,
+            "screen: {:?}",
+            game.screen
+                .iter()
+                .map(|picture| (picture.number, picture.file.as_str()))
+                .collect::<Vec<_>>()
+        );
         assert!(last.idle, "a parked title does no work");
         let pictures: Vec<_> = game.screen.iter().collect();
-        assert_eq!(pictures.len(), 1);
+        assert_eq!(
+            pictures.len(),
+            4,
+            "pictures: {:?}",
+            pictures
+                .iter()
+                .map(|picture| (picture.number, picture.file.as_str()))
+                .collect::<Vec<_>>()
+        );
         assert_eq!(
             pictures[0].number, -2,
             "the title layer is the whole screen"
         );
         assert!(pictures[0].is_screen_layer());
-        assert!(pictures[0].file.contains("TitleGraphic"));
+        assert_eq!(pictures[0].file, "SystemFile/TitleGraphic2.png");
+        let menu_files: Vec<&str> = pictures[1..]
+            .iter()
+            .map(|picture| picture.file.as_str())
+            .collect();
+        assert_eq!(
+            menu_files,
+            [
+                "Picture/menu1_a.png",
+                "Picture/menu2_b.png",
+                "Picture/menu3_b.png"
+            ],
+            "CE43 paints the selected first row and the two dim rows"
+        );
         assert_eq!(
             game.stats.warnings, 0,
             "diagnostics: {:?}",
             game.diagnostics
+        );
+    }
+
+    #[test]
+    fn the_title_menu_repaints_the_highlight_when_the_cursor_moves() {
+        let Some(root) = have_data() else { return };
+        let mut game = Game::new(&root).expect("game");
+        game.start_title().expect("title event");
+        for _ in 0..200 {
+            game.frame();
+        }
+        let menu_files = |game: &Game| -> Vec<String> {
+            game.screen
+                .iter()
+                .map(|picture| picture.file.clone())
+                .collect()
+        };
+        assert!(
+            menu_files(&game)
+                .iter()
+                .any(|file| file == "Picture/menu1_a.png"),
+            "the first row starts highlighted"
+        );
+
+        // Event 43 has already ended; moving the cursor must restart it so the dark
+        // `_a` overlay follows the selection instead of staying on the first row.
+        game.set_choice_cursor(1);
+        // CE43 opens with a one-frame wait, so the replay paints on the next frame.
+        game.frame();
+        game.frame();
+        let files = menu_files(&game);
+        assert!(
+            files.iter().any(|file| file == "Picture/menu2_a.png"),
+            "the second row becomes the highlight: {files:?}"
+        );
+        assert!(
+            files.iter().any(|file| file == "Picture/menu1_b.png"),
+            "the first row returns to its dim variant: {files:?}"
+        );
+        assert!(
+            !files.iter().any(|file| file == "Picture/menu1_a.png"),
+            "the old highlight is replaced: {files:?}"
         );
     }
 
@@ -4240,39 +5225,55 @@ mod tests {
             game.frame();
         }
         // Three splashes and then the real title art, which is a picture and not a common
-        // event: the boot map event draws it before it calls event 42.
+        // event: the boot map event draws it before it calls event 42. This title's art is
+        // TitleGraphic2.png; the sibling game's title01/Button01 assets do not exist here.
         let art = game
             .screen
             .iter()
-            .find(|picture| picture.file.contains("title01"))
+            .find(|picture| picture.file == "SystemFile/TitleGraphic2.png")
             .expect("the title art should be on screen");
-        assert_eq!(art.number, 12000);
+        assert_eq!(art.number, -2);
         assert_eq!((art.x, art.y), (0, 0));
-        let banner = game
-            .screen
-            .iter()
-            .find(|picture| picture.file.contains("Button01"))
-            .expect("the hint banner should be on screen");
-        assert_eq!(banner.anchor, ANCHOR_CENTRE, "head word 4096 centres it");
-        assert_eq!((banner.x, banner.y), (512, 520));
+        // CE43 paints the real three image-button rows over the art.
+        for file in [
+            "Picture/menu1_a.png",
+            "Picture/menu2_b.png",
+            "Picture/menu3_b.png",
+        ] {
+            assert!(
+                game.screen.iter().any(|picture| picture.file == file),
+                "CE43 should paint {file}: {:?}",
+                game.screen
+                    .iter()
+                    .map(|picture| picture.file.clone())
+                    .collect::<Vec<_>>()
+            );
+        }
+        let title_choices = game
+            .choices
+            .as_ref()
+            .expect("boot should reach the three-option title menu");
+        assert_eq!(title_choices.options, ["menu1", "menu2", "menu3"]);
 
-        // One confirm press plays the door sound, erases the banner and enters the menu.
+        // Confirming the first row answers that menu; CE43 must stop and its image
+        // buttons must leave the screen as the new-game path starts.
         game.key_bits = key::OK;
         game.frame();
         game.key_bits = 0;
-        for _ in 0..240 {
+        for _ in 0..60 {
             game.frame();
         }
-        let choices = game
-            .choices
-            .as_ref()
-            .expect("confirm should land on the title menu");
-        assert_eq!(choices.options, ["1", "2", "3"]);
         assert!(
             game.screen
                 .iter()
-                .all(|picture| !picture.file.contains("Button01")),
-            "the hint banner is erased on the way into the menu"
+                .all(|picture| !picture.file.contains("menu1_")),
+            "the closed title menu must stop CE43's image buttons"
+        );
+        assert!(
+            game.choices
+                .as_ref()
+                .is_none_or(|choices| choices.options != ["menu1", "menu2", "menu3"]),
+            "confirm should answer the title menu"
         );
     }
 
@@ -4425,6 +5426,8 @@ mod tests {
 
     /// The borrow shim [`Game::frame`] builds, so a test can drive one `250` op.
     fn host<'a>(game: &'a mut Game) -> GameHost<'a> {
+        let default_font_px = game.font_px();
+        let base_font_px = game.text_base_font_px;
         GameHost {
             screen: &mut game.screen,
             screen_tint: &mut game.screen_tint,
@@ -4449,14 +5452,25 @@ mod tests {
             auto_choice: game.auto_choice,
             auto_choice_delay: game.auto_choice_delay,
             cursor: game.choice_cursor,
+            default_font_px,
+            base_font_px,
             mouse: game.mouse,
             mouse_buttons: game.mouse_buttons,
             previous_mouse_buttons: game.previous_mouse_buttons,
             pending_mouse: &mut game.pending_mouse,
             mouse_consumed: &mut game.mouse_consumed,
+            frame_mouse_blocked: game.frame_mouse_blocked,
             root: &game.root,
+            current_map: &game.current_map,
             save_requests: &mut game.save_requests,
             map_requests: &mut game.map_requests,
+            frame_wheel_delta: game.frame_wheel_delta,
+            mouse_delta: [
+                game.mouse[0] - game.previous_mouse[0],
+                game.mouse[1] - game.previous_mouse[1],
+            ],
+            reserved_events: &mut game.reserved_events,
+            pending_return_to_title: &mut game.pending_return_to_title,
             quit: &mut game.quit_requested,
         }
     }
@@ -4703,6 +5717,33 @@ mod tests {
         );
     }
 
+    #[test]
+    fn a_negative_row_and_column_return_type_metadata() {
+        // CE270 pc34 reads `250 [21, -3, -3, 0x11200, self90]` with the type label
+        // メッセージウィンドウ種類. The original handler treats (-3, -3) as type
+        // metadata; bit 16 asks for the resolved type number (Data type 26), not the
+        // row name at a negative row. Returning a row name left self90 at zero and
+        // made the balloon text query Data (0, 0, 8), painting a leading "0".
+        let Some(root) = have_data() else { return };
+        let mut game = Game::new(&root).expect("game");
+        let read = wolf_vm::DbDirection::Read;
+        let number = DbOp {
+            container: wolf_vm::DbContainer::Data,
+            type_label: Some("メッセージウィンドウ種類".to_owned()),
+            ..op(read, 21, -3, -3, 0x11200, None, Some(1_600_090))
+        };
+        assert_eq!(cell(&mut game, &number), Some(DbValue::Num(26)));
+
+        let name = DbOp {
+            container: wolf_vm::DbContainer::Data,
+            ..op(read, 26, -3, -3, 0x1200, None, Some(1_600_007))
+        };
+        assert_eq!(
+            cell(&mut game, &name),
+            Some(DbValue::Str("メッセージウィンドウ種類".to_owned()))
+        );
+    }
+
     /// One `250` access, through the same host the interpreter uses.
     fn cell(game: &mut Game, op: &DbOp) -> Option<DbValue> {
         Host::database(&mut host(game), op)
@@ -4825,8 +5866,8 @@ mod tests {
                 &mut game,
                 &op(read, 0, 100, 0, 0x51000, None, Some(1_600_005))
             ),
-            Some(DbValue::Num(0)),
-            "and numeric into a number"
+            Some(DbValue::Str(String::new())),
+            "a 1_600_005 string slot is empty, not a numeric zero"
         );
         assert_eq!(game.stats.database_slots, 2);
         // Once a script writes the slot it reads back, so a battle can keep its own rows.
@@ -4881,8 +5922,8 @@ mod tests {
                 &mut game,
                 &op(read, 10, 0, column, 0x51000, None, Some(1_600_005))
             ),
-            Some(DbValue::Num(0)),
-            "a numeric read past the field count is zero"
+            Some(DbValue::Str(String::new())),
+            "a 1_600_005 string slot past the field count is empty"
         );
         assert_eq!(
             cell(
@@ -4901,6 +5942,315 @@ mod tests {
             )
             .is_some(),
             "an in-range string column still reads"
+        );
+    }
+
+    fn sound(channel: SoundChannel, action: SoundAction, file: &str, volume: i32) -> SoundCmd {
+        SoundCmd {
+            channel,
+            action,
+            file: file.to_owned(),
+            volume,
+            ..SoundCmd::default()
+        }
+    }
+
+    #[test]
+    fn pending_sounds_are_drained_into_the_frame_packet() {
+        let Some(root) = have_data() else { return };
+        let mut game = Game::new(&root).expect("game");
+        game.auto_events.set_enabled(false);
+        game.pending_sounds.push(sound(
+            SoundChannel::Bgm,
+            SoundAction::Play,
+            "BGM/test.ogg",
+            80,
+        ));
+        game.pending_sounds
+            .push(sound(SoundChannel::Bgs, SoundAction::Stop, "", 0));
+        let before = game.stats.sounds;
+        game.frame();
+        assert_eq!(game.sounds.len(), 2);
+        assert_eq!(game.stats.sounds - before, 2);
+        assert_eq!(game.sounds[0].channel, SoundChannel::Bgm);
+        assert_eq!(game.sounds[0].action, SoundAction::Play);
+    }
+
+    #[test]
+    fn a_queued_load_flushes_bgm_into_the_same_frame() {
+        let Some(root) = have_data() else { return };
+        let path = root.join("Save").join("SaveData01.sav");
+        if !path.is_file() {
+            return;
+        }
+        let mut game = Game::new(&root).expect("game");
+        game.auto_events.set_enabled(false);
+        game.save_requests
+            .push(crate::savegame::SaveRequest::Load(path));
+        let before = game.stats.sounds;
+        game.frame();
+        assert_eq!(game.stats.sounds - before, 1);
+        assert_eq!(game.sounds.len(), 1);
+        assert_eq!(game.sounds[0].channel, SoundChannel::Bgm);
+        assert_eq!(game.sounds[0].action, SoundAction::Play);
+        assert_eq!(
+            game.current_bgm,
+            Some(("BGM/none.mp3".to_owned(), 70)),
+            "the loaded save's track is visible immediately"
+        );
+    }
+
+    #[test]
+    fn a_queued_silent_load_flushes_a_bgm_stop() {
+        let Some(root) = have_data() else { return };
+        let source = root.join("Save").join("SaveData01.sav");
+        if !source.is_file() {
+            return;
+        }
+        let mut save = crate::savegame::read_save(&source).expect("save");
+        save.part2.bgm = None;
+        let mut game = Game::new(&root).expect("game");
+        game.auto_events.set_enabled(false);
+        crate::savegame::apply(&mut game, &save);
+        assert_eq!(game.pending_sounds.len(), 1);
+        assert_eq!(game.pending_sounds[0].action, SoundAction::Stop);
+        game.flush_pending_sounds();
+        assert_eq!(game.sounds.len(), 1);
+        assert_eq!(game.sounds[0].channel, SoundChannel::Bgm);
+        assert_eq!(game.sounds[0].action, SoundAction::Stop);
+    }
+
+    #[test]
+    fn wheel_and_mouse_deltas_reach_opcode_124_fields_10_to_12() {
+        let Some(root) = have_data() else { return };
+        let mut game = Game::new(&root).expect("game");
+        game.auto_events.set_enabled(false);
+        game.wheel = 3;
+        game.mouse = [13, 25];
+        game.previous_mouse = [10, 20];
+        {
+            let mut host = host(&mut game);
+            assert_eq!(host.engine_state(11), Some(3));
+            assert_eq!(host.engine_state(12), Some(5));
+        }
+        game.frame();
+        assert_eq!(game.frame_wheel_delta, 3);
+        let mut host = host(&mut game);
+        assert_eq!(host.engine_state(10), Some(3));
+        assert_eq!(host.engine_state(20), Some(13), "absolute X stays put");
+        assert_eq!(host.engine_state(21), Some(25), "absolute Y stays put");
+    }
+
+    #[test]
+    fn ce223_owns_the_wheel_without_injected_direction_keys() {
+        let Some(root) = have_data() else { return };
+        let mut game = Game::new(&root).expect("game");
+        assert!(game.vm.start_event(223).is_some(), "CE223 must exist");
+        game.wheel = 2;
+        game.key_bits = 0;
+        let injected = game.apply_wheel();
+        assert_eq!(injected, 0);
+        assert_eq!(game.key_bits, 0, "no UP/DOWN may be injected for CE223");
+        assert_eq!(game.frame_wheel_delta, 2, "the query still sees the notch");
+    }
+
+    #[test]
+    fn a_reserved_event_starts_with_its_arguments_when_the_foreground_is_idle() {
+        let Some(root) = have_data() else { return };
+        let mut game = Game::new(&root).expect("game");
+        game.auto_events.set_enabled(false);
+        host(&mut game).reserve_with_args(269, &[11, 22], &["greeting".to_owned()]);
+        host(&mut game).reserve_with_args(269, &[33], &[]);
+        assert_eq!(game.reserved_events.len(), 2);
+        game.frame();
+        assert_eq!(
+            game.reserved_events.len(),
+            1,
+            "one reservation per frame, so it cannot loop"
+        );
+        let instance = game
+            .vm
+            .instances()
+            .iter()
+            .find(|instance| instance.event == 269)
+            .expect("reserved event started");
+        assert_eq!(instance.self_vars.get(wolf_vm::magic::SELF_ARG_BASE), 11);
+        assert_eq!(
+            instance.self_vars.get(wolf_vm::magic::SELF_ARG_BASE + 1),
+            22
+        );
+        assert_eq!(
+            instance
+                .self_vars
+                .get_str(wolf_vm::exec::SELF_ARG_STRING_BASE),
+            "greeting"
+        );
+        let bank = game
+            .vm
+            .vars
+            .common_self
+            .get(&269)
+            .expect("common-self bank");
+        assert_eq!(bank.get(0), 11);
+        assert_eq!(bank.get(1), 22);
+        assert_eq!(bank.get_str(0), "greeting");
+    }
+
+    #[test]
+    fn a_reserved_event_waits_for_a_busy_foreground_instance() {
+        let Some(root) = have_data() else { return };
+        let mut game = Game::new(&root).expect("game");
+        game.auto_events.set_enabled(false);
+        let id = game.vm.start_event(269).expect("event");
+        game.vm.instance_mut(id).expect("instance").wait = WaitState::Frames(100);
+        host(&mut game).reserve_with_args(270, &[1], &[]);
+        game.frame();
+        assert_eq!(game.reserved_events.len(), 1);
+        assert!(
+            game.vm
+                .instances()
+                .iter()
+                .all(|instance| instance.event != 270),
+            "a busy foreground stack must hold the reservation"
+        );
+    }
+
+    #[test]
+    fn return_to_title_resets_the_game_after_the_vm_step() {
+        let Some(root) = have_data() else { return };
+        let mut game = Game::new(&root).expect("game");
+        game.auto_events.set_enabled(false);
+        host(&mut game).return_to_title();
+        assert!(game.pending_return_to_title);
+        game.frame();
+        assert!(!game.pending_return_to_title);
+        assert!(game.boot_map_active, "boot() reinstalls the title map");
+        assert!(
+            game.vm
+                .instances()
+                .iter()
+                .any(|instance| instance.event == BOOT_EVENT),
+            "the boot event is running again"
+        );
+    }
+
+    #[test]
+    fn character_state_reads_real_map_event_coordinates() {
+        let Some(root) = have_data() else { return };
+        let mut game = Game::new(&root).expect("game");
+        let bytes = game
+            .read("MapData/SampleMapA.mps")
+            .expect("SampleMapA ships with the game");
+        let map = Map::parse(&bytes).expect("map parses");
+        let event = map
+            .events
+            .iter()
+            .find(|event| event.id == 1)
+            .expect("SampleMapA event 1");
+        let (tile_x, tile_y) = (event.x as i32, event.y as i32);
+        game.current_map = Some(map);
+        let mut host = host(&mut game);
+        assert_eq!(host.character_state(1, 2), Some(tile_x));
+        assert_eq!(host.character_state(1, 3), Some(tile_y));
+        assert_eq!(
+            host.character_state(1, 6),
+            Some(tile_x * crate::tilemap::TILE_PX as i32)
+        );
+        assert_eq!(
+            host.character_state(1, 7),
+            Some(tile_y * crate::tilemap::TILE_PX as i32)
+        );
+        assert_eq!(host.character_state(1, 99), None, "unknown field");
+        assert_eq!(host.character_state(9_999, 2), None, "unknown event");
+        assert_eq!(host.character_state(-1, 2), None, "no player model");
+    }
+
+    #[test]
+    fn missing_database_cells_answer_empty_strings_for_string_destinations() {
+        let Some(root) = have_data() else { return };
+        let mut game = Game::new(&root).expect("game");
+        let read = wolf_vm::DbDirection::Read;
+        // Event self string slot 5 (magic 1_600_005) and a common-self string
+        // slot (15_026_905 = event 269 slot 5) both want Str(""), not Num(0).
+        assert_eq!(
+            cell(
+                &mut game,
+                &op(read, 0, 100, 0, 0x51000, None, Some(1_600_005))
+            ),
+            Some(DbValue::Str(String::new()))
+        );
+        assert_eq!(
+            cell(
+                &mut game,
+                &op(read, 0, 100, 0, 0x51000, None, Some(15_026_905))
+            ),
+            Some(DbValue::Str(String::new()))
+        );
+        assert_eq!(
+            cell(
+                &mut game,
+                &op(read, 0, 100, 0, 0x51000, None, Some(1_600_000))
+            ),
+            Some(DbValue::Num(0)),
+            "numeric slots still read zero"
+        );
+    }
+
+    #[test]
+    fn picture_vars_read_cself_from_the_owner_event_but_keep_global_strings() {
+        use crate::textpic::Vars as _;
+        use wolf_format::messagetext::VarBank;
+
+        let mut vars = wolf_vm::Variables::new();
+        vars.set_str(5, "global");
+        let bank = vars.common_self.entry(269).or_default();
+        bank.set(0, 42);
+        bank.set_str(0, "sister");
+        let picture = PictureVars {
+            vars: &vars,
+            owner_event: Some(269),
+        };
+        assert_eq!(picture.text_in(VarBank::CommonSelf, 5), "sister");
+        assert_eq!(picture.text_in(VarBank::SelfVar, 5), "sister");
+        assert_eq!(picture.text_in(VarBank::CommonSelf, 0), "42");
+        assert_eq!(picture.text_in(VarBank::SelfVar, 0), "42");
+        assert_eq!(
+            picture.text_in(VarBank::Str, 5),
+            "global",
+            "\\s[n] keeps reading the global string bank"
+        );
+    }
+
+    #[test]
+    fn a_text_picture_gets_its_measured_size_and_picture_state_reports_it() {
+        let Some(root) = have_data() else { return };
+        let mut game = Game::new(&root).expect("game");
+        let cmd = wolf_vm::PictureCmd {
+            number: 27000,
+            kind: 2,
+            action: wolf_vm::PictureAction::Draw,
+            file: String::new(),
+            text: "\\f[24]21:40".to_owned(),
+            args: vec![10, 20, 100, 100, 255, 0, 0],
+            anchor: 0,
+            scale_mode: 0,
+            animate: Vec::new(),
+            keep_shift: false,
+            relative: false,
+            owner_event: Some(270),
+        };
+        let (width, height) = {
+            let mut host = host(&mut game);
+            host.picture(&cmd);
+            let width = host.picture_state(27000, 2).expect("width");
+            let height = host.picture_state(27000, 3).expect("height");
+            assert!(width > 1 && height > 1, "{width}x{height}");
+            assert_eq!(host.picture_state(27000, 10), Some(1));
+            (width, height)
+        };
+        assert_eq!(
+            game.screen.get(27000).expect("picture").text_size,
+            Some((width, height))
         );
     }
 }

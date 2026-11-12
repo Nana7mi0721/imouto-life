@@ -119,6 +119,8 @@ pub const ANCHOR_TOP_CENTRE: u8 = 5;
 pub const ANCHOR_BOTTOM_CENTRE: u8 = 6;
 /// Scale field value that means "no scaling" (percent).
 pub const SCALE_ONE: i32 = 100;
+/// Divisor for UI blocks whose coordinates are tenths of a logical pixel.
+pub const TENTHS_UI: i32 = 10;
 
 /// Which argument slot of the long erase form carries the other end of the range.
 ///
@@ -169,6 +171,13 @@ pub mod field {
     pub const BLEND: usize = 8;
     /// First field that is kind-specific.
     pub const EXTRAS: usize = 9;
+    /// Format/flag word between the kind-specific fields and the animation tail.
+    ///
+    /// Bit `0x02000000` marks the long form that actually carries the tone triplet.
+    /// CE63 and CE64 use `0x01000000` for window/move commands and leave raw 15..17
+    /// zero as editor padding; treating those zeros as a tone turns the sister's
+    /// face graphic into a pure black silhouette.
+    pub const FORMAT_FLAG: usize = 10;
     /// Red channel of the base tone, percent (100 = neutral).
     ///
     /// docs/OPCODE_290.md section 3.1 numbers these slots 15..17 in the raw
@@ -180,6 +189,9 @@ pub mod field {
     /// Blue channel of the base tone, percent.
     pub const TONE_B: usize = 15;
 }
+
+/// `FORMAT_FLAG` bit meaning that [`field::TONE_R`] ..= [`field::TONE_B`] are present.
+pub const TONE_PRESENT: i32 = 0x0200_0000;
 
 /// The five picture kinds, decoded from `(arg0 >> 4) & 7` by the interpreter.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -709,12 +721,20 @@ impl Transition {
 pub struct Picture {
     /// Slot number; negative values are whole-screen layers.
     pub number: i32,
+    /// Owner event ID if triggered from an event.
+    pub owner_event: Option<u32>,
     /// What the picture draws.
     pub kind: PictureKind,
     /// Asset path, already escape-expanded. Empty for text kinds.
     pub file: String,
     /// Text content, already escape-expanded. Empty for image kinds.
     pub text: String,
+    /// Actual laid-out text block size, in pixels, once the host has measured it.
+    ///
+    /// A text picture's `window` can be the `(1, 1)` sentinel asking the engine to size
+    /// the box from its content. The host writes the measured size here after applying
+    /// the picture command; `None` means the measurement has not been supplied yet.
+    pub text_size: Option<(i32, i32)>,
     /// Left edge, logical pixels.
     pub x: i32,
     /// Top edge, logical pixels.
@@ -794,6 +814,11 @@ pub struct Picture {
     /// picture all have to agree on where it is. The destination travels in `to` and only
     /// reaches the fields when the slide lands.
     pub transition: Option<Transition>,
+    /// True while an `Erase` fade owns this slot's transition.
+    ///
+    /// `Screen::advance` removes the slot when the fade transition has finished. A
+    /// replacement draw starts from a fresh picture, and a move cancels this flag.
+    pub erase_after_slide: bool,
     /// Raw save `md1` text stream and the text it decoded to, when this picture came
     /// from a save record. The loader keeps the original bytes so an unchanged picture
     /// is written back byte-for-byte - the canonical encoder cannot reproduce every
@@ -821,9 +846,11 @@ impl Picture {
     pub fn new(number: i32) -> Self {
         Self {
             number,
+            owner_event: None,
             kind: PictureKind::File,
             file: String::new(),
             text: String::new(),
+            text_size: None,
             x: 0,
             y: 0,
             split: (1, 1),
@@ -847,6 +874,7 @@ impl Picture {
             pattern: None,
             hidden: false,
             transition: None,
+            erase_after_slide: false,
             retained_text: None,
             retained_record: None,
         }
@@ -1084,6 +1112,12 @@ impl Screen {
         self.pictures.get(&number)
     }
 
+    /// Looks up one picture by slot number for a host-supplied update.
+    #[must_use]
+    pub fn get_mut(&mut self, number: i32) -> Option<&mut Picture> {
+        self.pictures.get_mut(&number)
+    }
+
     /// Iterates live pictures in draw order (ascending number).
     pub fn iter(&self) -> impl Iterator<Item = &Picture> {
         self.pictures.values()
@@ -1098,18 +1132,9 @@ impl Screen {
     /// base back to pixels. A block is recognised by a window box more than twice the
     /// logical screen; built-in system graphics are exempt because the full-screen
     /// gradient belongs to the same block but is a real 1024x576 drawing.
-    #[must_use]
-    pub(crate) fn ui_scale_for(&self, number: i32) -> f32 {
-        let Some(picture) = self.pictures.get(&number) else {
-            return 1.0;
-        };
-        if !(picture.kind.is_text() || picture.kind.is_window())
-            || crate::sysgraphic::parse(&picture.file).is_some()
-        {
-            return 1.0;
-        }
+    fn tenths_block(&self, number: i32) -> bool {
         let block = number.div_euclid(1000);
-        let oversized = self.pictures.values().any(|other| {
+        self.pictures.values().any(|other| {
             // A widget the engine parks far off screen keeps an oversized window box
             // (the message window parks at y = 3840 between lines), but it is not a
             // tenths UI block: dividing its parked position by ten drags it back on
@@ -1124,9 +1149,21 @@ impl Screen {
                     .window
                     .map(|(w, h)| w > SCREEN_W as i32 * 2 || h > SCREEN_H as i32 * 2)
                     .unwrap_or(false)
-        });
-        if oversized {
-            10.0
+        })
+    }
+
+    #[must_use]
+    pub(crate) fn ui_scale_for(&self, number: i32) -> f32 {
+        let Some(picture) = self.pictures.get(&number) else {
+            return 1.0;
+        };
+        if !(picture.kind.is_text() || picture.kind.is_window())
+            || crate::sysgraphic::parse(&picture.file).is_some()
+        {
+            return 1.0;
+        }
+        if self.tenths_block(number) {
+            TENTHS_UI as f32
         } else {
             1.0
         }
@@ -1178,6 +1215,8 @@ impl Screen {
         for picture in self.pictures.values_mut() {
             picture.advance();
         }
+        self.pictures
+            .retain(|_, picture| !(picture.erase_after_slide && picture.transition.is_none()));
     }
 
     /// Applies one `150` picture command.
@@ -1192,6 +1231,7 @@ impl Screen {
     pub fn apply(&mut self, cmd: &PictureCmd) {
         match cmd.action {
             PictureAction::Erase => {
+                let fade = cmd.args.first().copied().unwrap_or(0);
                 // The long erase form clears a RANGE of slots. Common event 221 parks the
                 // whole loading screen with `150 [16777218, 50000, 5, 5, 0, 50003]`: one
                 // command removes the black backdrop (50000), the eyecatch (50001), the
@@ -1201,13 +1241,21 @@ impl Screen {
                 //
                 // The two endpoints are not ordered - Map003.mps:ev1 pc24 passes -1 then
                 // -2 - so the range is between them, not below and above the first.
-                match cmd.args.get(ERASE_SPAN) {
-                    Some(other) => {
-                        let (lo, hi) = (cmd.number.min(*other), cmd.number.max(*other));
+                let span = cmd.args.get(ERASE_SPAN).copied().unwrap_or(cmd.number);
+                let (lo, hi) = (cmd.number.min(span), cmd.number.max(span));
+                if fade > 0 {
+                    for picture in self
+                        .pictures
+                        .range_mut(lo..=hi)
+                        .map(|(_number, picture)| picture)
+                    {
+                        start_erase_fade(picture, fade);
+                    }
+                } else {
+                    if cmd.args.get(ERASE_SPAN).is_some() {
                         self.pictures
                             .retain(|number, _| *number < lo || *number > hi);
-                    }
-                    None => {
+                    } else {
                         self.pictures.remove(&cmd.number);
                     }
                 }
@@ -1245,6 +1293,7 @@ impl Screen {
                     (0, 0)
                 };
                 let mut picture = Picture::new(cmd.number);
+                picture.owner_event = cmd.owner_event;
                 picture.kind = PictureKind::from_code(cmd.kind);
                 picture.file = cmd.file.clone();
                 picture.text = cmd.text.clone();
@@ -1260,15 +1309,21 @@ impl Screen {
                 let picture = self.pictures.entry(cmd.number).or_insert_with(|| {
                     let mut fresh = Picture::new(cmd.number);
                     fresh.kind = PictureKind::from_code(cmd.kind);
+                    fresh.owner_event = cmd.owner_event;
                     fresh
                 });
+                if picture.owner_event.is_none() {
+                    picture.owner_event = cmd.owner_event;
+                }
                 // A Move that carries a file name is how the script swaps the image in place.
                 if !cmd.file.is_empty() {
                     picture.file.clone_from(&cmd.file);
                 }
                 if !cmd.text.is_empty() {
                     picture.text.clone_from(&cmd.text);
+                    picture.text_size = None;
                 }
+                picture.erase_after_slide = false;
                 // An anchor of 0 on a Move means UNCHANGED, not top-left. Common event 63
                 // proves it: it draws its message window centred at (512, 672) - parked
                 // below the screen - then slides it to (512, 480) and back, and the retail
@@ -1471,7 +1526,18 @@ impl Screen {
                 let Some((src, (w, h))) = picture_frame(picture, &mut tex_size) else {
                     continue;
                 };
-                let mut dst = picture.destination(w as f32, h as f32);
+                // Built-in system graphics are exempt from the tenths UI scale because
+                // the full-screen gradient is a real 1024x576 drawing. Their origin,
+                // however, can still be in tenths: CE94's TRI-RIGHT arrow carries
+                // x=9984/y=3120. Scale only those two fields, leaving the shape size
+                // (25x24) untouched.
+                let builtin_tenths = crate::sysgraphic::parse(&picture.file).is_some()
+                    && self.tenths_block(picture.number);
+                let mut dst = if builtin_tenths {
+                    picture.destination_with_tenths_origin(w as f32, h as f32)
+                } else {
+                    picture.destination(w as f32, h as f32)
+                };
                 let ui = self.ui_scale_for(picture.number);
                 if ui > 1.0 {
                     dst = [dst[0], dst[1] / ui, dst[2] / ui, dst[3] / ui];
@@ -1508,6 +1574,8 @@ impl Screen {
         let is_panel = picture.kind.is_window()
             && picture.window.is_some()
             && crate::sysgraphic::parse(&picture.file).is_none();
+        let builtin_tenths =
+            crate::sysgraphic::parse(&picture.file).is_some() && self.tenths_block(number);
         let mut dst = if is_panel {
             let (w, h) = picture.window.unwrap_or((0, 0));
             if w <= crate::window::MIN_BOX || h <= crate::window::MIN_BOX {
@@ -1517,17 +1585,27 @@ impl Screen {
             }
             picture.destination(w as f32, h as f32)
         } else if picture.kind.is_text() {
-            let (w, h) = picture.window.unwrap_or((0, 0));
+            let (w, h) = picture.text_size.or(picture.window).unwrap_or((0, 0));
             picture.destination(w.max(0) as f32, h.max(0) as f32)
         } else {
             // Prefer the real draw size (texture or built-in shape). A picture with no
             // resolvable graphic still owns the window box the script declared, and
             // opcode 124 may test exactly that synthetic control before its art loads.
             match picture_frame(picture, &mut tex_size) {
-                Some((_src, (w, h))) => picture.destination(w as f32, h as f32),
+                Some((_src, (w, h))) => {
+                    if builtin_tenths {
+                        picture.destination_with_tenths_origin(w as f32, h as f32)
+                    } else {
+                        picture.destination(w as f32, h as f32)
+                    }
+                }
                 None => {
                     let (w, h) = picture.window.unwrap_or((0, 0));
-                    picture.destination(w.max(0) as f32, h.max(0) as f32)
+                    if builtin_tenths {
+                        picture.destination_with_tenths_origin(w.max(0) as f32, h.max(0) as f32)
+                    } else {
+                        picture.destination(w.max(0) as f32, h.max(0) as f32)
+                    }
                 }
             }
         };
@@ -1564,16 +1642,39 @@ impl Picture {
     /// and a shaken sprite cannot drift apart.
     #[must_use]
     pub fn destination(&self, w: f32, h: f32) -> [f32; 4] {
-        let scale_x = self.scale.max(0) as f32 / SCALE_ONE as f32;
-        let scale_y = self.scale_y.max(0) as f32 / SCALE_ONE as f32;
+        self.destination_with_origin(self.x, self.y, w, h)
+    }
+
+    /// As [`Self::destination`], with x/y divided by ten but the size untouched.
+    ///
+    /// Built-in system graphics in a tenths UI block keep their real pixel size
+    /// (the 25x24 TRI-RIGHT arrow, the 1024x576 full-screen gradient) while their
+    /// origin still comes from the tenths grid.
+    #[must_use]
+    pub fn destination_with_tenths_origin(&self, w: f32, h: f32) -> [f32; 4] {
+        self.destination_with_origin(
+            self.x.div_euclid(TENTHS_UI),
+            self.y.div_euclid(TENTHS_UI),
+            w,
+            h,
+        )
+    }
+
+    fn destination_with_origin(&self, x: i32, y: i32, w: f32, h: f32) -> [f32; 4] {
+        // A negative scale is meaningful in the shipped HUD: CE237 draws the
+        // BAD bars with scale=-100 at x=490 so their 215-pixel backing and frame
+        // grow left towards the BAD label at x=280. Clamping to zero erased that
+        // geometry, and taking only the magnitude moved both pieces to the right,
+        // on top of GOOD. The vertical sign is left alone: no shipped UI uses a
+        // vertically mirrored picture, while the horizontal direction is pinned
+        // by CE237's two gauges.
+        let scale_x = self.scale.unsigned_abs() as f32 / SCALE_ONE as f32;
+        let scale_y = self.scale_y.unsigned_abs() as f32 / SCALE_ONE as f32;
         let (fx, fy) = self.effect_scale();
-        let placed = place(
-            self.anchor,
-            self.x,
-            self.y,
-            w * scale_x * fx,
-            h * scale_y * fy,
-        );
+        let mut placed = place(self.anchor, x, y, w * scale_x * fx, h * scale_y * fy);
+        if self.scale < 0 {
+            placed[0] = 2.0 * x as f32 - placed[0] - placed[2];
+        }
         self.transform(placed)
     }
 
@@ -1724,7 +1825,10 @@ fn place(anchor: u8, x: i32, y: i32, w: f32, h: f32) -> [f32; 4] {
 /// explains why the `-a-b` suffix of a `<GRAD*-a-b>` name is not a size. Both the
 /// whole-screen layers and the ordinary pictures resolve through here, so a built-in shape
 /// is placed, scaled and clipped by exactly the same rules as an image.
-fn picture_frame<F>(picture: &Picture, tex_size: &mut F) -> Option<([u32; 4], (u32, u32))>
+pub(crate) fn picture_frame<F>(
+    picture: &Picture,
+    tex_size: &mut F,
+) -> Option<([u32; 4], (u32, u32))>
 where
     F: FnMut(&str) -> Option<(u32, u32)>,
 {
@@ -1780,6 +1884,21 @@ fn effect_range(args: &[i32]) -> Option<(i32, i32)> {
     let lo = args.get(2).copied()?;
     let hi = args.get(3).copied()?;
     Some(if lo <= hi { (lo, hi) } else { (hi, lo) })
+}
+
+/// Starts an `Erase` fade from the picture's current pose to fully transparent.
+fn start_erase_fade(picture: &mut Picture, fade: i32) {
+    let from = Pose::of(picture);
+    // The erase transition owns alpha from here; leaving a draw fade-in active would
+    // multiply the descending opacity by a rising ramp and make early alpha climb.
+    picture.fade = 0;
+    picture.transition = Some(Transition {
+        from,
+        to: Pose { opacity: 0, ..from },
+        duration: fade.clamp(1, MAX_TRANSITION_FRAMES as i32) as u32,
+        age: 0,
+    });
+    picture.erase_after_slide = true;
 }
 
 /// Returns the command field words with x/y made absolute when the head word's
@@ -1868,14 +1987,20 @@ fn merge_args(picture: &mut Picture, args: &[i32], scale_mode: u8) {
     }
     // The 150 long form also carries the base colour in the three slots the opcode
     // notes number 15..17; PictureCmd::args starts at raw arg 2, so they land at
-    // 13..15 here. The short forms simply do not have them, which leaves the
-    // default neutral tone in place.
-    if let (Some(r), Some(g), Some(b)) = (
-        take(args, field::TONE_R),
-        take(args, field::TONE_G),
-        take(args, field::TONE_B),
-    ) {
-        picture.tone = [r.clamp(0, 200), g.clamp(0, 200), b.clamp(0, 200)];
+    // 13..15 here. The editor only marks those slots as live when raw arg 12 has
+    // 0x02000000. Without the marker they are padding (CE63/CE64 use
+    // 0x01000000), and reading them as tone 0 paints faces pure black.
+    let tone_present = args
+        .get(field::FORMAT_FLAG)
+        .is_some_and(|flag| flag & TONE_PRESENT != 0);
+    if tone_present {
+        if let (Some(r), Some(g), Some(b)) = (
+            take(args, field::TONE_R),
+            take(args, field::TONE_G),
+            take(args, field::TONE_B),
+        ) {
+            picture.tone = [r.clamp(0, 200), g.clamp(0, 200), b.clamp(0, 200)];
+        }
     }
 }
 
@@ -1931,6 +2056,7 @@ mod tests {
             relative: false,
             scale_mode: 0,
             anchor: ANCHOR_TOP_LEFT,
+            owner_event: None,
         }
     }
 
@@ -2310,10 +2436,24 @@ mod tests {
         ));
         assert_eq!(
             screen.len(),
-            1,
-            "only the picture outside the pair survives"
+            5,
+            "the erase starts a fade instead of removing immediately"
         );
+        for number in 50000..=50003 {
+            let picture = screen.get(number).expect("the range slot is fading");
+            assert!(picture.erase_after_slide);
+            assert!(picture.transition.is_some());
+        }
         assert!(screen.get(50004).is_some());
+
+        for _ in 0..5 {
+            screen.advance();
+        }
+        assert_eq!(screen.len(), 1, "the range is gone after its five frames");
+        assert!(screen.get(50004).is_some());
+        for number in 50000..=50003 {
+            assert!(screen.get(number).is_none());
+        }
     }
 
     #[test]
@@ -2350,6 +2490,190 @@ mod tests {
         screen.apply(&cmd(11, 0, PictureAction::Erase, "", "", &[0]));
         assert_eq!(screen.len(), 2);
         assert!(screen.get(10).is_some() && screen.get(12).is_some());
+    }
+
+    #[test]
+    fn erase_fade_takes_fifty_frames_and_lowers_alpha() {
+        let mut screen = Screen::new();
+        screen.apply(&cmd(
+            50000,
+            2,
+            PictureAction::Draw,
+            "",
+            "fading",
+            &[0, 0, 0, 0, 200, 0, 0, 100, 0],
+        ));
+        screen.apply(&cmd(50000, 2, PictureAction::Erase, "", "", &[50]));
+
+        let mut previous = screen
+            .get(50000)
+            .expect("the slot survives the erase")
+            .alpha();
+        assert!(previous > 0.0);
+        assert!(screen.get(50000).expect("fading").erase_after_slide);
+        assert_eq!(
+            screen
+                .get(50000)
+                .expect("fading")
+                .transition
+                .expect("fade transition")
+                .duration,
+            50
+        );
+
+        for _ in 1..50 {
+            screen.advance();
+            let picture = screen.get(50000).expect("still fading");
+            let alpha = picture.alpha();
+            assert!(alpha < previous, "alpha must fall every frame");
+            previous = alpha;
+        }
+        assert!(screen.get(50000).is_some(), "frame 49 is still visible");
+
+        screen.advance();
+        assert!(
+            screen.get(50000).is_none(),
+            "the slot is removed after frame 50"
+        );
+    }
+
+    #[test]
+    fn erase_cancels_an_in_progress_draw_fade_in() {
+        let mut screen = Screen::new();
+        screen.apply(&cmd(
+            50001,
+            2,
+            PictureAction::Draw,
+            "",
+            "fading",
+            &[50, 0, 0, 0, 200, 0, 0, 100, 0],
+        ));
+        // Advance to the next frame, where the draw's fade-in has started but is not done.
+        screen.tick();
+        assert_eq!(screen.get(50001).expect("drawn").fade, 50);
+
+        screen.apply(&cmd(50001, 2, PictureAction::Erase, "", "", &[50]));
+        let picture = screen.get(50001).expect("erase starts a fade");
+        assert_eq!(picture.fade, 0, "the erase cancels the draw fade-in");
+        let mut previous = picture.alpha();
+        assert!(
+            (previous - 200.0 / 255.0).abs() < 0.000_001,
+            "alpha starts at the current opacity, not at the fade-in ramp"
+        );
+
+        for _ in 0..49 {
+            screen.tick();
+            screen.advance();
+            let alpha = screen.get(50001).expect("still fading").alpha();
+            assert!(
+                alpha <= previous,
+                "erase alpha must never climb during the fade"
+            );
+            previous = alpha;
+        }
+        assert!(screen.get(50001).is_some(), "frame 49 is still visible");
+
+        screen.tick();
+        screen.advance();
+        assert!(
+            screen.get(50001).is_none(),
+            "the slot is removed after frame 50"
+        );
+    }
+
+    #[test]
+    fn erase_fade_applies_to_every_live_slot_in_a_range() {
+        let mut screen = Screen::new();
+        for number in 50000..=50004 {
+            screen.apply(&cmd(
+                number,
+                2,
+                PictureAction::Draw,
+                "",
+                "fading",
+                &[0, 0, 0, 0, 200, 0, 0, 100, 0],
+            ));
+        }
+        screen.apply(&cmd(
+            50000,
+            2,
+            PictureAction::Erase,
+            "",
+            "",
+            &[5, 5, 0, 50003],
+        ));
+        for number in 50000..=50003 {
+            let picture = screen.get(number).expect("range slot starts fading");
+            assert!(picture.erase_after_slide);
+            assert_eq!(picture.transition.expect("fade transition").duration, 5);
+        }
+        assert!(
+            !screen
+                .get(50004)
+                .expect("outside the range")
+                .erase_after_slide
+        );
+
+        for _ in 0..4 {
+            screen.advance();
+        }
+        for number in 50000..=50003 {
+            assert!(screen.get(number).is_some(), "frame 4 is still fading");
+        }
+        screen.advance();
+        for number in 50000..=50003 {
+            assert!(screen.get(number).is_none(), "frame 5 removes the slot");
+        }
+        assert!(screen.get(50004).is_some());
+    }
+
+    #[test]
+    fn erase_with_zero_fade_still_removes_immediately() {
+        let mut screen = Screen::new();
+        for number in 10..=12 {
+            screen.apply(&cmd(
+                number,
+                2,
+                PictureAction::Draw,
+                "",
+                "text",
+                &short_draw_args(),
+            ));
+        }
+        screen.apply(&cmd(10, 2, PictureAction::Erase, "", "", &[0]));
+        screen.apply(&cmd(11, 2, PictureAction::Erase, "", "", &[0, 0, 0, 12]));
+        assert!(screen.is_empty());
+    }
+
+    #[test]
+    fn move_cancels_an_erase_fade() {
+        let mut screen = Screen::new();
+        screen.apply(&cmd(
+            20,
+            2,
+            PictureAction::Draw,
+            "",
+            "text",
+            &short_draw_args(),
+        ));
+        screen.apply(&cmd(20, 2, PictureAction::Erase, "", "", &[10]));
+        assert!(screen.get(20).expect("fading").erase_after_slide);
+
+        screen.apply(&cmd(
+            20,
+            2,
+            PictureAction::Move,
+            "",
+            "",
+            &[
+                UNCHANGED, UNCHANGED, UNCHANGED, UNCHANGED, UNCHANGED, 5, 6, UNCHANGED, UNCHANGED,
+            ],
+        ));
+        assert!(!screen.get(20).expect("moved").erase_after_slide);
+        for _ in 0..10 {
+            screen.advance();
+        }
+        assert!(screen.get(20).is_some(), "a move keeps the slot alive");
     }
 
     #[test]
@@ -2443,6 +2767,98 @@ mod tests {
         assert_eq!(quads[0].src, [0, 0, 0, 0]);
         assert_eq!(quads[0].dst, [855.0, 200.0, 300.0, 200.0]);
         assert_eq!(quads[0].text, "hello");
+    }
+
+    #[test]
+    fn measured_text_size_overrides_a_one_by_one_window() {
+        let mut screen = Screen::new();
+        screen.apply(&cmd(
+            27000,
+            2,
+            PictureAction::Draw,
+            "",
+            "measured",
+            &[0, 1, 1, 1, 255, 40, 30, 100, 0],
+        ));
+        assert_eq!(screen.get(27000).expect("text").text_size, None);
+        assert_eq!(
+            screen.picture_rect(27000, |_| None),
+            Some([40.0, 30.0, 1.0, 1.0])
+        );
+
+        screen.get_mut(27000).expect("text").text_size = Some((320, 48));
+        assert_eq!(
+            screen.picture_rect(27000, |_| None),
+            Some([40.0, 30.0, 320.0, 48.0])
+        );
+    }
+
+    #[test]
+    fn draw_and_set_clear_measured_text_size_but_a_textless_move_keeps_it() {
+        let mut screen = Screen::new();
+        screen.apply(&cmd(
+            27001,
+            2,
+            PictureAction::Draw,
+            "",
+            "old",
+            &[0, 1, 1, 1, 255, 0, 0, 100, 0],
+        ));
+        screen.get_mut(27001).expect("text").text_size = Some((100, 20));
+
+        screen.apply(&cmd(
+            27001,
+            2,
+            PictureAction::Move,
+            "",
+            "",
+            &[
+                UNCHANGED, UNCHANGED, UNCHANGED, UNCHANGED, UNCHANGED, 8, 9, UNCHANGED, UNCHANGED,
+            ],
+        ));
+        assert_eq!(
+            screen.get(27001).expect("moved").text_size,
+            Some((100, 20)),
+            "moving does not invalidate a measurement"
+        );
+
+        screen.apply(&cmd(
+            27001,
+            2,
+            PictureAction::Move,
+            "",
+            "new",
+            &[
+                UNCHANGED, UNCHANGED, UNCHANGED, UNCHANGED, UNCHANGED, 8, 9, UNCHANGED, UNCHANGED,
+            ],
+        ));
+        assert_eq!(
+            screen.get(27001).expect("retexted").text_size,
+            None,
+            "changing the text invalidates the old measurement"
+        );
+
+        screen.get_mut(27001).expect("text").text_size = Some((120, 24));
+        screen.apply(&cmd(
+            27001,
+            2,
+            PictureAction::Draw,
+            "",
+            "redrawn",
+            &short_draw_args(),
+        ));
+        assert_eq!(screen.get(27001).expect("redrawn").text_size, None);
+
+        screen.get_mut(27001).expect("text").text_size = Some((120, 24));
+        screen.apply(&cmd(
+            27001,
+            2,
+            PictureAction::Set,
+            "",
+            "set",
+            &short_draw_args(),
+        ));
+        assert_eq!(screen.get(27001).expect("set").text_size, None);
     }
 
     #[test]
@@ -3137,6 +3553,7 @@ mod effect_tests {
             relative: false,
             scale_mode: 0,
             anchor: ANCHOR_TOP_LEFT,
+            owner_event: None,
         });
         let picture = screen.get(90).expect("picture");
         assert_eq!(picture.split, (6, 2));
@@ -3204,5 +3621,81 @@ mod effect_tests {
             zoom.advance();
         }
         assert_eq!(zoom.percent(), 200, "the ramp parks at its target");
+    }
+
+    fn tenths_ui_screen() -> Screen {
+        let mut screen = Screen::new();
+
+        // The save-slot panel is the oversized anchor that marks chapter 12 as a
+        // tenths block. Its x is already pixels; y/w/h stay in tenths.
+        let mut panel = Picture::new(12050);
+        panel.kind = PictureKind::WindowString;
+        panel.file = "SystemFile/WindowBase_amania.png".to_owned();
+        panel.window = Some((9280, 1152));
+        panel.x = 48;
+        panel.y = 864;
+        screen.insert(panel);
+
+        // Built-in graphics in the same block keep their real size. The full-screen
+        // gradient must stay 1024x576.
+        let mut gradient = Picture::new(12000);
+        gradient.kind = PictureKind::WindowFile;
+        gradient.file = "<GRADY-779-111>".to_owned();
+        gradient.window = Some((1024, 576));
+        screen.insert(gradient);
+
+        // CE94's right arrow: the VM leaves its x/y in tenths because a self-variable
+        // range only divides the named slot, while its 25x24 shape is already pixels.
+        let mut arrow = Picture::new(12005);
+        arrow.kind = PictureKind::WindowFile;
+        arrow.file = "<TRI-RIGHT>".to_owned();
+        arrow.window = Some((25, 24));
+        arrow.anchor = ANCHOR_CENTRE;
+        arrow.x = 9984;
+        arrow.y = 3120;
+        screen.insert(arrow);
+
+        screen
+    }
+
+    #[test]
+    fn tenths_builtin_graphics_scale_origin_but_not_size() {
+        let screen = tenths_ui_screen();
+        let quads = screen.quads(|_| None);
+
+        let arrow = quads
+            .iter()
+            .find(|quad| quad.number == 12005)
+            .expect("right arrow quad");
+        assert_eq!(arrow.dst, [985.5, 300.0, 25.0, 24.0]);
+
+        let gradient = quads
+            .iter()
+            .find(|quad| quad.number == 12000)
+            .expect("full-screen gradient quad");
+        assert_eq!(
+            gradient.dst,
+            [0.0, 0.0, 1024.0, 576.0],
+            "the gradient's real 1024x576 size must not be divided by ten"
+        );
+    }
+
+    #[test]
+    fn tenths_builtin_hit_box_matches_its_visible_quad() {
+        let screen = tenths_ui_screen();
+        let visible = screen
+            .quads(|_| None)
+            .into_iter()
+            .find(|quad| quad.number == 12005)
+            .expect("right arrow quad");
+        let hit = screen
+            .picture_rect(12005, |_| None)
+            .expect("right arrow hit box");
+        assert_eq!(hit, visible.dst);
+        assert_eq!(
+            screen.picture_rect(12000, |_| None),
+            Some([0.0, 0.0, 1024.0, 576.0]),
+            "the gradient hit box keeps its real size"
+        );
     }
 }

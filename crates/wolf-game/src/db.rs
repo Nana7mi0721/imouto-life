@@ -307,6 +307,14 @@ impl Databases {
         );
     }
 
+    /// Resets runtime database mutations and reapplies engine defaults.
+    pub fn reset_runtime(&mut self, screen: (u32, u32)) {
+        self.cells.clear();
+        self.texts.clear();
+        self.row_counts.clear();
+        self.apply_engine_defaults(screen);
+    }
+
     /// True when no database file could be read; the engine cells may still exist.
     pub fn is_empty(&self) -> bool {
         self.data.is_none() && self.cdata.is_none() && self.sys.is_none()
@@ -345,6 +353,23 @@ impl Databases {
         match container {
             Container::Sys => self.sys.as_ref()?.name_of(ty, row),
             _ => self.table(container)?.row_name(ty, row),
+        }
+    }
+
+    /// Editor name of `db_type` — the `250` metadata read with row and column `-3`.
+    ///
+    /// The original engine distinguishes the two metadata forms with bit 16 of the
+    /// flags word: when it is clear the command returns the type name, when it is set
+    /// it returns the type number after resolving the editor label. A table without a
+    /// `.project` companion has no type names and answers `None`.
+    pub fn type_name(&self, container: Container, db_type: i32) -> Option<&str> {
+        let ty = usize::try_from(db_type).ok()?;
+        match container {
+            Container::Sys => {
+                let name = self.sys.as_ref()?.types().get(ty)?.name.as_str();
+                (!name.is_empty()).then_some(name)
+            }
+            _ => self.table(container)?.type_name(ty),
         }
     }
 

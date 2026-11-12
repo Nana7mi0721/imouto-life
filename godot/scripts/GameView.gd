@@ -39,9 +39,66 @@ const SYMBOL_FONT_NAMES: Array[String] = [
 const WolfTextScript := preload("res://scripts/WolfText.gd")
 const WolfKeysLib := preload("res://scripts/WolfKeys.gd")
 
+class _BlendBatch extends Node2D:
+	const LOGICAL_SIZE := Vector2(1024.0, 576.0)
+
+	var items: Array = []
+	var overlays: Array = []
+	var atlas: Texture2D
+	var bold_font: Font
+	var regular_font: Font
+	var frozen_texture: Texture2D
+	var energy: Dictionary = {}
+
+	func _draw() -> void:
+		for item in items:
+			if item.has("sprite"):
+				if atlas == null:
+					continue
+				var sprite: Dictionary = item["sprite"]
+				var tint: Color = sprite["tint"]
+				var blend := int(sprite.get("blend", 0))
+				if blend == 3:
+					# WOLF manual: Multiply blend ignores picture opacity (alpha = 1.0).
+					tint.a = float(sprite["tint"].a)
+				else:
+					tint.a *= float(sprite["alpha"])
+				if tint.a <= 0.0:
+					continue
+				draw_texture_rect_region(atlas, sprite["rect"], sprite["src"], tint)
+			elif item.has("text"):
+				WolfTextScript.draw_text(self, item["text"], bold_font, regular_font)
+
+		_draw_energy()
+		for overlay in overlays:
+			var colour: Color = overlay["color"]
+			colour.a *= float(overlay["alpha"])
+			if overlay["kind"] == "colour" and colour.a > 0.0:
+				draw_rect(Rect2(Vector2.ZERO, LOGICAL_SIZE), colour)
+			elif overlay["kind"] == "frozen" and frozen_texture != null and colour.a > 0.0:
+				draw_texture_rect(frozen_texture, Rect2(Vector2.ZERO, LOGICAL_SIZE), false, colour)
+
+	func _draw_energy() -> void:
+		if energy.is_empty():
+			return
+		var maximum := maxi(1, int(energy.get("max", 0)))
+		var current := clampi(int(energy.get("current", 0)), 0, maximum)
+		var origin := Vector2(760.0, 34.0)
+		var box := Rect2(origin, Vector2(100.0, 8.0))
+		draw_rect(box, Color(0.0, 0.0, 0.0, 0.35), true)
+		draw_rect(box, Color.WHITE, false, 1.0)
+		var ratio := float(current) / float(maximum)
+		if ratio > 0.0:
+			draw_rect(
+				Rect2(origin + Vector2(2.0, 2.0), Vector2(96.0 * ratio, 4.0)),
+				Color(0.97, 0.97, 0.97, 0.95),
+				true
+			)
+
 var wolf: WolfGame
 var atlas_texture: ImageTexture
 var atlas_len: int = -1
+var atlas_pixel_size := Vector2i.ZERO
 var packet: Dictionary = {}
 var bold_font: Font
 var regular_font: Font
@@ -54,6 +111,15 @@ var se_players: Array[AudioStreamPlayer] = []
 var audio_cache: Dictionary = {}
 var bgm_tween: Tween
 var bgs_tween: Tween
+var master_bgm_vol: float = 1.0
+var master_se_vol: float = 1.0
+var bgm_track_vol: float = 1.0
+var bgs_track_vol: float = 1.0
+
+var _mat_add: CanvasItemMaterial
+var _mat_sub: CanvasItemMaterial
+var _mat_mul: CanvasItemMaterial
+var _batch_pool: Array[_BlendBatch] = []
 ## WOLF reissues the same BGM/BGS command from several events; restarting the same
 ## track from 0 s every time produced an audible stutter. Remember the file so a
 ## repeated play request only adjusts volume.
@@ -61,8 +127,6 @@ var bgm_file := ""
 var bgs_file := ""
 var se_cursor := 0
 var frozen_texture: ImageTexture
-var last_frame_texture: ImageTexture
-var snapshot_pending := false
 var diagnostics_printed := false
 
 var entry := "boot"
@@ -102,21 +166,44 @@ var focus_gained := false
 var log_input := false
 var log_messages := false
 var log_events := false
+var log_perf := false
 var messages_seen := 0
 var last_choice_cursor := -1
 var last_choice_key := ""
 var last_running: Array = []
 var last_action_event := -1
+var perf_frame_us_total: int = 0
+var perf_wolf_us_total: int = 0
+var perf_wolf_us_max: int = 0
+var perf_sync_us_total: int = 0
+var perf_sync_calls: int = 0
+var perf_sync_uploads: int = 0
+var perf_sync_bytes: int = 0
+var perf_freeze_captures: int = 0
+var perf_freeze_us_total: int = 0
+var perf_draw_calls: int = 0
+var perf_draw_us_total: int = 0
+var perf_atlas_revision: int = -1
+var perf_atlas_revision_changes: int = 0
+var perf_last_report_frame: int = 0
 
 
 func _ready() -> void:
+	var startup_started := Time.get_ticks_usec()
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_mat_add = CanvasItemMaterial.new()
+	_mat_add.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
+	_mat_sub = CanvasItemMaterial.new()
+	_mat_sub.blend_mode = CanvasItemMaterial.BLEND_MODE_SUB
+	_mat_mul = CanvasItemMaterial.new()
+	_mat_mul.blend_mode = CanvasItemMaterial.BLEND_MODE_MUL
 	# Parse first: the entry point and log switches are needed before the first frame.
 	_parse_args()
 	# The bundled font candidates live under the data root, so resolve it before
 	# loading text faces.
 	var root := _resolve_data_root()
 	data_root = root
+	var fonts_started := Time.get_ticks_usec()
 	bold_font = _load_font(true)
 	regular_font = _load_font(false)
 	# U+266A and other symbols missing from the primary faces are shaped through
@@ -124,6 +211,7 @@ func _ready() -> void:
 	var symbol_fallback := _make_symbol_font()
 	_attach_fallback(bold_font, symbol_fallback)
 	_attach_fallback(regular_font, symbol_fallback)
+	print("startup: godot_fonts_ms=", "%.1f" % ((Time.get_ticks_usec() - fonts_started) / 1000.0))
 
 	if root.is_empty():
 		push_error("data root not found: pass `-- --data-root=<unpacked Data dir>`")
@@ -132,10 +220,12 @@ func _ready() -> void:
 
 	_setup_audio()
 	wolf = WolfGame.new()
+	var open_started := Time.get_ticks_usec()
 	if not wolf.open(root):
 		push_error("WolfGame.open failed: " + root)
 		set_physics_process(false)
 		return
+	print("startup: wolf_open_ms=", "%.1f" % ((Time.get_ticks_usec() - open_started) / 1000.0))
 	if auto_new_game:
 		# Mirrors `wolf-cli capture --answer 0`: advance messages and answer every
 		# choice with option 0 so a scripted capture reaches the daily loop.
@@ -167,12 +257,14 @@ func _ready() -> void:
 		return
 
 	set_physics_process(true)
+	print("startup: ready_ms=", "%.1f" % ((Time.get_ticks_usec() - startup_started) / 1000.0))
 	queue_redraw()
 
 
 func _physics_process(_delta: float) -> void:
 	if wolf == null:
 		return
+	var frame_started := Time.get_ticks_usec()
 	var mouse := get_local_mouse_position()
 	var mouse_pos := Vector2i(int(mouse.x), int(mouse.y))
 	# A fresh left press must hit the hotspot where it went down, even if the
@@ -189,21 +281,19 @@ func _physics_process(_delta: float) -> void:
 	wolf.set_wheel(wheel_notches)
 	wheel_notches = 0
 	wolf.set_input(_key_bits(raw_keys), raw_keys, mouse_pos, buttons)
+	var wolf_started := Time.get_ticks_usec()
 	packet = wolf.frame()
+	var wolf_us := Time.get_ticks_usec() - wolf_started
+	perf_wolf_us_total += wolf_us
+	perf_wolf_us_max = maxi(perf_wolf_us_max, wolf_us)
+	_update_master_volumes()
 	if packet.get("quit", false):
 		# Opcode 175: the title's おわる option asked to exit.
 		get_tree().quit()
 		return
 	if packet.get("freeze", false):
 		print("wolf: freeze at game frame ", game_frames)
-		# The viewport still holds the frame 161 is replacing; copy it before _draw.
-		if last_frame_texture == null:
-			var previous := get_viewport().get_texture().get_image()
-			last_frame_texture = ImageTexture.create_from_image(previous)
-		frozen_texture = last_frame_texture
-		snapshot_pending = true
-	elif packet.get("transition_active", false):
-		snapshot_pending = true
+	_update_frozen_frame(packet)
 	_apply_sounds(packet.get("sounds", []))
 	game_frames += 1
 	_log_frame()
@@ -213,13 +303,21 @@ func _physics_process(_delta: float) -> void:
 		sounds_logged = true
 		print("wolf: first sound commands ", packet.get("sounds", []))
 
+	var sync_started := Time.get_ticks_usec()
 	_sync_atlas()
-	if not packet.get("transition_active", false) and not packet.get("freeze", false) and not _has_frozen_overlay(packet):
-		frozen_texture = null
-		last_frame_texture = null
+	perf_sync_us_total += Time.get_ticks_usec() - sync_started
+	perf_sync_calls += 1
+	var atlas_revision := wolf.atlas_len()
+	if atlas_revision != perf_atlas_revision:
+		perf_atlas_revision = atlas_revision
+		perf_atlas_revision_changes += 1
 	if not diagnostics_printed:
 		diagnostics_printed = true
-		print("wolf: frame sprites=", packet.get("sprites", []).size(), " texts=", packet.get("texts", []).size(), " pictures=", packet.get("pictures", 0))
+		print(
+			"wolf: frame sprites=", packet.get("sprites", []).size(),
+			" texts=", packet.get("texts", []).size(),
+			" pictures=", packet.get("pictures", 0),
+		)
 		for line in packet.get("diagnostics", []):
 			print("wolf: ", line)
 		for sprite in packet.get("sprites", []):
@@ -227,6 +325,10 @@ func _physics_process(_delta: float) -> void:
 			if rect.size.x * rect.size.y > 200000.0:
 				print("wolf:   large sprite #", sprite.get("number", 0), " rect=", rect, " src=", sprite["src"], " alpha=", sprite["alpha"], " tint=", sprite["tint"])
 	queue_redraw()
+	perf_frame_us_total += Time.get_ticks_usec() - frame_started
+	if log_perf and game_frames - perf_last_report_frame >= 60:
+		perf_last_report_frame = game_frames
+		_print_perf_window()
 
 
 func _input(event: InputEvent) -> void:
@@ -319,6 +421,17 @@ func _notification(what: int) -> void:
 		mouse_latch_pos = Vector2i(-1, -1)
 		wheel_notches = 0
 		focus_gained = false
+	elif what == NOTIFICATION_WM_CLOSE_REQUEST:
+		_save_settings_on_exit()
+
+
+func _exit_tree() -> void:
+	_save_settings_on_exit()
+
+
+func _save_settings_on_exit() -> void:
+	if wolf != null:
+		wolf.save_settings()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -330,11 +443,6 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _process(_delta: float) -> void:
-	if snapshot_pending:
-		snapshot_pending = false
-		await RenderingServer.frame_post_draw
-		var snapshot := get_viewport().get_texture().get_image()
-		last_frame_texture = ImageTexture.create_from_image(snapshot)
 	if capture_path.is_empty() or captured or wolf == null:
 		return
 	if game_frames < capture_frames:
@@ -352,54 +460,232 @@ func _process(_delta: float) -> void:
 	var stats: Dictionary = packet.get("stats", {})
 	print("capture: ", target, " err=", err, " size=", image.get_size(), " game_frames=", game_frames, " max_sprites=", max_sprites, " max_texts=", max_texts)
 	print("wolf: last pictures=", packet.get("pictures", 0), " choices=", packet.get("choices", []), " stats=", stats)
+	if log_perf:
+		print(
+			"capture-layers: overlays=", packet.get("overlays", []),
+			" sprites=", packet.get("sprites", []).size(),
+		)
+		for sprite in packet.get("sprites", []):
+			print(
+				"capture-sprite: number=", sprite.get("number", 0),
+				" z=", sprite.get("z", sprite.get("number", 0)),
+				" rect=", sprite.get("rect", Rect2()),
+				" src=", sprite.get("src", Rect2()),
+				" alpha=", sprite.get("alpha", 0.0),
+				" tint=", sprite.get("tint", Color.WHITE),
+				" blend=", sprite.get("blend", 0),
+			)
+		for text in packet.get("texts", []):
+			print(
+				"capture-text: number=", text.get("number", 0),
+				" z=", text.get("z", text.get("number", 0)),
+				" rect=", text.get("rect", Rect2()),
+				" text=", text.get("text", ""),
+			)
+		if atlas_texture != null:
+			var atlas_err := atlas_texture.get_image().save_png(target + ".atlas.png")
+			print("capture-atlas: err=", atlas_err, " path=", target + ".atlas.png")
 	for line in packet.get("diagnostics", []):
 		print("wolf-diag: ", line)
 	get_tree().quit()
 
 
 func _draw() -> void:
+	var draw_started := Time.get_ticks_usec()
+	perf_draw_calls += 1
 	draw_rect(Rect2(Vector2.ZERO, LOGICAL_SIZE), Color.BLACK)
 	if atlas_texture == null:
+		perf_draw_us_total += Time.get_ticks_usec() - draw_started
 		return
 
 	# Pictures and text share ONE layer stack keyed by WOLF picture slot. Drawing all
 	# sprites and then all texts put the HUD (slots 200..252) over the save window
 	# (12000+), which is the "top-bar values bleed through the save menu" bug. Entries
 	# of the engine's own menu chrome carry z = 1_000_000 so they stay above pictures.
+	var sprites: Array = packet.get("sprites", [])
+	var texts: Array = packet.get("texts", [])
+	var overlays: Array = packet.get("overlays", [])
 	var items: Array = []
 	var seq := 0
-	for sprite in packet.get("sprites", []):
+	var has_blends := false
+	for sprite in sprites:
+		if int(sprite.get("blend", 0)) != 0:
+			has_blends = true
 		items.append({"sprite": sprite, "z": int(sprite.get("z", sprite.get("number", 0))), "seq": seq})
 		seq += 1
-	for text in packet.get("texts", []):
+	for text in texts:
 		items.append({"text": text, "z": int(text.get("z", text.get("number", 0))), "seq": seq})
 		seq += 1
-	items.sort_custom(func(a, b):
-		if a["z"] == b["z"]:
-			return a["seq"] < b["seq"]
-		return a["z"] < b["z"])
-	for item in items:
-		if item.has("sprite"):
-			var sprite: Dictionary = item["sprite"]
-			var tint: Color = sprite["tint"]
-			tint.a *= float(sprite["alpha"])
-			if tint.a <= 0.0:
-				continue
-			draw_texture_rect_region(atlas_texture, sprite["rect"], sprite["src"], tint)
-		else:
-			_draw_text(item["text"])
+	items.sort_custom(_draw_item_before)
 
-	for overlay in packet.get("overlays", []):
-		var colour: Color = overlay["color"]
-		colour.a *= float(overlay["alpha"])
-		if overlay["kind"] == "colour" and colour.a > 0.0:
-			draw_rect(Rect2(Vector2.ZERO, LOGICAL_SIZE), colour)
-		elif overlay["kind"] == "frozen" and frozen_texture != null and colour.a > 0.0:
-			draw_texture_rect(frozen_texture, Rect2(Vector2.ZERO, LOGICAL_SIZE), false, colour)
+	if not has_blends:
+		for batch in _batch_pool:
+			batch.visible = false
+		for item in items:
+			if item.has("sprite"):
+				var sprite: Dictionary = item["sprite"]
+				var tint: Color = sprite["tint"]
+				tint.a *= float(sprite["alpha"])
+				if tint.a <= 0.0:
+					continue
+				draw_texture_rect_region(atlas_texture, sprite["rect"], sprite["src"], tint)
+			else:
+				_draw_text(item["text"])
+
+		_draw_energy(packet.get("energy", {}))
+		for overlay in overlays:
+			var colour: Color = overlay["color"]
+			colour.a *= float(overlay["alpha"])
+			if overlay["kind"] == "colour" and colour.a > 0.0:
+				draw_rect(Rect2(Vector2.ZERO, LOGICAL_SIZE), colour)
+			elif overlay["kind"] == "frozen" and frozen_texture != null and colour.a > 0.0:
+				draw_texture_rect(frozen_texture, Rect2(Vector2.ZERO, LOGICAL_SIZE), false, colour)
+		perf_draw_us_total += Time.get_ticks_usec() - draw_started
+		return
+
+	# Mixed-blend path (whenever ANY sprite has blend in 1, 2, 3)
+	# GameView._draw() draws ONLY the black background.
+	# Group items into contiguous batches where all items in a batch share the same blend.
+	var batches: Array[Dictionary] = []
+	var current_blend := -1
+	var current_items: Array = []
+	for item in items:
+		var item_blend := 0
+		if item.has("sprite"):
+			item_blend = int(item["sprite"].get("blend", 0))
+		if item_blend != current_blend:
+			if not current_items.is_empty():
+				batches.append({
+					"blend": current_blend,
+					"items": current_items,
+					"overlays": [],
+					"energy": {},
+				})
+				current_items = []
+			current_blend = item_blend
+		current_items.append(item)
+	if not current_items.is_empty():
+		batches.append({
+			"blend": current_blend,
+			"items": current_items,
+			"overlays": [],
+			"energy": {},
+		})
+
+	_append_energy_and_overlays(batches, overlays, packet.get("energy", {}))
+
+	# Acquire / reuse _BlendBatch child nodes from _batch_pool
+	while _batch_pool.size() < batches.size():
+		var new_batch := _BlendBatch.new()
+		new_batch.name = "BatchLayer%d" % _batch_pool.size()
+		add_child(new_batch)
+		_batch_pool.append(new_batch)
+
+	for i in range(batches.size()):
+		var b_info: Dictionary = batches[i]
+		var batch := _batch_pool[i]
+		if i > 0 and batch.get_index() < _batch_pool[i - 1].get_index():
+			move_child(batch, _batch_pool[i - 1].get_index() + 1)
+		batch.material = _material_for_blend(b_info["blend"])
+		batch.items = b_info["items"]
+		batch.overlays = b_info["overlays"]
+		batch.atlas = atlas_texture
+		batch.bold_font = bold_font
+		batch.regular_font = regular_font
+		batch.frozen_texture = frozen_texture
+		batch.energy = b_info["energy"]
+		batch.visible = true
+		batch.queue_redraw()
+
+	for i in range(batches.size(), _batch_pool.size()):
+		var unused := _batch_pool[i]
+		unused.items.clear()
+		unused.overlays.clear()
+		unused.energy = {}
+		unused.visible = false
+	perf_draw_us_total += Time.get_ticks_usec() - draw_started
+
+
+## Energy and screen overlays must use normal blending even when the last sprite
+## batch is ADD/SUB/MUL. Otherwise the white stamina bar inherits the preceding
+## material and can disappear behind an effect.
+func _append_energy_and_overlays(
+	batches: Array[Dictionary],
+	overlays: Array,
+	energy: Dictionary
+) -> void:
+	if overlays.is_empty() and energy.is_empty():
+		return
+	if not batches.is_empty() and batches[-1]["blend"] == 0:
+		batches[-1]["overlays"] = overlays
+		batches[-1]["energy"] = energy
+		return
+	batches.append({
+		"blend": 0,
+		"items": [],
+		"overlays": overlays,
+		"energy": energy,
+	})
 
 
 func _draw_text(item: Dictionary) -> void:
 	WolfTextScript.draw_text(self, item, bold_font, regular_font)
+
+
+func _draw_item_before(a: Dictionary, b: Dictionary) -> bool:
+	if a["z"] == b["z"]:
+		return a["seq"] < b["seq"]
+	return a["z"] < b["z"]
+
+
+func _draw_energy(energy: Dictionary) -> void:
+	if energy.is_empty():
+		return
+	var maximum := maxi(1, int(energy.get("max", 0)))
+	var current := clampi(int(energy.get("current", 0)), 0, maximum)
+	var origin := Vector2(760.0, 34.0)
+	var box := Rect2(origin, Vector2(100.0, 8.0))
+	draw_rect(box, Color(0.0, 0.0, 0.0, 0.35), true)
+	draw_rect(box, Color.WHITE, false, 1.0)
+	var ratio := float(current) / float(maximum)
+	if ratio > 0.0:
+		draw_rect(
+			Rect2(origin + Vector2(2.0, 2.0), Vector2(96.0 * ratio, 4.0)),
+			Color(0.97, 0.97, 0.97, 0.95),
+			true
+		)
+
+
+func _gain_to_db(gain: float) -> float:
+	if gain <= 0.0001:
+		return -80.0
+	return linear_to_db(gain)
+
+
+func _update_master_volumes() -> void:
+	var new_bgm_vol := clampf(float(packet.get("bgm_volume", 100)) / 100.0, 0.0, 1.2)
+	var new_se_vol := clampf(float(packet.get("se_volume", 100)) / 100.0, 0.0, 1.2)
+	var bgm_vol_changed := not is_equal_approx(new_bgm_vol, master_bgm_vol)
+	var se_vol_changed := not is_equal_approx(new_se_vol, master_se_vol)
+	master_bgm_vol = new_bgm_vol
+	master_se_vol = new_se_vol
+	if bgm_vol_changed and bgm_player != null and bgm_player.playing and (bgm_tween == null or not bgm_tween.is_valid()):
+		bgm_player.volume_db = _gain_to_db(bgm_track_vol * master_bgm_vol)
+	# In WOLF RPG Editor and wolf-audio mixer.rs (line 392), BGS ambience is mixed on the BGM volume bus.
+	if bgm_vol_changed and bgs_player != null and bgs_player.playing and (bgs_tween == null or not bgs_tween.is_valid()):
+		bgs_player.volume_db = _gain_to_db(bgs_track_vol * master_bgm_vol)
+
+
+func _material_for_blend(blend: int) -> CanvasItemMaterial:
+	match blend:
+		1:
+			return _mat_add
+		2:
+			return _mat_sub
+		3:
+			return _mat_mul
+		_:
+			return null
 
 
 func _setup_audio() -> void:
@@ -421,18 +707,22 @@ func _apply_sounds(sounds: Array) -> void:
 		var channel: String = cmd.get("channel", "")
 		var action: String = cmd.get("action", "")
 		var file: String = cmd.get("file", "")
-		var volume := clampf(float(cmd.get("volume", 100)) / 100.0, 0.0, 1.0)
+		var track_vol := clampf(float(cmd.get("volume", 100)) / 100.0, 0.0, 1.0)
+		var pitch := clampf(float(cmd.get("pitch", 100)) / 100.0, 0.1, 4.0)
 		var frames := int(cmd.get("frames", 0))
 		if channel == "bgm":
 			if action == "play":
 				if file.is_empty():
 					continue
+				bgm_track_vol = track_vol
+				var effective := bgm_track_vol * master_bgm_vol
+				bgm_player.pitch_scale = pitch
 				# Several events reissue the current track. Restarting it from 0 s was
 				# the audible stutter; keep the running voice and only refresh volume.
 				if file == bgm_file and bgm_player.playing:
 					if bgm_tween != null and bgm_tween.is_valid():
 						bgm_tween.kill()
-					bgm_player.volume_db = linear_to_db(volume)
+					bgm_player.volume_db = _gain_to_db(effective)
 					continue
 				var stream := _load_audio(file)
 				if stream == null:
@@ -441,12 +731,12 @@ func _apply_sounds(sounds: Array) -> void:
 				if bgm_tween != null and bgm_tween.is_valid():
 					bgm_tween.kill()
 				bgm_player.stream = stream
-				bgm_player.volume_db = -80.0 if frames > 0 else linear_to_db(volume)
+				bgm_player.volume_db = -80.0 if frames > 0 else _gain_to_db(effective)
 				bgm_player.play()
 				bgm_file = file
 				if frames > 0:
 					bgm_tween = create_tween()
-					bgm_tween.tween_property(bgm_player, "volume_db", linear_to_db(volume), float(frames) / 60.0)
+					bgm_tween.tween_property(bgm_player, "volume_db", _gain_to_db(effective), float(frames) / 60.0)
 			elif action == "stop":
 				bgm_file = ""
 				if bgm_tween != null and bgm_tween.is_valid():
@@ -461,10 +751,13 @@ func _apply_sounds(sounds: Array) -> void:
 			if action == "play":
 				if file.is_empty():
 					continue
+				bgs_track_vol = track_vol
+				var effective := bgs_track_vol * master_bgm_vol
+				bgs_player.pitch_scale = pitch
 				if file == bgs_file and bgs_player.playing:
 					if bgs_tween != null and bgs_tween.is_valid():
 						bgs_tween.kill()
-					bgs_player.volume_db = linear_to_db(volume)
+					bgs_player.volume_db = _gain_to_db(effective)
 					continue
 				var stream := _load_audio(file)
 				if stream == null:
@@ -473,12 +766,12 @@ func _apply_sounds(sounds: Array) -> void:
 				if bgs_tween != null and bgs_tween.is_valid():
 					bgs_tween.kill()
 				bgs_player.stream = stream
-				bgs_player.volume_db = -80.0 if frames > 0 else linear_to_db(volume)
+				bgs_player.volume_db = -80.0 if frames > 0 else _gain_to_db(effective)
 				bgs_player.play()
 				bgs_file = file
 				if frames > 0:
 					bgs_tween = create_tween()
-					bgs_tween.tween_property(bgs_player, "volume_db", linear_to_db(volume), float(frames) / 60.0)
+					bgs_tween.tween_property(bgs_player, "volume_db", _gain_to_db(effective), float(frames) / 60.0)
 			elif action == "stop":
 				bgs_file = ""
 				if bgs_tween != null and bgs_tween.is_valid():
@@ -496,7 +789,9 @@ func _apply_sounds(sounds: Array) -> void:
 					continue
 				var player := _free_se_player()
 				player.stream = stream
-				player.volume_db = linear_to_db(volume)
+				player.pitch_scale = pitch
+				var effective := track_vol * master_se_vol
+				player.volume_db = _gain_to_db(effective)
 				if frames > 0:
 					get_tree().create_timer(float(frames) / 60.0).timeout.connect(player.play)
 				else:
@@ -552,15 +847,85 @@ func _has_frozen_overlay(packet: Dictionary) -> bool:
 	return false
 
 
+## 161 freezes the frame already on screen.  Capture it once and keep that texture
+## for the whole 162 dissolve; re-reading the viewport on every active frame is a
+## full-screen GPU sync and turns a ten-frame fade into ten stalls.
+func _update_frozen_frame(packet: Dictionary) -> void:
+	if packet.get("freeze", false) and frozen_texture == null:
+		_capture_frozen_frame()
+	if (
+		not packet.get("transition_active", false)
+		and not packet.get("freeze", false)
+		and not _has_frozen_overlay(packet)
+	):
+		_clear_frozen_frame()
+
+
+func _capture_frozen_frame() -> void:
+	var started := Time.get_ticks_usec()
+	var previous := get_viewport().get_texture().get_image()
+	frozen_texture = ImageTexture.create_from_image(previous)
+	perf_freeze_captures += 1
+	perf_freeze_us_total += Time.get_ticks_usec() - started
+
+
+func _clear_frozen_frame() -> void:
+	frozen_texture = null
+
+
 func _sync_atlas() -> void:
 	var generation := wolf.atlas_len()
 	if generation == atlas_len and atlas_texture != null:
 		return
+	var started := Time.get_ticks_usec()
 	atlas_len = generation
 	var size := wolf.atlas_size()
+	if size.x <= 0 or size.y <= 0:
+		atlas_texture = null
+		atlas_pixel_size = Vector2i.ZERO
+		perf_sync_us_total += Time.get_ticks_usec() - started
+		return
 	var bytes := wolf.atlas_pixels()
+	var expected := size.x * size.y * 4
+	if bytes.size() != expected:
+		push_error(
+			"atlas byte count %d does not match %dx%d RGBA (%d)"
+			% [bytes.size(), size.x, size.y, expected]
+		)
+		atlas_texture = null
+		atlas_pixel_size = Vector2i.ZERO
+		perf_sync_us_total += Time.get_ticks_usec() - started
+		return
+	perf_sync_uploads += 1
+	perf_sync_bytes += bytes.size()
 	var image := Image.create_from_data(size.x, size.y, false, Image.FORMAT_RGBA8, bytes)
-	atlas_texture = ImageTexture.create_from_image(image)
+	if atlas_texture == null or atlas_pixel_size != size:
+		atlas_texture = ImageTexture.create_from_image(image)
+		atlas_pixel_size = size
+	else:
+		# Reuse the GPU texture: interaction-heavy screens add many UI entries, and a
+		# fresh 64 MiB allocation for each one is a visible hitch.
+		atlas_texture.update(image)
+	perf_sync_us_total += Time.get_ticks_usec() - started
+
+
+func _print_perf_window() -> void:
+	var denominator := maxi(1, game_frames)
+	print(
+		"perf: frames=", game_frames,
+		" wolf_avg_ms=", "%.3f" % (float(perf_wolf_us_total) / 1000.0 / denominator),
+		" wolf_max_ms=", "%.3f" % (float(perf_wolf_us_max) / 1000.0),
+		" sync_calls=", perf_sync_calls,
+		" sync_uploads=", perf_sync_uploads,
+		" sync_MiB=", "%.1f" % (float(perf_sync_bytes) / 1048576.0),
+		" sync_avg_ms=", "%.3f" % (float(perf_sync_us_total) / 1000.0 / maxi(1, perf_sync_calls)),
+		" freeze_captures=", perf_freeze_captures,
+		" freeze_avg_ms=", "%.3f" % (float(perf_freeze_us_total) / 1000.0 / maxi(1, perf_freeze_captures)),
+		" atlas_revision_changes=", perf_atlas_revision_changes,
+		" draw_calls=", perf_draw_calls,
+		" draw_avg_ms=", "%.3f" % (float(perf_draw_us_total) / 1000.0 / maxi(1, perf_draw_calls)),
+		" physics_avg_ms=", "%.3f" % (float(perf_frame_us_total) / 1000.0 / denominator),
+	)
 
 
 func _resolve_data_root() -> String:
@@ -600,6 +965,8 @@ func _parse_args() -> void:
 			log_messages = true
 		elif arg == "--log-events":
 			log_events = true
+		elif arg == "--log-perf":
+			log_perf = true
 
 
 ## Load the bold or regular UI face.

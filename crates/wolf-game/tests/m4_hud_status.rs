@@ -72,6 +72,11 @@ fn loading_a_save_keeps_action_and_stamina() {
         .filter(|c| !c.is_whitespace())
         .collect();
     assert!(compact.contains("精力3/3"), "HUD stamina text: {texts:?}");
+    assert_eq!(
+        game.hud_energy(),
+        Some((3, 3)),
+        "the front-end gauge must read the same live stamina cells"
+    );
 }
 
 #[test]

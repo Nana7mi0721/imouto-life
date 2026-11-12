@@ -120,8 +120,8 @@ def audit_command_stream(cmds, location, is_parallel, stats, max_ce_id):
                 "loc": location, "pc": pc, "opcode": c, "args": a, "strings": s
             })
 
-        # Loop audit (170/176 head, 171 break, 498 end)
-        if c in (170, 176):
+        # Loop audit (170/179 loop head, 171 break, 498 end; 176 is ContinueLoop, not a head)
+        if c in (170, 179):
             loop_stack.append({"pc": pc, "has_wait": False, "has_break": False})
         elif c == 171 and loop_stack:
             loop_stack[-1]["has_break"] = True

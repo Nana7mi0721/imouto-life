@@ -250,6 +250,16 @@ impl TileMap {
         quads
     }
 
+    /// Animation phase for the cached quad build, or `None` before the first build.
+    ///
+    /// A front-end that already holds a baked tile-layer texture uses this as a cheap
+    /// cache key. It avoids cloning and converting the full quad list every frame:
+    /// the list only needs rebuilding when this phase (or the map/atlas) changes.
+    #[must_use]
+    pub fn animation_phase(&self, frame: u32) -> Option<u32> {
+        self.cache.valid.then(|| frame % self.cache.period.max(1))
+    }
+
     /// Autotile animation period: the lcm of the frame counts of the used slots.
     ///
     /// A slot with an absent/empty image counts as one frame, so a map that only uses
@@ -306,6 +316,7 @@ impl TileMap {
                                 uv: rect.sub_uv(atlas_w, atlas_h, src),
                                 alpha: 1.0,
                                 tint: [1.0, 1.0, 1.0],
+                                blend: 0,
                             });
                         }
                         Tile::Autotile { id, corners } => {
@@ -334,6 +345,7 @@ impl TileMap {
                                     uv: rect.sub_uv(atlas_w, atlas_h, src),
                                     alpha: 1.0,
                                     tint: [1.0, 1.0, 1.0],
+                                    blend: 0,
                                 });
                             }
                         }

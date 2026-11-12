@@ -48,6 +48,11 @@ struct Baseline {
     /// overwrites the same file, so the scene skips instead of reporting a false
     /// renderer failure when that fixture no longer matches.
     depends_on_save: bool,
+    /// The save-grid scene's baseline was recorded with the two shipping slots
+    /// (SaveData01/02). A third save enlarges the grid and changes the pinned
+    /// picture/text/pixel counts, so that is fixture drift rather than a renderer
+    /// regression.
+    depends_on_save_grid: bool,
     expect_header: &'static str,
     frames: u32,
     peak_coroutines: u32,
@@ -93,6 +98,7 @@ const BASELINES: [Baseline; 5] = [
         args: &["--frames", "240"],
         load_save: false,
         depends_on_save: false,
+        depends_on_save_grid: false,
         expect_header: "  entry     : boot map (TitleMap.mps event 2)",
         frames: 240,
         // The first frame starts the engine coroutines and the boot map chain together:
@@ -117,9 +123,12 @@ const BASELINES: [Baseline; 5] = [
         args: &["--map", "SampleMapA", "--frames", "600"],
         load_save: false,
         depends_on_save: false,
+        depends_on_save_grid: false,
         expect_header: "  map       : MapData/SampleMapA.mps 64x36 tile(s)",
         frames: 600,
-        peak_coroutines: 5,
+        // CE216 (the always-on interest monitor) is part of ENGINE_RESTART and
+        // re-enters on top of the idle map's five coroutines. It renders no pixels.
+        peak_coroutines: 6,
         pictures_live: 1,
         textured_quads: 27_649,
         text_pictures: 0,
@@ -145,27 +154,29 @@ const BASELINES: [Baseline; 5] = [
         // (only anchor-3 pictures inside a tenths-scale UI block are centred now), which
         // changed the atlas from 20 to 19 images and the non-black count to 589251.
         //
-        // Re-recorded 2026-11-11 after the review fixes: the picture anchor 2..6 and
-        // independent X/Y scaling changes moved the nine-slice panels a little, and the
-        // op122 save-label fix changed the slot text. The level term cell (CE94 pc395)
-        // is empty in this fan-translated data, so the label is just ` 1\n<name>`.
+        // Re-recorded 2026-11-12 after restoring CE94's tenths geometry: the slot boxes
+        // are 9280x1152 again (rendered 928x115.2), so the UI text uses the regular
+        // weight with 13 text pictures / 54 glyphs, and the real `<TRI-RIGHT>` arrow is
+        // visible (21 atlas images / 27728 textured quads). The non-black count moved
+        // by the cursor-blink phase; CE216 adds one coroutine.
         name: "saveui",
         args: &["--map", "SampleMapA", "--event", "5", "--frames", "40"],
         load_save: false,
         depends_on_save: true,
+        depends_on_save_grid: true,
         expect_header: "  map       : MapData/SampleMapA.mps 64x36 tile(s)",
         frames: 40,
-        peak_coroutines: 8,
+        peak_coroutines: 9,
         pictures_live: 25,
-        textured_quads: 27_727,
+        textured_quads: 27_728,
         text_pictures: 13,
         choice_open: false,
         choice_options: 0,
-        atlas_images: 20,
+        atlas_images: 21,
         text_items: 13,
         text_glyphs: 54,
         text_lines: 13,
-        nonblack: 576_227,
+        nonblack: 576_221,
         messages: 0,
         choices: 0,
     },
@@ -176,6 +187,7 @@ const BASELINES: [Baseline; 5] = [
         args: &["--event", "245", "--frames", "240"],
         load_save: true,
         depends_on_save: true,
+        depends_on_save_grid: false,
         expect_header: "  entry     : save file",
         frames: 240,
         // +1 for the restarting CE270 display pass (see the title scene).
@@ -199,10 +211,12 @@ const BASELINES: [Baseline; 5] = [
         args: &["--frames", "60"],
         load_save: true,
         depends_on_save: true,
+        depends_on_save_grid: false,
         expect_header: "  entry     : save file",
         frames: 60,
-        // +1 for the restarting CE270 display pass (see the title scene).
-        peak_coroutines: 7,
+        // +1 for the restarting CE270 display pass (see the title scene), and +1 for
+        // CE216, which is in ENGINE_RESTART and likewise renders no pixels.
+        peak_coroutines: 8,
         pictures_live: 50,
         textured_quads: 5,
         text_pictures: 14,
@@ -293,6 +307,31 @@ fn shipping_save_fixture() -> bool {
     save.part5.events.len() == 50
 }
 
+/// True when the save grid has exactly the two shipping slots.
+///
+/// The save UI renders one block per existing `SaveDataNN.sav`. Tests and smoke
+/// runs can create SaveData03+, which adds a fourth block but does not change the
+/// renderer. Checking the grid separately from SaveData01 keeps that fixture drift
+/// from being reported as a 101-pixel visual regression.
+fn shipping_save_grid() -> bool {
+    let Ok(entries) = std::fs::read_dir(data_root().join("Save")) else {
+        return false;
+    };
+    let mut has_first = false;
+    let mut has_second = false;
+    let mut slots = 0;
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.starts_with("SaveData") && name.ends_with(".sav") {
+            slots += 1;
+            has_first |= name == "SaveData01.sav";
+            has_second |= name == "SaveData02.sav";
+        }
+    }
+    slots == 2 && has_first && has_second
+}
+
 fn run_baseline(baseline: &'static Baseline) {
     let Some(metrics) = capture_scene(baseline) else {
         return;
@@ -339,6 +378,13 @@ fn capture_scene(baseline: &'static Baseline) -> Option<Metrics> {
     if baseline.depends_on_save && !shipping_save_fixture() {
         eprintln!(
             "skipping {}: SaveData01 is no longer the shipping 50-picture bedroom (a player save overwrote it); the save round-trip suite covers format/load",
+            baseline.name
+        );
+        return None;
+    }
+    if baseline.depends_on_save_grid && !shipping_save_grid() {
+        eprintln!(
+            "skipping {}: Save/ has extra or missing slots (the baseline uses SaveData01/02 only; SaveData03+ enlarges the grid)",
             baseline.name
         );
         return None;

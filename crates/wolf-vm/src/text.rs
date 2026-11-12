@@ -243,7 +243,13 @@ fn parse_escape<L: VarLookup + ?Sized>(
         // label the event had just stored in the self string bank.
         EscapeBank::SelfVar => {
             let text = lookup.lookup_str(bank, index);
-            if text.is_empty() {
+            // Slots 5..9 of the common-event self bank are the five string cells
+            // (group 6 is magic 1_600_005..9). An empty cell in a text context is
+            // an empty string, not the numeric cell's zero: CE270 stores its
+            // display buffer in CSelf7 and a bare \cself[7] must not paint "0"
+            // before the message. Numeric slots keep the fallback for \f[\cself[19]]
+            // and similar code arguments.
+            if text.is_empty() && !(5..=9).contains(&(index % 100)) {
                 let num = lookup.lookup_num(bank, index);
                 // A self slot can hold an internal database value handle
                 // (1_100_000_000 + row*100 + column) that should resolve to a database
@@ -373,6 +379,10 @@ mod tests {
         assert_eq!(expand(r"\cself[5]", &mut f), "学习会");
         // With no string written, the numeric fallback still drives font sizes.
         assert_eq!(expand(r"\cself[1]", &mut f), "8");
+        // CSelf5..9 are string cells. An unwritten cell must stay empty even when
+        // its parallel numeric slot is zero; otherwise the balloon's text buffer
+        // paints a stray leading zero before every line.
+        assert_eq!(expand(r"\cself[7]", &mut f), "");
     }
 
     #[test]
@@ -398,9 +408,10 @@ mod tests {
 
     #[test]
     fn nested_escapes_expand_innermost_first() {
-        // \cself[\cself[0]] with slot 0 = 7 -> \cself[7] -> 0 (slot 7 unwritten)
+        // \cself[\cself[0]] with slot 0 = 7 -> \cself[7] -> empty (string slot
+        // 7 is unwritten and string slots never fall back to their numeric twin)
         let mut f = fixed();
-        assert_eq!(expand("\\cself[\\cself[0]]", &mut f), "0");
+        assert_eq!(expand("\\cself[\\cself[0]]", &mut f), "");
     }
 
     #[test]

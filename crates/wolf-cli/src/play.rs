@@ -575,7 +575,7 @@ impl App {
         // frames), so it joins the sprite list rather than the glyph list.
         let newest = self.game.messages.last().map(|m| m.frames);
         if let Some(frames) = newest {
-            let Some(layout) = self.game.message_layout() else {
+            let Some(layout) = self.game.rendered_message_layout() else {
                 unreachable!("the newest message has a layout");
             };
             if let Some(at) = layout.cursor {
@@ -657,7 +657,7 @@ impl App {
         // A 101 message is engine text, not a picture: the frame comes from common event 63
         // as ordinary pictures, the glyphs come from the message layout. Only the newest
         // message is on screen, which is the order the interpreter produces.
-        if let Some(layout) = self.game.message_layout() {
+        if let Some(layout) = self.game.rendered_message_layout() {
             for run in &layout.runs {
                 // One em of slack keeps cosmic-text from wrapping the last glyph: the
                 // layout measures with the half-em rule, the shaper uses the real advance.

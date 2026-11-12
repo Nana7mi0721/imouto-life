@@ -124,6 +124,7 @@ fn open_loaded_bedroom() -> Option<Game> {
         eprintln!("skipping: SaveData01 did not load into the bedroom HUD");
         return None;
     }
+    game.auto_events.set_enabled(false);
     Some(game)
 }
 

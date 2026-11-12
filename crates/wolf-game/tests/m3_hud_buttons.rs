@@ -20,10 +20,10 @@
 //! state path (engine_state fields 7/20/21 and picture_state field 8), so a
 //! missing mouse-to-opcode124 bridge is not a source gap.
 //!
-//! The status entry is dormant in the shipped save: event 10 is gated by
-//! variable 15 == 99, and no shipped script writes 99 (the normal save has
-//! v15=0). Forcing v15=99 proves the CE238 panel itself works, so this is a
-//! data-side gate, not a missing engine feature. Item list has no such gate.
+//! The status entry is gated by variable 15 == 99, and no shipped script writes
+//! 99. The visible 25-pixel sliver is therefore treated as a UI affordance that
+//! opens CE238 directly; forcing v15=99 still exercises the original map page.
+//! Item list has no such gate.
 //!
 //! No test writes a save file; the save click test hashes Save/* before and
 //! after and requires byte equality.
@@ -369,10 +369,9 @@ fn item_strip_left_click_opens_item_list_and_hover_keeps_it_open() {
     };
     assert_eq!(slot_x(&game, 2300), Some(-305));
 
-    // Click the invisible left-edge trigger, then slide the pointer into the
-    // opened panel while still holding. Event 8 polls picture 2300 field 8 and
-    // sees hover=1, so the panel remains open at x=0.
-    settle_pointer(&mut game, 24, 336);
+    // Click the lower triangle. This is a click-to-toggle drawer; event 8's
+    // opcode-124 hover poll must not close it while the pointer is elsewhere.
+    settle_pointer(&mut game, 15, 279);
     game.mouse_buttons = 1;
     game.frame();
     assert_eq!(
@@ -384,6 +383,10 @@ fn item_strip_left_click_opens_item_list_and_hover_keeps_it_open() {
         running_event(&game, 239),
         "event 7 must call CE239 item list"
     );
+    game.mouse_buttons = 0;
+    for _ in 0..6 {
+        game.frame();
+    }
 
     game.mouse = [100, 336];
     for _ in 0..20 {
@@ -399,10 +402,15 @@ fn item_strip_left_click_opens_item_list_and_hover_keeps_it_open() {
     }
     assert_eq!(game.stats.warnings, 0);
 
-    // Moving the pointer off the panel is seen by the same opcode 124 poll and
-    // event 8 parks the list again on the next frame.
+    // The panel stays open until its own handle is clicked again.
     game.mouse = [800, 336];
-    for _ in 0..3 {
+    for _ in 0..30 {
+        game.frame();
+    }
+    assert_eq!(slot_x(&game, 2300), Some(0));
+    settle_pointer(&mut game, 320, 279);
+    hold_and_release(&mut game);
+    for _ in 0..30 {
         game.frame();
     }
     assert_eq!(slot_x(&game, 2300), Some(-305));
@@ -414,22 +422,85 @@ fn item_strip_left_click_opens_item_list_and_hover_keeps_it_open() {
 }
 
 #[test]
-fn status_strip_is_dormant_in_the_shipped_save() {
+fn status_strip_opens_through_the_visible_sliver() {
     let Some(mut game) = load_bedroom() else {
         return;
     };
     assert_eq!(game.vm.vars.get(15), 0);
-    settle_pointer(&mut game, 24, 192);
+    settle_pointer(&mut game, 15, 137);
     hold_and_release(&mut game);
     for _ in 0..30 {
         game.frame();
     }
-    // Event 10 requires v15 == 99, which no shipped script writes; the click
-    // therefore finds no page and the panel stays parked.
-    assert_eq!(game.last_action_event, None);
-    assert_eq!(slot_x(&game, 320), Some(-305));
+    // The map page stays dead (v15 == 0), but the visible sliver is clickable.
+    assert_eq!(game.last_action_event, Some(10));
+    assert_eq!(slot_x(&game, 320), Some(0));
     assert!(!running_event(&game, 10));
     assert!(!running_event(&game, 238));
+    assert_eq!(game.vm.vars.get(15), 0, "the bridge must not fake v15");
+    assert_eq!(game.stats.warnings, 0);
+}
+
+/// The visible upper triangle is the status drawer's whole affordance.
+#[test]
+fn status_triangle_opens_across_its_visible_handle() {
+    for y in [125, 137, 150] {
+        let Some(mut game) = load_bedroom() else {
+            return;
+        };
+        settle_pointer(&mut game, 8, y);
+        hold_and_release(&mut game);
+        for _ in 0..30 {
+            game.frame();
+        }
+        assert_eq!(
+            game.last_action_event,
+            Some(10),
+            "status triangle must open at y={y}"
+        );
+        assert_eq!(slot_x(&game, 320), Some(0), "status panel at y={y}");
+        assert_eq!(slot_file(&game, 320), "Picture/status01.png");
+        assert_eq!(game.stats.warnings, 0);
+    }
+}
+
+#[test]
+fn plain_sliver_pixels_do_not_open_the_status_drawer() {
+    let Some(mut game) = load_bedroom() else {
+        return;
+    };
+    settle_pointer(&mut game, 15, 192);
+    hold_and_release(&mut game);
+    for _ in 0..30 {
+        game.frame();
+    }
+    assert_eq!(
+        game.last_action_event, None,
+        "the side-panel strip outside the visible triangle is not a button"
+    );
+    assert_eq!(slot_x(&game, 320), Some(-305));
+}
+
+/// The save icon overlaps the bottom-left end of the visible status sliver.
+/// Picture controls are resolved before the generic strip, so the icon keeps
+/// its own 80x60 rectangle instead of opening the status panel.
+#[test]
+fn status_sliver_does_not_steal_the_save_icon() {
+    let Some(mut game) = load_bedroom() else {
+        return;
+    };
+    settle_pointer(&mut game, 20, 520);
+    hold_and_release(&mut game);
+    for _ in 0..20 {
+        game.frame();
+    }
+    assert_eq!(
+        game.last_action_event,
+        Some(5),
+        "the save icon must win inside its picture rectangle"
+    );
+    assert_eq!(slot_x(&game, 320), Some(-305), "status panel stays closed");
+    assert_eq!(slot_file(&game, -5), "Picture/icon01.png");
     assert_eq!(game.stats.warnings, 0);
 }
 
@@ -443,7 +514,7 @@ fn status_panel_opens_and_tracks_hover_once_the_gate_is_forced() {
         game.frame();
     }
 
-    settle_pointer(&mut game, 24, 192);
+    settle_pointer(&mut game, 15, 137);
     game.mouse_buttons = 1;
     game.frame();
     assert_eq!(
@@ -453,8 +524,12 @@ fn status_panel_opens_and_tracks_hover_once_the_gate_is_forced() {
     );
     assert_eq!(slot_x(&game, 320), Some(0));
     assert_eq!(slot_file(&game, 320), "Picture/status01.png");
+    game.mouse_buttons = 0;
+    for _ in 0..6 {
+        game.frame();
+    }
 
-    game.mouse = [100, 192];
+    game.mouse = [100, 137];
     for _ in 0..20 {
         game.frame();
     }
@@ -488,10 +563,16 @@ fn status_panel_opens_and_tracks_hover_once_the_gate_is_forced() {
     );
     assert_eq!(game.stats.warnings, 0);
 
-    // Same opcode 124 field 8 poll as the item list: leaving the rectangle makes
-    // event 11 call CE238 with argument 0 and park the panel at x=-305.
+    // Event 11's hover poll must not fight the open state after the pointer moves
+    // away. The handle is the only close path.
     game.mouse = [600, 192];
-    for _ in 0..3 {
+    for _ in 0..30 {
+        game.frame();
+    }
+    assert_eq!(slot_x(&game, 320), Some(0));
+    settle_pointer(&mut game, 320, 137);
+    hold_and_release(&mut game);
+    for _ in 0..30 {
         game.frame();
     }
     assert_eq!(slot_x(&game, 320), Some(-305));

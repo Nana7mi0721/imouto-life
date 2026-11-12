@@ -28,8 +28,8 @@ use crate::picture::{Picture, Screen, SCREEN_H, SCREEN_W};
 use crate::sysgraphic;
 use crate::window;
 
-/// One queued window panel: picture number, destination rect, alpha, tint, skin name.
-type Panel<'a> = (i32, [f32; 4], f32, [f32; 3], &'a str);
+/// One queued window panel: picture number, destination rect, alpha, tint, blend mode, skin name.
+type Panel<'a> = (i32, [f32; 4], f32, [f32; 3], i32, &'a str);
 
 /// Edge length of the atlas texture, in pixels.
 ///
@@ -118,6 +118,8 @@ pub struct SpriteQuad {
     /// 222/255 multiplied into the texel. Alpha is a separate slot and the tone never
     /// touches it, matching DxLib SetDrawBright.
     pub tint: [f32; 3],
+    /// Blend mode, verbatim.
+    pub blend: i32,
 }
 
 /// One text picture that still needs glyphs.
@@ -291,6 +293,46 @@ impl Atlas {
     #[must_use]
     pub fn pixels(&self) -> &[u8] {
         &self.pixels
+    }
+
+    /// Smallest top-left rectangle that contains every packed entry, in pixels.
+    ///
+    /// The backing page stays 4096x4096 so UVs remain stable, but a front-end does
+    /// not need to copy and upload the empty tail. The retail game's title and HUD
+    /// content commonly occupies only the top few shelves.
+    #[must_use]
+    pub fn content_size(&self) -> [u32; 2] {
+        let mut width = 0;
+        let mut height = 0;
+        for rect in self.entries.values() {
+            width = width.max(rect.x.saturating_add(rect.w));
+            height = height.max(rect.y.saturating_add(rect.h));
+        }
+        [width.min(self.width), height.min(self.height)]
+    }
+
+    /// RGBA8 rows inside [`Atlas::content_size`], still using the original pixel
+    /// coordinates.
+    ///
+    /// Godot's `ImageTexture.update` has no sub-rectangle overload, so cropping the
+    /// CPU copy is the portable way to stop uploading the empty part of a full page.
+    #[must_use]
+    pub fn content_pixels(&self) -> Vec<u8> {
+        let [width, height] = self.content_size();
+        if width == 0 || height == 0 {
+            return Vec::new();
+        }
+        let source_stride = self.width as usize * 4;
+        let row_bytes = width as usize * 4;
+        let mut out = Vec::with_capacity(row_bytes * height as usize);
+        for row in self
+            .pixels
+            .chunks_exact(source_stride)
+            .take(height as usize)
+        {
+            out.extend_from_slice(&row[..row_bytes]);
+        }
+        out
     }
 
     /// How many distinct images are packed.
@@ -545,6 +587,7 @@ impl Atlas {
             uv: entry.sub_uv(self.width, self.height, src),
             alpha,
             tint: [1.0, 1.0, 1.0],
+            blend: 0,
         })
     }
 
@@ -592,11 +635,12 @@ impl Atlas {
                     dst,
                     picture.alpha(),
                     tone_tint(picture),
+                    picture.blend,
                     picture.window_skin(),
                 ))
             })
             .collect();
-        for (number, dst, alpha, tint, skin_name) in panels {
+        for (number, dst, alpha, tint, blend, skin_name) in panels {
             let Some(skin) = self.add_asset(assets, skin_name) else {
                 continue;
             };
@@ -615,6 +659,7 @@ impl Atlas {
                     uv: skin.sub_uv(self.width, self.height, piece.src),
                     alpha,
                     tint,
+                    blend,
                 });
             }
         }
@@ -656,6 +701,7 @@ impl Atlas {
                     f32::from(quad.tone[1]) / 255.0,
                     f32::from(quad.tone[2]) / 255.0,
                 ],
+                blend: quad.blend,
             });
         }
         out.sort_by_key(|quad| quad.number);
@@ -716,6 +762,41 @@ mod tests {
 
     fn image(w: u32, h: u32, fill: u8) -> ImageData {
         ImageData::new(w, h, vec![fill; (w * h * 4) as usize]).expect("image")
+    }
+
+    fn rgba_image(w: u32, h: u32, pixels: &[u8]) -> ImageData {
+        ImageData::new(w, h, pixels.to_vec()).expect("rgba image")
+    }
+
+    #[test]
+    fn content_pixels_crop_the_empty_tail_without_moving_source_coordinates() {
+        let mut atlas = Atlas::with_size(8, 8);
+        assert_eq!(atlas.content_size(), [0, 0]);
+        assert!(atlas.content_pixels().is_empty());
+
+        atlas
+            .add("red", &rgba_image(3, 2, &[255, 0, 0, 255].repeat(6)))
+            .expect("red");
+        atlas
+            .add("green", &rgba_image(1, 4, &[0, 255, 0, 255].repeat(4)))
+            .expect("green");
+
+        assert_eq!(
+            atlas.content_size(),
+            [3, 6],
+            "content size is the packed bottom-right, not the 8x8 page"
+        );
+        let cropped = atlas.content_pixels();
+        assert_eq!(cropped.len(), 3 * 6 * 4);
+        let pixel = |x: usize, y: usize| {
+            let at = (y * 3 + x) * 4;
+            &cropped[at..at + 4]
+        };
+        assert_eq!(pixel(0, 0), [255, 0, 0, 255]);
+        assert_eq!(pixel(2, 1), [255, 0, 0, 255]);
+        assert_eq!(pixel(0, 2), [0, 255, 0, 255]);
+        assert_eq!(pixel(0, 5), [0, 255, 0, 255]);
+        assert_eq!(pixel(2, 5), [0, 0, 0, 0]);
     }
 
     #[test]
@@ -990,6 +1071,7 @@ mod tests {
             relative: false,
             scale_mode: 0,
             anchor: 0,
+            owner_event: None,
         });
         let mut atlas = Atlas::with_size(8, 8);
         let mut assets = Assets::new("no-such-root");
@@ -1017,6 +1099,7 @@ mod tests {
             relative: false,
             scale_mode: 0,
             anchor: 0,
+            owner_event: None,
         });
         let mut atlas = Atlas::with_size(64, 64);
         // Pre-pack the skin so the atlas never touches the filesystem: add_asset
@@ -1057,6 +1140,7 @@ mod tests {
             relative: false,
             scale_mode: 0,
             anchor: 0,
+            owner_event: None,
         }
     }
 
@@ -1138,6 +1222,7 @@ mod tests {
             relative: false,
             scale_mode: 0,
             anchor: 0,
+            owner_event: None,
         });
         let mut atlas = Atlas::with_size(64, 64);
         let skin = atlas
@@ -1150,5 +1235,31 @@ mod tests {
         assert_eq!(atlas.entry("SystemFile/panel.png"), Some(skin));
         // The skin is the only thing in the atlas: no drawing was synthesised for it.
         assert_eq!(atlas.len(), 1);
+    }
+
+    #[test]
+    fn picture_blend_propagates_through_screen_quad_to_sprite_quad() {
+        let mut screen = Screen::new();
+        for blend in 0..=3 {
+            let mut cmd = shape_picture(10 + blend, "<SQUARE>", (20, 20), (10 * blend, 0));
+            cmd.args[crate::picture::field::BLEND] = blend;
+            screen.apply(&cmd);
+            assert_eq!(screen.get(10 + blend).expect("picture").blend, blend);
+        }
+
+        let screen_quads = screen.quads(|_| None);
+        assert_eq!(screen_quads.len(), 4);
+        for (i, sq) in screen_quads.iter().enumerate() {
+            assert_eq!(sq.blend, i as i32);
+        }
+
+        let mut atlas = Atlas::with_size(256, 256);
+        let mut assets = Assets::new("no-such-root");
+        let sprite_quads = atlas.sprites(&screen, &mut assets);
+        assert_eq!(sprite_quads.len(), 4);
+        for (i, sq) in sprite_quads.iter().enumerate() {
+            assert_eq!(sq.number, 10 + i as i32);
+            assert_eq!(sq.blend, i as i32);
+        }
     }
 }

@@ -338,6 +338,7 @@ fn draw(
                 uv: skin.sub_uv(atlas.size()[0], atlas.size()[1], piece.src),
                 alpha: 1.0,
                 tint: [1.0, 1.0, 1.0],
+                blend: 0,
             });
         }
     }
@@ -352,6 +353,7 @@ fn draw(
                     uv: skin.sub_uv(atlas.size()[0], atlas.size()[1], piece.src),
                     alpha: 1.0,
                     tint: [1.0, 1.0, 1.0],
+                    blend: 0,
                 });
             }
         }

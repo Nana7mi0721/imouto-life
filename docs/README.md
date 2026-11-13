@@ -41,7 +41,7 @@
 | [M3_RUNTIME.md](M3_RUNTIME.md) | 完成 | M3 完整运行时：测试基架、引擎修复、存档/字符串/音频、遗留缺口 |
 | [M4_PARITY.md](M4_PARITY.md) | 完成 | M4 对等打磨分解（UI、音频、存档互通、性能） |
 | [M4_HUD.md](M4_HUD.md) | 完成 | M4 HUD/读档数值与负号图片保真修复 |
-| [M4_SETTINGS_UI.md](M4_SETTINGS_UI.md) | 完成 | CE132/CE95 设置界面排版修复（字号、290 位移、1/10 字符格、CursorBase） |
+| [M4_SETTINGS_UI.md](M4_SETTINGS_UI.md) | 完成/历史口径 | CE132/CE95 设置界面排版修复；tenths/1/10 字符格部分已在当前工作区撤销，见文首说明 |
 | [M4_PERF.md](M4_PERF.md) | 完成/基线 | M4 headless 性能基线与优化候选（tile quad 缓存已落地） |
 | [M4_V8_AUDIT.md](M4_V8_AUDIT.md) | 完成 | 普通变量 v8 语义专项（夜间可活动上限 23..26） |
 | [M5_BEYOND.md](M5_BEYOND.md) | 完成 | M5 超越原版 A–F 切片（高分辨率/调试 overlay/统计/翻译目录/mod 覆盖/消息回顾） |
@@ -142,7 +142,7 @@
 |---|---|---|
 | [GODOT_MIGRATION.md](GODOT_MIGRATION.md) | **现行 · P0/P1/P2 完成** | GDExtension 混合架构：Godot 负责窗口/渲染/音频/UI，Rust 保留 `wolf-format`/`wolf-vm`/`wolf-save`/`wolf-game`。含工程布局、`build/smoke/parity-godot.sh`、标题像素对照、输入/读档/文字校准与长程 parity 结果、剩余缺口 |
 | [../godot/](../godot/) | 现行 | Godot 4.7 工程（`project.godot`、`main.tscn`、`GameView.gd`、`WolfKeys/WolfText`、headless smoke/parity） |
-| [../crates/wolf-gdext/](../crates/wolf-gdext/) | 现行 | `WolfGame` GDExtension 类：每帧返回动态 sprites/texts/overlays/sounds，以及缓存的地图瓦片 RGBA 纹理 |
+| [../crates/wolf-gdext/](../crates/wolf-gdext/) | 现行 | `WolfGame` GDExtension 类：每帧返回动态 sprites/texts/overlays/sounds；T13 后玩法前端不再请求或绘制地图瓦片，核心 `Game::tile_quads()` 与 CLI `capture --map` 仅保留取证/诊断用途 |
 | [GODOT_DEBUGGING.md](GODOT_DEBUGGING.md) | 现行 | 操作/显示/对话缺失的排查手册：输入契约、`--log-input/--log-events/--log-messages`、截图 diff、字形覆盖、存档 fixture 坑 |
 
 ## 7. 翻译目录

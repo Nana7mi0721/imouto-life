@@ -247,8 +247,8 @@ advance；`Game::text_quads` 直接用 `run.width + run.font_px`，不再对同�
   的调色板 RGB；含 `\v` / 代码转义时用零 advance 的 `layout_with` 解析后，hash
   每个 run 的文本、字号、颜色索引、outline、右对齐标志与调色板 RGB。变量、数据库
   单元格或调色板一变，key 就变。
-- `x_bits` / `y_bits`：`picture.x/y + effect_offset()` 再除 `ui_scale_for`
-  （CE95 的十分之一格缩放也在内）。
+- `x_bits` / `y_bits`：`picture.x/y + effect_offset()`；当前工作区已撤销
+  `ui_scale_for`/tenths 二次 `/10`，因此不再有这层坐标缩放。
 - `anchor`、`alpha_bits`（`picture.alpha()`，含淡入与 290 效果）、`font_gen`
   （`set_font_metrics` 每次成功/失败安装都会 `wrapping_add(1)`）。
 

@@ -432,11 +432,16 @@ impl WolfGame {
         packet.set("transition_active", game.screen_transition.is_active());
         packet.set("pictures", outcome.pictures as i64);
         packet.set("idle", outcome.idle);
-        if let Some((current, maximum)) = game.hud_energy() {
-            let mut energy = VarDictionary::new();
-            energy.set("current", current as i64);
-            energy.set("max", maximum as i64);
-            packet.set("energy", &energy);
+        if let Some((current, maximum)) = game.hud_action_points() {
+            let mut ap = VarDictionary::new();
+            ap.set("current", current as i64);
+            ap.set("max", maximum as i64);
+            let bar = Game::hud_action_bar_rect();
+            ap.set(
+                "bar",
+                Rect2::new(Vector2::new(bar[0], bar[1]), Vector2::new(bar[2], bar[3])),
+            );
+            packet.set("ap", &ap);
         }
         // Opcode 175 (title → おわる) asks the process to exit; the front-end owns the
         // window, so it polls this instead of the engine calling exit() mid-frame.
@@ -491,7 +496,14 @@ impl WolfGame {
     /// cost 64 MiB per atlas revision and was the dominant startup/menu hitch.
     #[func]
     fn atlas_pixels(&self) -> PackedByteArray {
-        packed_rgba(&self.atlas.content_pixels())
+        let [width, height] = self.atlas.content_size();
+        let mut bytes = PackedByteArray::new();
+        let needed = width as usize * height as usize * 4;
+        bytes.resize(needed);
+        if !self.atlas.copy_content_pixels(bytes.as_mut_slice()) {
+            bytes.resize(0);
+        }
+        bytes
     }
 
     /// Runs the one-shot engine initialisation (common event 48) before a save load.
@@ -503,6 +515,23 @@ impl WolfGame {
             return 0;
         };
         game.prime_engine() as i64
+    }
+
+    /// Builds the first visible draw packet before the window presents a frame.
+    ///
+    /// `open`/`load_save` only parse data; picture decoding and the first atlas
+    /// pack happen lazily in `frame()`. On a cold disk that made the first
+    /// visible frame much slower than `ready_ms` suggested. This calls the same
+    /// render-only paths as `frame()` without advancing the VM, so the caller
+    /// can upload the atlas once while still showing its loading state.
+    #[func]
+    fn prewarm_draw(&mut self) {
+        let Self { game, atlas, .. } = self;
+        let Some(game) = game.as_mut() else {
+            return;
+        };
+        let _ = game.picture_quads(atlas);
+        let _ = game.text_quads();
     }
 
     /// Saves the live session to a WOLF `.sav` file.
@@ -593,10 +622,9 @@ fn sprite_dict(quad: &SpriteQuad, atlas_size: [u32; 2]) -> VarDictionary {
     let mut dict = VarDictionary::new();
     dict.set("number", quad.number as i64);
     // CE237 draws the two gauge frames at 1994/1998 and then the decorative
-    // sleeping overlay at 2000. Slot-order painting let the overlay erase the
-    // right end of the BAD frame. The frame art is hollow, so lifting only the
-    // two frame slots above the decoration restores the retail outline without
-    // covering the gauge labels or fill.
+    // sleeping overlay at 2000. The retail close-up shows the central sleeping
+    // badge covering the inner endpoints of both frames, so keep WOLF's slot
+    // order instead of lifting the frames above the decoration.
     let z = sprite_z(quad.number);
     dict.set("z", z as i64);
     dict.set("blend", quad.blend as i64);
@@ -620,10 +648,7 @@ fn sprite_dict(quad: &SpriteQuad, atlas_size: [u32; 2]) -> VarDictionary {
 }
 
 fn sprite_z(number: i32) -> i64 {
-    match number {
-        1994 | 1998 => 2001,
-        number => i64::from(number),
-    }
+    i64::from(number)
 }
 
 /// Draw order for the engine's own menu chrome (choice panel/text, message text and
@@ -664,13 +689,6 @@ fn message_run_dict(run: &MessageRun) -> VarDictionary {
     dict.set("weight", 700_i64);
     dict.set("z", UI_Z);
     dict
-}
-
-fn packed_rgba(pixels: &[u8]) -> PackedByteArray {
-    let mut bytes = PackedByteArray::new();
-    bytes.resize(pixels.len());
-    bytes.as_mut_slice().copy_from_slice(pixels);
-    bytes
 }
 
 fn rect2(rect: [f32; 4]) -> Rect2 {
@@ -723,9 +741,9 @@ mod tests {
     use super::sprite_z;
 
     #[test]
-    fn shared_status_frames_stay_above_the_sleeping_decoration() {
-        assert!(sprite_z(1994) > sprite_z(2000));
-        assert!(sprite_z(1998) > sprite_z(2000));
+    fn shared_status_frames_stay_below_the_sleeping_decoration() {
+        assert!(sprite_z(1994) < sprite_z(2000));
+        assert!(sprite_z(1998) < sprite_z(2000));
         assert_eq!(sprite_z(1996), 1996);
     }
 }

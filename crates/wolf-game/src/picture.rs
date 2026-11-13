@@ -119,9 +119,6 @@ pub const ANCHOR_TOP_CENTRE: u8 = 5;
 pub const ANCHOR_BOTTOM_CENTRE: u8 = 6;
 /// Scale field value that means "no scaling" (percent).
 pub const SCALE_ONE: i32 = 100;
-/// Divisor for UI blocks whose coordinates are tenths of a logical pixel.
-pub const TENTHS_UI: i32 = 10;
-
 /// Which argument slot of the long erase form carries the other end of the range.
 ///
 /// The erase form is `150 [head, number, fade, fade, 0, other]`: after the head word the
@@ -1123,52 +1120,6 @@ impl Screen {
         self.pictures.values()
     }
 
-    /// The coordinate scale for one UI block, 1.0 or 10.0.
-    ///
-    /// Most of the game draws in pixels. The settings screen (CE95) instead builds its
-    /// whole panel from tenth-of-a-character-cell units: it sizes the window as
-    /// 180x195 cells, draws every row at one base coordinate and separates rows with
-    /// `290` shifts in the same unit, and only its `/10` on the left edge brings the
-    /// base back to pixels. A block is recognised by a window box more than twice the
-    /// logical screen; built-in system graphics are exempt because the full-screen
-    /// gradient belongs to the same block but is a real 1024x576 drawing.
-    fn tenths_block(&self, number: i32) -> bool {
-        let block = number.div_euclid(1000);
-        self.pictures.values().any(|other| {
-            // A widget the engine parks far off screen keeps an oversized window box
-            // (the message window parks at y = 3840 between lines), but it is not a
-            // tenths UI block: dividing its parked position by ten drags it back on
-            // screen as a stray dark panel. Only an on-screen anchor marks a tenths
-            // block, so skip anything parked outside the extended logical screen.
-            let parked = other.x.abs() > SCREEN_W as i32 * 2 || other.y.abs() > SCREEN_H as i32 * 2;
-            other.number.div_euclid(1000) == block
-                && !parked
-                && other.kind.is_window()
-                && crate::sysgraphic::parse(&other.file).is_none()
-                && other
-                    .window
-                    .map(|(w, h)| w > SCREEN_W as i32 * 2 || h > SCREEN_H as i32 * 2)
-                    .unwrap_or(false)
-        })
-    }
-
-    #[must_use]
-    pub(crate) fn ui_scale_for(&self, number: i32) -> f32 {
-        let Some(picture) = self.pictures.get(&number) else {
-            return 1.0;
-        };
-        if !(picture.kind.is_text() || picture.kind.is_window())
-            || crate::sysgraphic::parse(&picture.file).is_some()
-        {
-            return 1.0;
-        }
-        if self.tenths_block(number) {
-            TENTHS_UI as f32
-        } else {
-            1.0
-        }
-    }
-
     /// Inserts a fully built picture, replacing any slot with the same number.
     ///
     /// Loading a save rebuilds every picture from the save's Part5 records, and those
@@ -1516,32 +1467,13 @@ impl Screen {
                     w.max(0) as f32,
                     h.max(0) as f32,
                 );
-                let mut dst = picture.transform(placed);
-                let ui = self.ui_scale_for(picture.number);
-                if ui > 1.0 {
-                    dst = [dst[0], dst[1] / ui, dst[2] / ui, dst[3] / ui];
-                }
+                let dst = picture.transform(placed);
                 ([0, 0, 0, 0], dst)
             } else {
                 let Some((src, (w, h))) = picture_frame(picture, &mut tex_size) else {
                     continue;
                 };
-                // Built-in system graphics are exempt from the tenths UI scale because
-                // the full-screen gradient is a real 1024x576 drawing. Their origin,
-                // however, can still be in tenths: CE94's TRI-RIGHT arrow carries
-                // x=9984/y=3120. Scale only those two fields, leaving the shape size
-                // (25x24) untouched.
-                let builtin_tenths = crate::sysgraphic::parse(&picture.file).is_some()
-                    && self.tenths_block(picture.number);
-                let mut dst = if builtin_tenths {
-                    picture.destination_with_tenths_origin(w as f32, h as f32)
-                } else {
-                    picture.destination(w as f32, h as f32)
-                };
-                let ui = self.ui_scale_for(picture.number);
-                if ui > 1.0 {
-                    dst = [dst[0], dst[1] / ui, dst[2] / ui, dst[3] / ui];
-                }
+                let dst = picture.destination(w as f32, h as f32);
                 (src, dst)
             };
             if !on_screen(dst) {
@@ -1557,7 +1489,7 @@ impl Screen {
     /// `opcode 124 hover` and the save-grid pointer mapping must land on the pixels
     /// the player sees: text metrics from the window box, window panels from their
     /// box, ordinary pictures from their texture's native size, plus the tenths UI
-    /// block scale that `quads` applies. The old hover shortcut treated every
+    /// The old hover shortcut treated every
     /// negative slot as a full-screen layer, which gave the 48x48 album icon at
     /// picture -7 a 1024x576 hit box and swallowed clicks meant for the data icon.
     #[must_use]
@@ -1574,9 +1506,7 @@ impl Screen {
         let is_panel = picture.kind.is_window()
             && picture.window.is_some()
             && crate::sysgraphic::parse(&picture.file).is_none();
-        let builtin_tenths =
-            crate::sysgraphic::parse(&picture.file).is_some() && self.tenths_block(number);
-        let mut dst = if is_panel {
+        let dst = if is_panel {
             let (w, h) = picture.window.unwrap_or((0, 0));
             if w <= crate::window::MIN_BOX || h <= crate::window::MIN_BOX {
                 // Atlas::sprites skips a panel this small, so there is no visible pixel
@@ -1592,27 +1522,13 @@ impl Screen {
             // resolvable graphic still owns the window box the script declared, and
             // opcode 124 may test exactly that synthetic control before its art loads.
             match picture_frame(picture, &mut tex_size) {
-                Some((_src, (w, h))) => {
-                    if builtin_tenths {
-                        picture.destination_with_tenths_origin(w as f32, h as f32)
-                    } else {
-                        picture.destination(w as f32, h as f32)
-                    }
-                }
+                Some((_src, (w, h))) => picture.destination(w as f32, h as f32),
                 None => {
                     let (w, h) = picture.window.unwrap_or((0, 0));
-                    if builtin_tenths {
-                        picture.destination_with_tenths_origin(w.max(0) as f32, h.max(0) as f32)
-                    } else {
-                        picture.destination(w.max(0) as f32, h.max(0) as f32)
-                    }
+                    picture.destination(w.max(0) as f32, h.max(0) as f32)
                 }
             }
         };
-        let ui = self.ui_scale_for(number);
-        if ui > 1.0 {
-            dst = [dst[0], dst[1] / ui, dst[2] / ui, dst[3] / ui];
-        }
         Some(dst)
     }
 }
@@ -1645,22 +1561,7 @@ impl Picture {
         self.destination_with_origin(self.x, self.y, w, h)
     }
 
-    /// As [`Self::destination`], with x/y divided by ten but the size untouched.
-    ///
-    /// Built-in system graphics in a tenths UI block keep their real pixel size
-    /// (the 25x24 TRI-RIGHT arrow, the 1024x576 full-screen gradient) while their
-    /// origin still comes from the tenths grid.
-    #[must_use]
-    pub fn destination_with_tenths_origin(&self, w: f32, h: f32) -> [f32; 4] {
-        self.destination_with_origin(
-            self.x.div_euclid(TENTHS_UI),
-            self.y.div_euclid(TENTHS_UI),
-            w,
-            h,
-        )
-    }
-
-    fn destination_with_origin(&self, x: i32, y: i32, w: f32, h: f32) -> [f32; 4] {
+    pub(crate) fn destination_with_origin(&self, x: i32, y: i32, w: f32, h: f32) -> [f32; 4] {
         // A negative scale is meaningful in the shipped HUD: CE237 draws the
         // BAD bars with scale=-100 at x=490 so their 215-pixel backing and frame
         // grow left towards the BAD label at x=280. Clamping to zero erased that
@@ -2669,11 +2570,21 @@ mod tests {
                 UNCHANGED, UNCHANGED, UNCHANGED, UNCHANGED, UNCHANGED, 5, 6, UNCHANGED, UNCHANGED,
             ],
         ));
-        assert!(!screen.get(20).expect("moved").erase_after_slide);
+        let moved = screen.get(20).expect("moved");
+        assert!(!moved.erase_after_slide);
+        assert!(
+            moved.transition.is_none(),
+            "the erase transition is cancelled"
+        );
+        assert_eq!(moved.opacity, 255, "the teleport keeps the picture visible");
         for _ in 0..10 {
             screen.advance();
         }
-        assert!(screen.get(20).is_some(), "a move keeps the slot alive");
+        let moved = screen.get(20).expect("a move keeps the slot alive");
+        assert_eq!(
+            moved.opacity, 255,
+            "the stale erase timer must not zero the alpha later"
+        );
     }
 
     #[test]
@@ -3621,81 +3532,5 @@ mod effect_tests {
             zoom.advance();
         }
         assert_eq!(zoom.percent(), 200, "the ramp parks at its target");
-    }
-
-    fn tenths_ui_screen() -> Screen {
-        let mut screen = Screen::new();
-
-        // The save-slot panel is the oversized anchor that marks chapter 12 as a
-        // tenths block. Its x is already pixels; y/w/h stay in tenths.
-        let mut panel = Picture::new(12050);
-        panel.kind = PictureKind::WindowString;
-        panel.file = "SystemFile/WindowBase_amania.png".to_owned();
-        panel.window = Some((9280, 1152));
-        panel.x = 48;
-        panel.y = 864;
-        screen.insert(panel);
-
-        // Built-in graphics in the same block keep their real size. The full-screen
-        // gradient must stay 1024x576.
-        let mut gradient = Picture::new(12000);
-        gradient.kind = PictureKind::WindowFile;
-        gradient.file = "<GRADY-779-111>".to_owned();
-        gradient.window = Some((1024, 576));
-        screen.insert(gradient);
-
-        // CE94's right arrow: the VM leaves its x/y in tenths because a self-variable
-        // range only divides the named slot, while its 25x24 shape is already pixels.
-        let mut arrow = Picture::new(12005);
-        arrow.kind = PictureKind::WindowFile;
-        arrow.file = "<TRI-RIGHT>".to_owned();
-        arrow.window = Some((25, 24));
-        arrow.anchor = ANCHOR_CENTRE;
-        arrow.x = 9984;
-        arrow.y = 3120;
-        screen.insert(arrow);
-
-        screen
-    }
-
-    #[test]
-    fn tenths_builtin_graphics_scale_origin_but_not_size() {
-        let screen = tenths_ui_screen();
-        let quads = screen.quads(|_| None);
-
-        let arrow = quads
-            .iter()
-            .find(|quad| quad.number == 12005)
-            .expect("right arrow quad");
-        assert_eq!(arrow.dst, [985.5, 300.0, 25.0, 24.0]);
-
-        let gradient = quads
-            .iter()
-            .find(|quad| quad.number == 12000)
-            .expect("full-screen gradient quad");
-        assert_eq!(
-            gradient.dst,
-            [0.0, 0.0, 1024.0, 576.0],
-            "the gradient's real 1024x576 size must not be divided by ten"
-        );
-    }
-
-    #[test]
-    fn tenths_builtin_hit_box_matches_its_visible_quad() {
-        let screen = tenths_ui_screen();
-        let visible = screen
-            .quads(|_| None)
-            .into_iter()
-            .find(|quad| quad.number == 12005)
-            .expect("right arrow quad");
-        let hit = screen
-            .picture_rect(12005, |_| None)
-            .expect("right arrow hit box");
-        assert_eq!(hit, visible.dst);
-        assert_eq!(
-            screen.picture_rect(12000, |_| None),
-            Some([0.0, 0.0, 1024.0, 576.0]),
-            "the gradient hit box keeps its real size"
-        );
     }
 }

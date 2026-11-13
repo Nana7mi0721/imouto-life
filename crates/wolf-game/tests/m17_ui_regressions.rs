@@ -8,7 +8,7 @@
 use std::path::PathBuf;
 
 use wolf_format::mps::Map;
-use wolf_game::{key, Atlas, Game};
+use wolf_game::{key, Atlas, Game, SpriteQuad};
 
 fn data_root() -> PathBuf {
     let raw = std::env::var("WOLF_DATA_ROOT").unwrap_or_else(|_| "work/Data".to_owned());
@@ -77,6 +77,22 @@ fn visible(game: &Game, number: i32) -> bool {
         .is_some_and(|picture| !picture.hidden && picture.opacity > 0)
 }
 
+fn quad_bounds(quads: &[SpriteQuad], number: i32) -> Option<[f32; 4]> {
+    let matching: Vec<_> = quads.iter().filter(|quad| quad.number == number).collect();
+    let first = matching.first()?;
+    let mut left = first.rect[0];
+    let mut top = first.rect[1];
+    let mut right = first.rect[0] + first.rect[2];
+    let mut bottom = first.rect[1] + first.rect[3];
+    for quad in matching.iter().skip(1) {
+        left = left.min(quad.rect[0]);
+        top = top.min(quad.rect[1]);
+        right = right.max(quad.rect[0] + quad.rect[2]);
+        bottom = bottom.max(quad.rect[1] + quad.rect[3]);
+    }
+    Some([left, top, right - left, bottom - top])
+}
+
 fn assert_panel_visible(game: &Game, number: i32, x: i32, context: &str) {
     let picture = game
         .screen
@@ -127,7 +143,7 @@ fn balloon_face_stays_anchored_when_the_frame_grows() {
     let mut one_line = None;
     for frame in 0..120 {
         game.frame();
-        let _ = game.picture_quads(&mut atlas);
+        let rendered = game.picture_quads(&mut atlas);
         let _ = game.text_quads();
         let face_visible = game
             .screen
@@ -136,14 +152,8 @@ fn balloon_face_stays_anchored_when_the_frame_grows() {
         if !face_visible {
             continue;
         }
-        let screen = &game.screen;
-        let assets = &mut game.assets;
-        let frame_rect = screen
-            .picture_rect(36000, |file| assets.texture_size(file))
-            .expect("one-line balloon frame");
-        let face_rect = screen
-            .picture_rect(36002, |file| assets.texture_size(file))
-            .expect("one-line balloon face");
+        let frame_rect = quad_bounds(&rendered, 36000).expect("one-line balloon frame");
+        let face_rect = quad_bounds(&rendered, 36002).expect("one-line balloon face");
         one_line = Some((frame, frame_rect, face_rect));
         break;
     }
@@ -164,7 +174,7 @@ fn balloon_face_stays_anchored_when_the_frame_grows() {
     let mut three_line = None;
     for frame in 120..280 {
         game.frame();
-        let _ = game.picture_quads(&mut atlas);
+        let rendered = game.picture_quads(&mut atlas);
         let _ = game.text_quads();
         let body_visible = game.screen.get(36013).is_some_and(|body| {
             !body.hidden && body.text.contains("第三行文字") && body.opacity > 0
@@ -172,14 +182,8 @@ fn balloon_face_stays_anchored_when_the_frame_grows() {
         if !body_visible {
             continue;
         }
-        let screen = &game.screen;
-        let assets = &mut game.assets;
-        let frame_rect = screen
-            .picture_rect(36000, |file| assets.texture_size(file))
-            .expect("three-line balloon frame");
-        let face_rect = screen
-            .picture_rect(36002, |file| assets.texture_size(file))
-            .expect("three-line balloon face");
+        let frame_rect = quad_bounds(&rendered, 36000).expect("three-line balloon frame");
+        let face_rect = quad_bounds(&rendered, 36002).expect("three-line balloon face");
         three_line = Some((frame, frame_rect, face_rect));
         break;
     }
@@ -197,6 +201,56 @@ fn balloon_face_stays_anchored_when_the_frame_grows() {
     assert_eq!(
         three_line_face, one_line_face,
         "the face is bottom-anchored and must not move with the body height"
+    );
+}
+
+#[test]
+fn balloon_quads_are_idempotent_and_do_not_mutate_the_screen() {
+    let Some(mut game) = open_event_one_balloon() else {
+        return;
+    };
+    for _ in 0..60 {
+        game.frame();
+        if !game.messages.is_empty() {
+            break;
+        }
+    }
+    let message = game
+        .messages
+        .last_mut()
+        .expect("event 1 must leave a live message");
+    message.text = "第一行文字\n第二行文字\n第三行文字".to_owned();
+    message.frames = 0;
+
+    let mut atlas = Atlas::with_size(2048, 4096);
+    let mut ready = false;
+    for _ in 0..160 {
+        game.frame();
+        if game.screen.get(36013).is_some_and(|body| {
+            !body.hidden && body.text.contains("第三行文字") && body.opacity > 0
+        }) {
+            ready = true;
+            break;
+        }
+    }
+    assert!(ready, "three-line balloon never became visible");
+
+    let logical_before = game
+        .screen
+        .get(36000)
+        .map(|frame| (frame.y, frame.window))
+        .expect("script-owned balloon frame");
+    let first = game.picture_quads(&mut atlas);
+    let second = game.picture_quads(&mut atlas);
+    assert_eq!(
+        quad_bounds(&first, 36000),
+        quad_bounds(&second, 36000),
+        "two draw passes must produce the same balloon geometry"
+    );
+    assert_eq!(
+        game.screen.get(36000).map(|frame| (frame.y, frame.window)),
+        Some(logical_before),
+        "picture_quads must not write render geometry back to the screen"
     );
 }
 
@@ -687,7 +741,7 @@ fn side_panel_handles_open_toggle_and_stay_stable() {
     // The drawer is click-to-toggle. Events 8/11 still poll hover every frame,
     // but an open panel reports a stable hover so it cannot blink shut while the
     // pointer crosses its transparent interior.
-    for (frame, mouse) in [[600, 192], [320, 137], [0, 500], [512, 288], [15, 137]]
+    for (frame, mouse) in [[15, 137], [320, 137], [0, 500], [329, 575], [15, 137]]
         .into_iter()
         .cycle()
         .take(120)
@@ -711,6 +765,153 @@ fn side_panel_handles_open_toggle_and_stay_stable() {
         game.frame();
     }
     assert_panel_visible(&game, 320, -305, "after status close");
+
+    // Idle parked panels must stay dark and fully opaque. Replaying a hide
+    // animation for an already closed drawer used to make the left strip blink
+    // when the other handle was used, even though the gameplay state was idle.
+    game.mouse = [600, 300];
+    for frame in 0..120 {
+        game.frame();
+        assert_panel_visible(
+            &game,
+            320,
+            -305,
+            &format!("parked status panel idle frame {frame}"),
+        );
+    }
+}
+
+#[test]
+fn idle_side_panel_slots_are_frame_stable() {
+    let Some(mut game) = loaded_with(&[7, 8, 10, 11]) else {
+        return;
+    };
+    game.mouse = [600, 300];
+    for _ in 0..30 {
+        game.frame();
+    }
+    let slots: Vec<i32> = [320, 321, 322].into_iter().chain(2300..=2319).collect();
+    let snapshot = |game: &Game| -> Vec<(i32, String)> {
+        slots
+            .iter()
+            .filter_map(|number| {
+                game.screen.get(*number).map(|picture| {
+                    (
+                        *number,
+                        format!(
+                            "kind={:?} file={:?} text={:?} size={:?} x={} y={} split={:?} \
+                                 pattern={} scale={}x{} opacity={} blend={} window={:?} anchor={} \
+                                 extras={:?} fade={} tone={:?} effects={:?} shift={:?} hidden={} \
+                                 transition={:?}",
+                            picture.kind,
+                            picture.file,
+                            picture.text,
+                            picture.text_size,
+                            picture.x,
+                            picture.y,
+                            picture.split,
+                            picture.pattern_index,
+                            picture.scale,
+                            picture.scale_y,
+                            picture.opacity,
+                            picture.blend,
+                            picture.window,
+                            picture.anchor,
+                            picture.extras,
+                            picture.fade,
+                            picture.tone,
+                            picture.effects,
+                            picture.shift,
+                            picture.hidden,
+                            picture.transition,
+                        ),
+                    )
+                })
+            })
+            .collect()
+    };
+    let baseline = snapshot(&game);
+    for frame in 0..120 {
+        game.frame();
+        let current = snapshot(&game);
+        if current != baseline {
+            let changed: Vec<(i32, String, String)> = current
+                .iter()
+                .zip(baseline.iter())
+                .filter(|(a, b)| a != b)
+                .map(|(a, b)| (a.0, b.1.clone(), a.1.clone()))
+                .collect();
+            panic!("idle side-panel slots changed on frame {frame}: {changed:?}");
+        }
+    }
+}
+
+#[test]
+fn open_side_panel_slots_are_frame_stable() {
+    let Some(mut game) = loaded_with(&[7, 8, 10, 11]) else {
+        return;
+    };
+    click_at(&mut game, 15, 137);
+    for _ in 0..30 {
+        game.frame();
+    }
+    game.mouse = [100, 300];
+    game.frame();
+
+    let slots: Vec<i32> = (320..=325).chain(2300..=2319).collect();
+    let snapshot = |game: &Game| -> Vec<(i32, String)> {
+        slots
+            .iter()
+            .filter_map(|number| {
+                game.screen.get(*number).map(|picture| {
+                    (
+                        *number,
+                        format!(
+                            "kind={:?} file={:?} text={:?} size={:?} x={} y={} split={:?} \
+                             pattern={} scale={}x{} opacity={} blend={} window={:?} anchor={} \
+                             extras={:?} fade={} tone={:?} effects={:?} shift={:?} hidden={} \
+                             transition={:?}",
+                            picture.kind,
+                            picture.file,
+                            picture.text,
+                            picture.text_size,
+                            picture.x,
+                            picture.y,
+                            picture.split,
+                            picture.pattern_index,
+                            picture.scale,
+                            picture.scale_y,
+                            picture.opacity,
+                            picture.blend,
+                            picture.window,
+                            picture.anchor,
+                            picture.extras,
+                            picture.fade,
+                            picture.tone,
+                            picture.effects,
+                            picture.shift,
+                            picture.hidden,
+                            picture.transition,
+                        ),
+                    )
+                })
+            })
+            .collect()
+    };
+    let baseline = snapshot(&game);
+    for frame in 0..120 {
+        game.frame();
+        let current = snapshot(&game);
+        if current != baseline {
+            let changed: Vec<(i32, String, String)> = current
+                .iter()
+                .zip(baseline.iter())
+                .filter(|(a, b)| a != b)
+                .map(|(a, b)| (a.0, b.1.clone(), a.1.clone()))
+                .collect();
+            panic!("open side-panel slots changed on frame {frame}: {changed:?}");
+        }
+    }
 }
 
 #[test]
@@ -728,10 +929,15 @@ fn status_and_item_handles_are_independent_and_mutually_exclusive() {
         game.frame();
     }
     assert_panel_visible(&game, 2300, 0, "after item slide-in");
-    game.mouse = [600, 192];
-    for frame in 0..60 {
+    game.mouse = [100, 300];
+    for frame in 0..30 {
         game.frame();
-        assert_panel_visible(&game, 2300, 0, &format!("item panel frame {frame}"));
+        assert_panel_visible(
+            &game,
+            2300,
+            0,
+            &format!("item panel inside rail frame {frame}"),
+        );
     }
 
     // Opening status explicitly closes the item drawer first.
@@ -759,6 +965,33 @@ fn status_and_item_handles_are_independent_and_mutually_exclusive() {
         -305,
         "opening item must retract the status drawer",
     );
+}
+
+#[test]
+fn side_panel_auto_retracts_after_pointer_leaves_the_rail() {
+    let Some(mut game) = loaded_with(&[7, 8, 10, 11]) else {
+        return;
+    };
+    click_at(&mut game, 15, 137);
+    for _ in 0..30 {
+        game.frame();
+    }
+    assert_panel_visible(&game, 320, 0, "after status slide-in");
+
+    game.mouse = [600, 192];
+    for frame in 0..7 {
+        game.frame();
+        assert_panel_visible(
+            &game,
+            320,
+            0,
+            &format!("auto-retract debounce frame {frame}"),
+        );
+    }
+    for _ in 0..30 {
+        game.frame();
+    }
+    assert_panel_visible(&game, 320, -305, "after auto-retract");
 }
 
 #[test]
@@ -836,6 +1069,39 @@ fn bedroom_standing_art_maps_v14_to_the_action_events() {
             "v14={pose} must route the standing-art click to ev{event}"
         );
     }
+}
+
+#[test]
+fn sleeping_sister_uses_the_night_pose_rectangle_and_forgiveness() {
+    let Some(mut game) = loaded_with(&[12, 13]) else {
+        return;
+    };
+    game.vm.vars.set(14, 5);
+    game.vm.vars.set(100, 0);
+    game.vm.vars.set(176, 0);
+    let rect = game
+        .runtime
+        .action_key_rect(&game.vm, 12)
+        .expect("就寝妹 action rectangle");
+    assert_eq!(
+        rect,
+        (144, 320, 144, 64),
+        "SampleMapA event 12 must stay at tile (9,20) with a 9x4 hit rectangle"
+    );
+
+    let (left, top, _, height) = rect;
+    click_at(&mut game, left - 17, top + height / 2);
+    assert_eq!(
+        game.last_action_event, None,
+        "the sleeping-sister target must not grow without bound"
+    );
+
+    click_at(&mut game, left - 14, top + height / 2);
+    assert_eq!(
+        game.last_action_event,
+        Some(12),
+        "the sleeping pose must route a near-edge click to 就寝妹"
+    );
 }
 
 #[test]

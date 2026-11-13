@@ -48,7 +48,7 @@ class _BlendBatch extends Node2D:
 	var bold_font: Font
 	var regular_font: Font
 	var frozen_texture: Texture2D
-	var energy: Dictionary = {}
+	var ap: Dictionary = {}
 
 	func _draw() -> void:
 		for item in items:
@@ -69,7 +69,7 @@ class _BlendBatch extends Node2D:
 			elif item.has("text"):
 				WolfTextScript.draw_text(self, item["text"], bold_font, regular_font)
 
-		_draw_energy()
+		_draw_action_points()
 		for overlay in overlays:
 			var colour: Color = overlay["color"]
 			colour.a *= float(overlay["alpha"])
@@ -78,19 +78,21 @@ class _BlendBatch extends Node2D:
 			elif overlay["kind"] == "frozen" and frozen_texture != null and colour.a > 0.0:
 				draw_texture_rect(frozen_texture, Rect2(Vector2.ZERO, LOGICAL_SIZE), false, colour)
 
-	func _draw_energy() -> void:
-		if energy.is_empty():
+	func _draw_action_points() -> void:
+		if ap.is_empty():
 			return
-		var maximum := maxi(1, int(energy.get("max", 0)))
-		var current := clampi(int(energy.get("current", 0)), 0, maximum)
-		var origin := Vector2(760.0, 34.0)
-		var box := Rect2(origin, Vector2(100.0, 8.0))
+		var maximum := maxi(1, int(ap.get("max", 0)))
+		var current := clampi(int(ap.get("current", 0)), 0, maximum)
+		var box: Rect2 = ap.get("bar", Rect2(Vector2(608.0, 20.0), Vector2(54.0, 8.0)))
 		draw_rect(box, Color(0.0, 0.0, 0.0, 0.35), true)
 		draw_rect(box, Color.WHITE, false, 1.0)
 		var ratio := float(current) / float(maximum)
 		if ratio > 0.0:
 			draw_rect(
-				Rect2(origin + Vector2(2.0, 2.0), Vector2(96.0 * ratio, 4.0)),
+				Rect2(
+					box.position + Vector2(2.0, 2.0),
+					Vector2((box.size.x - 4.0) * ratio, box.size.y - 4.0)
+				),
 				Color(0.97, 0.97, 0.97, 0.95),
 				true
 			)
@@ -176,13 +178,18 @@ var perf_frame_us_total: int = 0
 var perf_wolf_us_total: int = 0
 var perf_wolf_us_max: int = 0
 var perf_sync_us_total: int = 0
+var perf_sync_us_max: int = 0
 var perf_sync_calls: int = 0
 var perf_sync_uploads: int = 0
 var perf_sync_bytes: int = 0
+var perf_upload_us_total: int = 0
+var perf_upload_us_max: int = 0
 var perf_freeze_captures: int = 0
 var perf_freeze_us_total: int = 0
+var perf_freeze_us_max: int = 0
 var perf_draw_calls: int = 0
 var perf_draw_us_total: int = 0
+var perf_draw_us_max: int = 0
 var perf_atlas_revision: int = -1
 var perf_atlas_revision_changes: int = 0
 var perf_last_report_frame: int = 0
@@ -234,18 +241,24 @@ func _ready() -> void:
 			wolf.set_auto_advance(false)
 		print("wolf: auto-play enabled (messages advance, choices answer 0)")
 	if not load_save_path.is_empty():
+		var prime_started := Time.get_ticks_usec()
 		wolf.prime_engine()
+		print("startup: prime_engine_ms=", "%.1f" % ((Time.get_ticks_usec() - prime_started) / 1000.0))
+		var load_started := Time.get_ticks_usec()
 		if not wolf.load_save(load_save_path):
 			push_error("WolfGame.load_save failed: " + load_save_path)
 			set_physics_process(false)
 			return
+		print("startup: load_save_ms=", "%.1f" % ((Time.get_ticks_usec() - load_started) / 1000.0))
 	elif entry == "menu":
 		# CE48/CE63 are engine coroutines, not part of CE42. Starting the title event
 		# directly skips their one-time initialisation: Sys1/Sys2 stay at zero (so a
 		# message renders at the top-left instead of (64,410)), the message-window
 		# frame never appears, and a new game started from this menu runs without the
 		# HUD/UI setup. Prime the engine exactly like the load path above.
+		var prime_started := Time.get_ticks_usec()
 		var primed := wolf.prime_engine()
+		print("startup: prime_engine_ms=", "%.1f" % ((Time.get_ticks_usec() - prime_started) / 1000.0))
 		print("wolf: prime_engine frames=", primed)
 		if not wolf.start_title():
 			push_error("WolfGame.start_title failed")
@@ -255,6 +268,16 @@ func _ready() -> void:
 		push_error("WolfGame.boot failed")
 		set_physics_process(false)
 		return
+
+	# Move first-use picture decoding and the initial atlas upload out of the
+	# first visible physics frame. `prewarm_draw` is render-only; it does not
+	# advance VM time or change the saved state.
+	var prewarm_started := Time.get_ticks_usec()
+	wolf.prewarm_draw()
+	print("startup: prewarm_draw_ms=", "%.1f" % ((Time.get_ticks_usec() - prewarm_started) / 1000.0))
+	var prewarm_upload_started := Time.get_ticks_usec()
+	_sync_atlas()
+	print("startup: prewarm_upload_ms=", "%.1f" % ((Time.get_ticks_usec() - prewarm_upload_started) / 1000.0))
 
 	set_physics_process(true)
 	print("startup: ready_ms=", "%.1f" % ((Time.get_ticks_usec() - startup_started) / 1000.0))
@@ -305,7 +328,9 @@ func _physics_process(_delta: float) -> void:
 
 	var sync_started := Time.get_ticks_usec()
 	_sync_atlas()
-	perf_sync_us_total += Time.get_ticks_usec() - sync_started
+	var sync_us := Time.get_ticks_usec() - sync_started
+	perf_sync_us_total += sync_us
+	perf_sync_us_max = maxi(perf_sync_us_max, sync_us)
 	perf_sync_calls += 1
 	var atlas_revision := wolf.atlas_len()
 	if atlas_revision != perf_atlas_revision:
@@ -495,7 +520,7 @@ func _draw() -> void:
 	perf_draw_calls += 1
 	draw_rect(Rect2(Vector2.ZERO, LOGICAL_SIZE), Color.BLACK)
 	if atlas_texture == null:
-		perf_draw_us_total += Time.get_ticks_usec() - draw_started
+		_record_draw_time(draw_started)
 		return
 
 	# Pictures and text share ONE layer stack keyed by WOLF picture slot. Drawing all
@@ -520,6 +545,10 @@ func _draw() -> void:
 
 	if not has_blends:
 		for batch in _batch_pool:
+			batch.items.clear()
+			batch.overlays.clear()
+			batch.ap = {}
+			batch.frozen_texture = null
 			batch.visible = false
 		for item in items:
 			if item.has("sprite"):
@@ -532,7 +561,7 @@ func _draw() -> void:
 			else:
 				_draw_text(item["text"])
 
-		_draw_energy(packet.get("energy", {}))
+		_draw_action_points(packet.get("ap", {}))
 		for overlay in overlays:
 			var colour: Color = overlay["color"]
 			colour.a *= float(overlay["alpha"])
@@ -540,7 +569,7 @@ func _draw() -> void:
 				draw_rect(Rect2(Vector2.ZERO, LOGICAL_SIZE), colour)
 			elif overlay["kind"] == "frozen" and frozen_texture != null and colour.a > 0.0:
 				draw_texture_rect(frozen_texture, Rect2(Vector2.ZERO, LOGICAL_SIZE), false, colour)
-		perf_draw_us_total += Time.get_ticks_usec() - draw_started
+		_record_draw_time(draw_started)
 		return
 
 	# Mixed-blend path (whenever ANY sprite has blend in 1, 2, 3)
@@ -559,7 +588,7 @@ func _draw() -> void:
 					"blend": current_blend,
 					"items": current_items,
 					"overlays": [],
-					"energy": {},
+					"ap": {},
 				})
 				current_items = []
 			current_blend = item_blend
@@ -569,10 +598,10 @@ func _draw() -> void:
 			"blend": current_blend,
 			"items": current_items,
 			"overlays": [],
-			"energy": {},
+			"ap": {},
 		})
 
-	_append_energy_and_overlays(batches, overlays, packet.get("energy", {}))
+	_append_action_bar_and_overlays(batches, overlays, packet.get("ap", {}))
 
 	# Acquire / reuse _BlendBatch child nodes from _batch_pool
 	while _batch_pool.size() < batches.size():
@@ -593,7 +622,7 @@ func _draw() -> void:
 		batch.bold_font = bold_font
 		batch.regular_font = regular_font
 		batch.frozen_texture = frozen_texture
-		batch.energy = b_info["energy"]
+		batch.ap = b_info["ap"]
 		batch.visible = true
 		batch.queue_redraw()
 
@@ -601,30 +630,37 @@ func _draw() -> void:
 		var unused := _batch_pool[i]
 		unused.items.clear()
 		unused.overlays.clear()
-		unused.energy = {}
+		unused.ap = {}
+		unused.frozen_texture = null
 		unused.visible = false
-	perf_draw_us_total += Time.get_ticks_usec() - draw_started
+	_record_draw_time(draw_started)
+
+
+func _record_draw_time(started: int) -> void:
+	var draw_us := Time.get_ticks_usec() - started
+	perf_draw_us_total += draw_us
+	perf_draw_us_max = maxi(perf_draw_us_max, draw_us)
 
 
 ## Energy and screen overlays must use normal blending even when the last sprite
 ## batch is ADD/SUB/MUL. Otherwise the white stamina bar inherits the preceding
 ## material and can disappear behind an effect.
-func _append_energy_and_overlays(
+func _append_action_bar_and_overlays(
 	batches: Array[Dictionary],
 	overlays: Array,
-	energy: Dictionary
+	ap: Dictionary
 ) -> void:
-	if overlays.is_empty() and energy.is_empty():
+	if overlays.is_empty() and ap.is_empty():
 		return
 	if not batches.is_empty() and batches[-1]["blend"] == 0:
 		batches[-1]["overlays"] = overlays
-		batches[-1]["energy"] = energy
+		batches[-1]["ap"] = ap
 		return
 	batches.append({
 		"blend": 0,
 		"items": [],
 		"overlays": overlays,
-		"energy": energy,
+		"ap": ap,
 	})
 
 
@@ -638,19 +674,21 @@ func _draw_item_before(a: Dictionary, b: Dictionary) -> bool:
 	return a["z"] < b["z"]
 
 
-func _draw_energy(energy: Dictionary) -> void:
-	if energy.is_empty():
+func _draw_action_points(ap: Dictionary) -> void:
+	if ap.is_empty():
 		return
-	var maximum := maxi(1, int(energy.get("max", 0)))
-	var current := clampi(int(energy.get("current", 0)), 0, maximum)
-	var origin := Vector2(760.0, 34.0)
-	var box := Rect2(origin, Vector2(100.0, 8.0))
+	var maximum := maxi(1, int(ap.get("max", 0)))
+	var current := clampi(int(ap.get("current", 0)), 0, maximum)
+	var box: Rect2 = ap.get("bar", Rect2(Vector2(608.0, 20.0), Vector2(54.0, 8.0)))
 	draw_rect(box, Color(0.0, 0.0, 0.0, 0.35), true)
 	draw_rect(box, Color.WHITE, false, 1.0)
 	var ratio := float(current) / float(maximum)
 	if ratio > 0.0:
 		draw_rect(
-			Rect2(origin + Vector2(2.0, 2.0), Vector2(96.0 * ratio, 4.0)),
+			Rect2(
+				box.position + Vector2(2.0, 2.0),
+				Vector2((box.size.x - 4.0) * ratio, box.size.y - 4.0)
+			),
 			Color(0.97, 0.97, 0.97, 0.95),
 			true
 		)
@@ -851,7 +889,7 @@ func _has_frozen_overlay(packet: Dictionary) -> bool:
 ## for the whole 162 dissolve; re-reading the viewport on every active frame is a
 ## full-screen GPU sync and turns a ten-frame fade into ten stalls.
 func _update_frozen_frame(packet: Dictionary) -> void:
-	if packet.get("freeze", false) and frozen_texture == null:
+	if packet.get("freeze", false):
 		_capture_frozen_frame()
 	if (
 		not packet.get("transition_active", false)
@@ -864,9 +902,17 @@ func _update_frozen_frame(packet: Dictionary) -> void:
 func _capture_frozen_frame() -> void:
 	var started := Time.get_ticks_usec()
 	var previous := get_viewport().get_texture().get_image()
-	frozen_texture = ImageTexture.create_from_image(previous)
+	# A second 161 can arrive before the first dissolve has fully cleared the
+	# snapshot. Refresh it rather than keeping the old scene; reuse the GPU
+	# texture when the viewport size is unchanged.
+	if frozen_texture != null and Vector2i(frozen_texture.get_size()) == previous.get_size():
+		frozen_texture.update(previous)
+	else:
+		frozen_texture = ImageTexture.create_from_image(previous)
 	perf_freeze_captures += 1
-	perf_freeze_us_total += Time.get_ticks_usec() - started
+	var freeze_us := Time.get_ticks_usec() - started
+	perf_freeze_us_total += freeze_us
+	perf_freeze_us_max = maxi(perf_freeze_us_max, freeze_us)
 
 
 func _clear_frozen_frame() -> void:
@@ -877,13 +923,12 @@ func _sync_atlas() -> void:
 	var generation := wolf.atlas_len()
 	if generation == atlas_len and atlas_texture != null:
 		return
-	var started := Time.get_ticks_usec()
+	var upload_started := Time.get_ticks_usec()
 	atlas_len = generation
 	var size := wolf.atlas_size()
 	if size.x <= 0 or size.y <= 0:
 		atlas_texture = null
 		atlas_pixel_size = Vector2i.ZERO
-		perf_sync_us_total += Time.get_ticks_usec() - started
 		return
 	var bytes := wolf.atlas_pixels()
 	var expected := size.x * size.y * 4
@@ -894,10 +939,7 @@ func _sync_atlas() -> void:
 		)
 		atlas_texture = null
 		atlas_pixel_size = Vector2i.ZERO
-		perf_sync_us_total += Time.get_ticks_usec() - started
 		return
-	perf_sync_uploads += 1
-	perf_sync_bytes += bytes.size()
 	var image := Image.create_from_data(size.x, size.y, false, Image.FORMAT_RGBA8, bytes)
 	if atlas_texture == null or atlas_pixel_size != size:
 		atlas_texture = ImageTexture.create_from_image(image)
@@ -906,7 +948,11 @@ func _sync_atlas() -> void:
 		# Reuse the GPU texture: interaction-heavy screens add many UI entries, and a
 		# fresh 64 MiB allocation for each one is a visible hitch.
 		atlas_texture.update(image)
-	perf_sync_us_total += Time.get_ticks_usec() - started
+	perf_sync_uploads += 1
+	perf_sync_bytes += bytes.size()
+	var upload_us := Time.get_ticks_usec() - upload_started
+	perf_upload_us_total += upload_us
+	perf_upload_us_max = maxi(perf_upload_us_max, upload_us)
 
 
 func _print_perf_window() -> void:
@@ -919,11 +965,16 @@ func _print_perf_window() -> void:
 		" sync_uploads=", perf_sync_uploads,
 		" sync_MiB=", "%.1f" % (float(perf_sync_bytes) / 1048576.0),
 		" sync_avg_ms=", "%.3f" % (float(perf_sync_us_total) / 1000.0 / maxi(1, perf_sync_calls)),
+		" sync_max_ms=", "%.3f" % (float(perf_sync_us_max) / 1000.0),
+		" upload_avg_ms=", "%.3f" % (float(perf_upload_us_total) / 1000.0 / maxi(1, perf_sync_uploads)),
+		" upload_max_ms=", "%.3f" % (float(perf_upload_us_max) / 1000.0),
 		" freeze_captures=", perf_freeze_captures,
 		" freeze_avg_ms=", "%.3f" % (float(perf_freeze_us_total) / 1000.0 / maxi(1, perf_freeze_captures)),
+		" freeze_max_ms=", "%.3f" % (float(perf_freeze_us_max) / 1000.0),
 		" atlas_revision_changes=", perf_atlas_revision_changes,
 		" draw_calls=", perf_draw_calls,
 		" draw_avg_ms=", "%.3f" % (float(perf_draw_us_total) / 1000.0 / maxi(1, perf_draw_calls)),
+		" draw_max_ms=", "%.3f" % (float(perf_draw_us_max) / 1000.0),
 		" physics_avg_ms=", "%.3f" % (float(perf_frame_us_total) / 1000.0 / denominator),
 	)
 

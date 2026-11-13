@@ -123,6 +123,20 @@ fn event_one_runs_ce268_and_the_name_reaches_the_balloon_plate() {
         }
         visible_streak += 1;
         longest_visible_streak = longest_visible_streak.max(visible_streak);
+        if visible_streak == 1 {
+            if let Some(plate) = game.screen.get(36008) {
+                eprintln!(
+                    "plate base split={:?} pattern={} window={:?} xy=({}, {}) anchor={} extras={:?}",
+                    plate.split,
+                    plate.pattern_index,
+                    plate.window,
+                    plate.x,
+                    plate.y,
+                    plate.anchor,
+                    plate.extras
+                );
+            }
+        }
         let rect = game
             .screen
             .picture_rect(PLATE, |_| None)

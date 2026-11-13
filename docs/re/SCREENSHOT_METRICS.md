@@ -114,7 +114,11 @@ bbox/墨迹带/pitch 三种算法结果，`annot_89EF_choice.png` 等是标注�
 对带上沿做最小二乘。缩放标定用同图全角字的 advance / 20 反推。
 
 
-## 6 十分之一单位 UI 块（存档/读档界面，CE94 / CE131）
+## 6 十分之一单位 UI 块（历史测量；存档/读档界面 CE94 / CE131）
+
+> **当前状态（2026-11-13）**：本节记录的 `Screen::ui_scale_for`、`TENTHS_UI`/
+> `tenths_block` 与渲染二次 `/10` 补偿已在当前工作区撤销，相关符号不再存在于
+> `wolf-game`。下面的坐标模型只用于解释历史截图、旧测试和旧实现，不是现行渲染路径。
 
 依据：实机参考图 `prt sc/{25B8577A-18EA-4AD0-B444-AEE4B94E60FF}.png`（1532x866，scale 1.4961/1.5035）与我们对 `capture --map SampleMapA --event 5` 的离屏实测 + CE94 脚本 dump（`work/out/play_gpu/ce94.txt`）。
 
@@ -123,15 +127,20 @@ bbox/墨迹带/pitch 三种算法结果，`annot_89EF_choice.png` 等是标注�
 - 竖直白边逻辑 y=86.5 / 198.2 / 312.6 / 427.7 / 542.1 → **4 个槽**，每槽高≈112。
 - 槽1「数据 1」墨迹左沿 x=70.2（≈面板左缘+23）。
 
-### 6.2 x / y / w / h 的不同缩放（关键）
+### 6.2 x / y / w / h 的不同缩放（历史 tenths 实现）
 CE94 pc83-107 先按坐标倍率把槽字段放大，再用 op121 flags=0x10400 对 **x 侧（self22/30/56/70/73）单独 /10**；y/w/h 保持十分之一。因此渲染 tenths block 时：
-- **x 已是像素，渲染时不再除 10**；
-- **y、w、h 仍是十分之一，渲染时要除 10**。
+- **x 已是像素，历史 tenths 渲染层不再除 10**；
+- **y、w、h 仍是十分之一，历史 tenths 渲染层除 10**。
 
-实测例：槽窗口 12050 `args=[0,9280,1152,1,255,48,864,100,0,0]` → x=48（像素）、y=864→86.4、w=9280→928、h=1152→115.2。若把 x 也 /10，面板会落到 x=4.8（正是修复前整片黑面板左移的根因）。
+历史实测例：槽窗口 12050 `args=[0,9280,1152,1,255,48,864,100,0,0]` → x=48（像素）、
+y=864→86.4、w=9280→928、h=1152→115.2。若把 x 也 /10，面板会落到 x=4.8（正是
+旧实现修复前整片黑面板左移的根因）。当前代码不执行这层二次缩放。
 
 ### 6.3 chapter 分组
-`Screen::ui_scale_for` 的分组键必须是 `number/1000`（不是 /100）：第 4 槽窗口 12110 属 chapter 121，同块只有自己且 y=4320 被 parked 判据排除，若按 /100 分组会判成 ui=1 而不绘制；归到 12xxx 后槽1（12050，y=864 非 parked）成为锚点，四槽统一 10x。
+历史实现中 `Screen::ui_scale_for` 的分组键必须是 `number/1000`（不是 /100）：
+第 4 槽窗口 12110 属 chapter 121，同块只有自己且 y=4320 被 parked 判据排除，
+若按 /100 分组会判成 ui=1 而不绘制；归到 12xxx 后槽1（12050，y=864 非 parked）
+成为锚点，四槽统一 10x。当前源码已无该函数。
 
 ### 6.4 槽框与光标皮肤
 `SystemFile/WindowBase_amania.png`（18×18，体色 0x1F2425 α223、白边 0xf2f3f3）作槽面板；`SystemFile/CursorBase.png`（12×12）作槽框。两者都须用**空心九宫格**（`crates/wolf-game/src/window.rs` 的 `nine_slice_frame`，去掉中心填充）；否则 CursorBase 会把整个槽铺成不透明黑块。
@@ -152,7 +161,12 @@ CE94 pc153 画出全屏 `pic 12000 file "<GRADY-779-111>"`（window 1024x576、t
 ### 6.7 HUD / 普通文本的字重与垂直基线（2026-11-03 实测）
 - 字体：`Game.dat` 的 `Microsoft YaHei UI Bold`（`C:\Windows\Fonts\msyhbd.ttc`，唯一 face 为 weight 700）。cosmic-text 若按默认 weight 400 请求，会跳过主 face 退到 `seguisym.ttf`，其 digit advance=0.5391em：24px `19:30` 行宽只有 56.95px（glyph 全来自 fallback）。
 - 修复后（weight 700）：24px `19:30` 行宽 66.06px，墨迹 x36..98/y11..28（参考 x37..99/y11..28，宽 63）；`持有金钱` 宽 159（参考158）；`周一` 宽34。
-- 普通 text picture（HUD、对话等 `ui<=1`）需在 half-leading 抬升后再下移 **4px**：`textpic::PLAIN_TEXT_TOP_OFFSET`。tenths UI 存档标签（`ui>1`）不加此偏移，保持 regular weight 400；存档 data 墨迹 x71..121/宽51（参考 x68..118/宽51），time 宽34~35（参考37，受 LANCZOS 阈值差 2px）。
+- 普通 text picture（HUD、对话等）需在 half-leading 抬升后再下移 **4px**：
+  `textpic::PLAIN_TEXT_TOP_OFFSET`。存档槽等原生 `12xxx` UI 标签不加此偏移，
+  保持 regular weight 400；当前代码以 `Game::uses_regular_ui_text(number)` 的
+  `12000..13000` 范围选择这一样式，而不是 tenths 的 `ui_scale_for`。存档 data
+  墨迹 x71..121/宽51（参考 x68..118/宽51），time 宽34~35（参考37，受 LANCZOS
+  阈值差 2px）。
 - 视觉回归：`day_command` nonblack 532756→533165，`hud` 554374→554868；`title/map_idle/saveui` 不变。
 
 ### 6.8 HUD ASCII 空格按 0.5 em 度量（2026-11-03 实测）

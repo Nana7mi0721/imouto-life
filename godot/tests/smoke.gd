@@ -18,7 +18,7 @@ class _FrozenSnapshotProbe extends "res://scripts/GameView.gd":
 
 
 func _init() -> void:
-	if _check_energy_batch() != 0:
+	if _check_action_points_batch() != 0:
 		quit(1)
 		return
 	if _check_transition_snapshot_once() != 0:
@@ -60,22 +60,26 @@ func _init() -> void:
 	quit(0)
 
 
-func _check_energy_batch() -> int:
+func _check_action_points_batch() -> int:
 	var view := _FrozenSnapshotProbe.new()
 	var batches: Array[Dictionary] = [{
 		"blend": 3,
 		"items": [],
 		"overlays": [],
-		"energy": {},
+		"ap": {},
 	}]
-	var energy := {"current": 3, "max": 3}
-	view._append_energy_and_overlays(batches, [], energy)
+	var ap := {
+		"current": 60,
+		"max": 65,
+		"bar": Rect2(Vector2(608.0, 20.0), Vector2(54.0, 8.0)),
+	}
+	view._append_action_bar_and_overlays(batches, [], ap)
 	if (
 		batches.size() != 2
 		or int(batches[-1]["blend"]) != 0
-		or batches[-1]["energy"] != energy
+		or batches[-1]["ap"] != ap
 	):
-		push_error("smoke: energy must get a normal-blend batch after a mixed sprite")
+		push_error("smoke: action points must get a normal-blend batch after a mixed sprite")
 		view.free()
 		return 1
 
@@ -83,15 +87,15 @@ func _check_energy_batch() -> int:
 		"blend": 0,
 		"items": [],
 		"overlays": [],
-		"energy": {},
+		"ap": {},
 	}]
-	view._append_energy_and_overlays(normal, [], energy)
-	if normal.size() != 1 or normal[0]["energy"] != energy:
-		push_error("smoke: energy should reuse a final normal-blend batch")
+	view._append_action_bar_and_overlays(normal, [], ap)
+	if normal.size() != 1 or normal[0]["ap"] != ap:
+		push_error("smoke: action points should reuse a final normal-blend batch")
 		view.free()
 		return 1
 
-	print("smoke: energy_normal_batch=ok")
+	print("smoke: action_points_normal_batch=ok")
 	view.free()
 	return 0
 

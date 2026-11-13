@@ -147,14 +147,122 @@ const BALLOON_BODY_TEXT_PICTURE: i32 = 36013;
 /// CE270's balloon name text picture.
 const BALLOON_NAME_TEXT_PICTURE: i32 = 36014;
 
+/// Vertical adjustment for the speaker name inside the 34 px name window.
+///
+/// `36008` paints only the bottom 24 px of that window as the grey body, while
+/// the 20 px text run starts at the top of the 34 px box. The retail ink is
+/// centred in the grey band, seven pixels below the unadjusted run.
+const BALLOON_NAME_TEXT_Y_OFFSET: f32 = 7.0;
+
 /// CE270's balloon frame picture (nine-slice window base).
 const BALLOON_FRAME_PICTURE: i32 = 36000;
+
+/// Native `101` message frame and face slots.
+///
+/// Picture mode keeps them resident for input/pacing but excludes them from the
+/// atlas before packing so they cannot enlarge the uploaded content rectangle.
+const NATIVE_MESSAGE_PICTURES: &[i32] = &[19_500, 19_501, 19_502, 19_503];
 
 /// Data 26 row 0 `[固定モード]サイズH`, the minimum balloon body height.
 const BALLOON_FRAME_MIN_HEIGHT: i32 = 60;
 
 /// Data 26 row 0 `余白[px]`: top and bottom breathing room inside the balloon.
 const BALLOON_FRAME_PADDING: f32 = 10.0;
+
+/// CE242's action-point readout ("行动力 current/max").
+const HUD_ACTION_PICTURE: i32 = 230;
+
+/// Render-only layout for the optional action-point gauge.
+///
+/// The retail top bar paints slot 230 as one text picture. The gauge is a
+/// project-specific addition, so the host splits that picture into a label and
+/// a value and leaves a hollow gap for the bar between them. The coordinates
+/// are logical pixels on the 1024x576 canvas.
+const HUD_ACTION_LABEL_X: f32 = 560.0;
+const HUD_ACTION_VALUE_X: f32 = 668.0;
+const HUD_ACTION_BAR: [f32; 4] = [608.0, 20.0, 54.0, 8.0];
+
+/// Split CE242's `行动力60/65` into a label run and a value run.
+///
+/// The raw picture text may start with style tags such as `\f[14]`; those are
+/// repeated on the value run because each `layout_with` call starts from a fresh
+/// style state.
+fn split_action_readout(text: &str) -> Option<(String, String)> {
+    let style_end = leading_control_prefix_len(text);
+    let split = text[style_end..]
+        .char_indices()
+        .find(|(_, ch)| ch.is_ascii_digit())
+        .map(|(index, _)| style_end + index)?;
+    let prefix = &text[..split];
+    let style_prefix = &text[..style_end];
+    Some((
+        prefix.to_owned(),
+        format!("{style_prefix}{}", &text[split..]),
+    ))
+}
+
+/// Length of the leading WOLF control sequences (for example `\f[14]`).
+///
+/// Text runs are laid out independently, so a split run has to repeat the
+/// style prefix it inherited from the source picture.
+fn leading_control_prefix_len(text: &str) -> usize {
+    let bytes = text.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() && bytes[index] == b'\\' {
+        let start = index;
+        index += 1;
+        while index < bytes.len() && bytes[index].is_ascii_alphabetic() {
+            index += 1;
+        }
+        if index < bytes.len() && bytes[index] == b'[' {
+            let Some(close) = bytes[index..].iter().position(|byte| *byte == b']') else {
+                return start;
+            };
+            index += close + 1;
+        } else if index == start + 1 {
+            return start;
+        }
+    }
+    index
+}
+
+/// Click surface of a visible picture's non-transparent pixels.
+///
+/// Hidden and fully transparent pictures have no click surface at all. The VM
+/// may still poll `hover` on a slot that a parallel page has hidden (the night
+/// data icon is the shipped case), so callers must not fall back to the raw
+/// picture rectangle in that state.
+fn picture_ink_rect_in(
+    screen: &Screen,
+    assets: &mut Assets,
+    number: i32,
+) -> Option<[f32; 4]> {
+    let picture = screen.get(number)?.clone();
+    if picture.hidden || picture.opacity <= 0 || picture.file.is_empty() {
+        return None;
+    }
+    let destination = screen.picture_rect(number, |name| assets.texture_size(name))?;
+    let (source, _) =
+        crate::picture::picture_frame(&picture, &mut |name| assets.texture_size(name))?;
+    let image = assets.load(&picture.file).ok()?;
+    let bounds = image.alpha_bounds_in(source, 16)?;
+
+    let u0 = (bounds[0] as f32 - source[0] as f32) / source[2] as f32;
+    let u1 = (bounds[0] as f32 + bounds[2] as f32 - source[0] as f32) / source[2] as f32;
+    let (u0, u1) = if picture.scale < 0 {
+        (1.0 - u1, 1.0 - u0)
+    } else {
+        (u0, u1)
+    };
+    let v0 = (bounds[1] as f32 - source[1] as f32) / source[3] as f32;
+    let v1 = (bounds[1] as f32 + bounds[3] as f32 - source[1] as f32) / source[3] as f32;
+    Some([
+        destination[0] + u0 * destination[2],
+        destination[1] + v0 * destination[3],
+        (u1 - u0) * destination[2],
+        (v1 - v0) * destination[3],
+    ])
+}
 
 /// The right-edge triangle on the two parked side panels.
 ///
@@ -167,6 +275,14 @@ const ITEM_HANDLE_Y: (f32, f32) = (260.0, 297.0);
 /// 20 px band started at screen x=5, leaving the left half of the visible
 /// triangle unclickable.
 const SIDE_PANEL_HANDLE_RIGHT: f32 = 25.0;
+
+/// Screen-space forgiveness around the sister's alpha silhouette.
+///
+/// The shipped map's own action rectangle is only 16x16 tiles around the pose,
+/// which makes a click on the visible shoulders or hair miss. The alpha test
+/// already follows the character outline; this radius gives the outline a small
+/// mouse-friendly margin without turning the transparent room into a hotspot.
+const SISTER_HIT_RADIUS: i32 = 16;
 
 /// A pending choice prompt.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -511,6 +627,10 @@ pub struct Game {
     pub mouse: [i32; 2],
     /// Mouse buttons held this frame: bit 0 left, bit 1 right, bit 2 middle.
     pub mouse_buttons: u32,
+    /// Frames the pointer has been outside a fully-open side drawer.
+    side_panel_retract_frames: u8,
+    /// One automatic retract has already been requested for this hover session.
+    side_panel_retract_armed: bool,
     /// Mouse-wheel notches since the last frame: positive is up, negative down.
     ///
     /// The front-end accumulates `InputEventMouseButton` wheel events between
@@ -703,6 +823,8 @@ impl Game {
             playtime_frames: 0,
             mouse: [-1, -1],
             mouse_buttons: 0,
+            side_panel_retract_frames: 0,
+            side_panel_retract_armed: false,
             wheel: 0,
             choice_cursor: 0,
             previous_title_cursor: None,
@@ -1483,8 +1605,19 @@ impl Game {
     /// is drawn with linear alpha blending, and it is what makes the effect appear in
     /// `capture` output, which reads the composited frame texture.
     pub fn picture_quads(&mut self, atlas: &mut Atlas) -> Vec<SpriteQuad> {
-        self.expand_balloon_frame();
-        let mut quads = atlas.sprites(&self.screen, &mut self.assets);
+        let balloon_frame = self.balloon_frame_render_rect();
+        let balloon_owns_message = self.balloon_owns_message();
+        let excluded = if balloon_owns_message {
+            NATIVE_MESSAGE_PICTURES
+        } else {
+            &[]
+        };
+        let mut quads = atlas.sprites_with_panel_rect_excluding(
+            &self.screen,
+            &mut self.assets,
+            balloon_frame.map(|rect| (BALLOON_FRAME_PICTURE, rect)),
+            excluded,
+        );
         let growth = self.balloon_frame_growth();
         if growth > 0.0 {
             // The name plate is pinned to the top of the balloon. CE270's script
@@ -1496,14 +1629,22 @@ impl Game {
                 }
             }
         }
-        if self.balloon_owns_message() {
+        if balloon_owns_message {
             // CE270 picture mode owns the whole message presentation. The native
-            // 101 frame and face are still live in slots 19500/19501 for input and
-            // pacing, but painting them puts a second grey window and a duplicate
-            // face behind the balloon. The frame appears a few frames before the
-            // body text is laid out, so testing only 36013 lets the native layer
-            // flash through at the start of every line.
-            quads.retain(|quad| !matches!(quad.number, crate::message::FRAME_PICTURE | 19501));
+            // 101 frame and faces are still live in slots 19500..19503 for input
+            // and pacing, but painting them puts a second grey window and duplicate
+            // faces behind the balloon. 19502 is the large right-side face that
+            // leaked through whenever the message slot had already been cleared
+            // while CE270 was still fading its balloon out.
+            quads.retain(|quad| !(19_500..=19_503).contains(&quad.number));
+        }
+        if !self.balloon_nameplate_active() {
+            // CE270 fades 36014 (the speaker name) independently from the
+            // decorative 36008..36012 pieces. When the name is blank or already
+            // transparent, those pieces used to stay on screen as a grey empty
+            // pill. Suppress the whole plate as one unit; a literal speaker name
+            // such as "message" still keeps it because 36014 is visible.
+            quads.retain(|quad| !(36_008..=36_012).contains(&quad.number));
         }
         self.apply_screen_tint(&mut quads, true);
         self.drain_asset_fallbacks();
@@ -1742,11 +1883,31 @@ impl Game {
         volume_word(self.sys(102))
     }
 
-    /// Current/max stamina for the optional white HUD gauge.
+    /// Current/max action points for the optional white HUD gauge.
     ///
-    /// CE242 draws the "精力 current/max" text picture in slot 240 from
-    /// CDataBase 0:12:6/7. Returning `None` while that HUD picture is absent
-    /// keeps the gauge off title/menu screens and out of save thumbnails.
+    /// CE242 draws the "行动力 current/max" text picture in slot 230 from
+    /// CDataBase 0:12:8/9. Returning `None` while that HUD picture is absent
+    /// keeps the gauge off title/menu screens and out of save thumbnails. The
+    /// old implementation read the stamina cells 6/7 and therefore appeared
+    /// full whenever the separate `精力` row was full.
+    #[must_use]
+    pub fn hud_action_points(&self) -> Option<(i32, i32)> {
+        let hud = self.screen.get(HUD_ACTION_PICTURE)?;
+        if hud.hidden || hud.opacity <= 0 {
+            return None;
+        }
+        let current = self.databases.num(crate::db::Container::CData, 0, 12, 8)?;
+        let maximum = self.databases.num(crate::db::Container::CData, 0, 12, 9)?;
+        (maximum > 0).then_some((current.clamp(0, maximum), maximum))
+    }
+
+    /// The bar rectangle that belongs with [`Self::hud_action_points`].
+    #[must_use]
+    pub const fn hud_action_bar_rect() -> [f32; 4] {
+        HUD_ACTION_BAR
+    }
+
+    /// Current/max stamina, kept for callers that still show the retail row.
     #[must_use]
     pub fn hud_energy(&self) -> Option<(i32, i32)> {
         let hud = self.screen.get(240)?;
@@ -1882,7 +2043,29 @@ impl Game {
     /// the native 101 text and face appear alone for one or two frames. Article
     /// mode deliberately keeps the native layer.
     fn balloon_owns_message(&self) -> bool {
-        !self.messages.is_empty() && self.balloon_picture_mode_enabled()
+        // A save can carry a stale CE269 mode bit (or no CE269 bank at all) while
+        // CE270 is demonstrably still painting 36013. Trusting only the mode bit
+        // in that state re-exposes the native 19500 window and the oversized
+        // 19502 face under the balloon. If the body picture is visible, the
+        // balloon owns this message regardless of the stored mode flag.
+        (self.balloon_picture_mode_enabled() || self.balloon_picture_text_is_visible())
+            && self.balloon_visuals_active()
+    }
+
+    /// True while CE270 still owns any part of the message presentation.
+    ///
+    /// `messages` becomes empty as soon as the native 101 waiter is dismissed,
+    /// but CE270 deliberately keeps its frame/body/name plate alive for a few
+    /// frames while its close timer runs. Testing only the native message slot
+    /// let the old full-width 19500 window and the 19502 face reappear during
+    /// that hand-off.
+    fn balloon_visuals_active(&self) -> bool {
+        !self.messages.is_empty()
+            || self.screen.iter().any(|picture| {
+                (36_000..=36_014).contains(&picture.number)
+                    && !picture.hidden
+                    && picture.opacity > 0
+            })
     }
 
     fn balloon_picture_mode_enabled(&self) -> bool {
@@ -1894,6 +2077,24 @@ impl Game {
         self.screen
             .get(BALLOON_BODY_TEXT_PICTURE)
             .is_some_and(|body| body.kind.is_text())
+    }
+
+    /// True only while the speaker-name picture is visible and names someone.
+    ///
+    /// The name plate is assembled from a base window and four decorative
+    /// corners; the script animates those slots separately. Looking at any one
+    /// corner therefore leaves a grey empty pill after the name has faded or
+    /// when a narration line never supplied one.
+    fn balloon_nameplate_active(&self) -> bool {
+        let Some(name) = self.screen.get(BALLOON_NAME_TEXT_PICTURE) else {
+            return false;
+        };
+        !name.hidden
+            && name.opacity > 0
+            && name.kind.is_text()
+            && !wolf_format::messagetext::strip(&name.text)
+                .trim()
+                .is_empty()
     }
 
     fn balloon_picture_text_is_visible(&self) -> bool {
@@ -1912,37 +2113,44 @@ impl Game {
             .is_some_and(crate::picture::on_screen)
     }
 
-    /// Grows CE270's balloon frame upward for multi-line bodies.
+    /// Rendered rectangle of CE270's balloon frame for multi-line bodies.
     ///
     /// Data 26's `[固定モード]サイズH = 60` is the one-line size. A three-line body
     /// measures 69 px at the message pitch plus 10 px padding, so the retail frame is
     /// 79–80 px tall and keeps its bottom edge fixed. Leaving the frame at 60 puts the
     /// body text on top of a too-short bubble and clips the last row at y = 576.
-    fn expand_balloon_frame(&mut self) {
-        let Some(body) = self.screen.get(BALLOON_BODY_TEXT_PICTURE) else {
-            return;
-        };
-        if body.hidden || body.opacity <= 0 || body.text.is_empty() {
-            return;
-        }
-        let body_height = body.text_size.map_or(0.0, |(_, height)| height as f32);
-        let height = (body_height + BALLOON_FRAME_PADDING)
-            .max(BALLOON_FRAME_MIN_HEIGHT as f32)
-            .ceil() as i32;
-        let Some(frame) = self.screen.get_mut(BALLOON_FRAME_PICTURE) else {
-            return;
-        };
+    ///
+    /// This is a render-only override: the script-owned Picture keeps its original
+    /// height and position, so two draw calls are idempotent and saving during a
+    /// balloon cannot persist the adjusted geometry.
+    fn balloon_frame_render_rect(&self) -> Option<[f32; 4]> {
+        let frame = self.screen.get(BALLOON_FRAME_PICTURE)?;
         // CE270 draws 36000 with the 0x1000 centre anchor; anything else is not the
         // shipped balloon and must keep its own geometry.
         if frame.anchor != 1 {
-            return;
+            return None;
         }
-        let Some((width, current_height)) = frame.window else {
-            return;
-        };
+        let (width, current_height) = frame.window?;
+        let height = self.balloon_frame_target_height()?;
+        if height == current_height {
+            return None;
+        }
         let bottom = frame.y + current_height / 2;
-        frame.window = Some((width, height));
-        frame.y = bottom - height / 2;
+        let y = bottom - height / 2;
+        Some(frame.destination_with_origin(frame.x, y, width as f32, height as f32))
+    }
+
+    fn balloon_frame_target_height(&self) -> Option<i32> {
+        let body = self.screen.get(BALLOON_BODY_TEXT_PICTURE)?;
+        if body.hidden || body.opacity <= 0 || body.text.is_empty() {
+            return None;
+        }
+        let body_height = body.text_size.map_or(0.0, |(_, height)| height as f32);
+        Some(
+            (body_height + BALLOON_FRAME_PADDING)
+                .max(BALLOON_FRAME_MIN_HEIGHT as f32)
+                .ceil() as i32,
+        )
     }
 
     /// How far the balloon frame grew above its one-line height this frame.
@@ -1950,12 +2158,14 @@ impl Game {
         if !self.balloon_picture_text_is_visible() {
             return 0.0;
         }
-        let body_height = self
-            .screen
-            .get(BALLOON_BODY_TEXT_PICTURE)
-            .and_then(|body| body.text_size)
-            .map_or(0.0, |(_, height)| height as f32);
-        (body_height + BALLOON_FRAME_PADDING - BALLOON_FRAME_MIN_HEIGHT as f32).max(0.0)
+        let Some(frame) = self.screen.get(BALLOON_FRAME_PICTURE) else {
+            return 0.0;
+        };
+        let current = frame
+            .window
+            .map_or(BALLOON_FRAME_MIN_HEIGHT, |(_, height)| height);
+        self.balloon_frame_target_height()
+            .map_or(0.0, |target| (target - current).max(0) as f32)
     }
 
     /// Preselects an option of the current choice prompt.
@@ -2003,25 +2213,17 @@ impl Game {
             // settings-screen renderer, draws all ten row labels at one base (x,y) and
             // separates them purely with a `290` type-2 coordinate shift per row; ignoring
             // the shift stacks every row on top of the first.
-            //
-            // CE95 also works in tenths of a character cell, so its whole block is scaled
-            // back to pixels here (see Screen::ui_scale_for). Dividing the base and the
-            // shift together keeps every row in the same frame.
             let (dx, dy) = picture.effect_offset();
-            let ui = self.screen.ui_scale_for(picture.number);
-            // In the tenths UI blocks (ui > 1) the base x is already a pixel
-            // coordinate and only the 290 offset is in tenths; y is in tenths
-            // throughout. Dividing x by ui too put every label ~43px left of
-            // the retail layout (screenshot metrics §6).
-            let x = picture.x as f32 + dx / ui;
-            let y = (picture.y as f32 + dy) / ui;
-            // Inside a tenths UI block (ui > 1) the save-slot labels carry
-            // 0x3000 with a dummy x=1001 and centre their ink on the 928px
-            // panel's middle at 512. In ordinary pixels 0x3000 is an
-            // ordinary top-right anchor: the HUD time (x=100) and money
-            // counter (x=1000) both rely on that, and centring them stacked
-            // the clock and the money on the middle of the screen.
-            let centred_in_ui = picture.anchor == 3 && ui > 1.0;
+            let x = picture.x as f32 + dx;
+            let y = picture.y as f32 + dy;
+            // The native menu blocks in the 12xxx range carry 0x3000 with a dummy
+            // x=1001 and centre their ink on the panel. Ordinary top-right text
+            // (the HUD clock and money counter) still uses the plain anchor.
+            let centred_in_ui = Self::uses_regular_ui_text(picture.number) && picture.anchor == 3;
+            // Inside the native menu block the save-slot labels carry 0x3000 with
+            // a dummy x=1001 and centre their ink on the 928 px panel's middle at
+            // 512. In ordinary pixels 0x3000 remains a top-right anchor, which the
+            // HUD clock and money counter rely on.
             let layout_anchor = if centred_in_ui { 0x83 } else { picture.anchor };
             let x = if centred_in_ui {
                 SCREEN_W as f32 * 0.5
@@ -2052,7 +2254,15 @@ impl Game {
                 cache.hits += 1;
                 cached
             } else {
-                let built = self.build_text_picture(picture, x, y, layout_anchor, alpha, ui, &ctx);
+                let built = self.build_text_picture(
+                    picture,
+                    x,
+                    y,
+                    layout_anchor,
+                    alpha,
+                    Self::uses_regular_ui_text(picture.number),
+                    &ctx,
+                );
                 cache.misses += 1;
                 cache.pictures.insert(
                     picture.number,
@@ -2071,6 +2281,12 @@ impl Game {
         quads
     }
 
+    /// Native menu text in the 12xxx range uses the regular face and its own
+    /// baseline calibration. This is a font/layout choice, not a coordinate scale.
+    fn uses_regular_ui_text(number: i32) -> bool {
+        (12_000..13_000).contains(&number)
+    }
+
     /// Lays one text picture out into its quad list. This is the old body of
     /// [`Self::text_quads`], factored out so the cache can call it on a miss.
     fn build_text_picture(
@@ -2080,7 +2296,7 @@ impl Game {
         y: f32,
         anchor: u8,
         alpha: f32,
-        ui: f32,
+        regular_ui: bool,
         ctx: &crate::textpic::Ctx<'_>,
     ) -> Vec<crate::atlas::TextQuad> {
         // Retail draws the HUD with a Japanese (CJK) face whose ASCII space is a full
@@ -2093,7 +2309,7 @@ impl Game {
         // "データ 1" matches the screenshot only with it.
         let metrics = self.font_metrics.as_ref();
         let advance = |ch: char, px: f32| -> f32 {
-            if ui <= 1.0 && ch == ' ' {
+            if !regular_ui && ch == ' ' {
                 px * 0.5
             } else if let Some(metrics) = metrics {
                 metrics.advance(ch, px)
@@ -2106,13 +2322,37 @@ impl Game {
         // taller the text must move up by exactly the growth; otherwise the last row
         // sits on the bottom edge and is clipped.
         let balloon = picture.number == BALLOON_BODY_TEXT_PICTURE;
-        let balloon_lift = if balloon || picture.number == BALLOON_NAME_TEXT_PICTURE {
+        let nameplate = picture.number == BALLOON_NAME_TEXT_PICTURE;
+        let balloon_lift = if balloon || nameplate {
             self.balloon_frame_growth()
         } else {
             0.0
         };
-        let y = y - balloon_lift;
-        let runs = if balloon {
+        let y = y - balloon_lift
+            + if nameplate {
+                BALLOON_NAME_TEXT_Y_OFFSET
+            } else {
+                0.0
+            };
+        let runs = if picture.number == HUD_ACTION_PICTURE
+            && split_action_readout(&picture.text).is_some()
+        {
+            // Keep the retail "行动力 current/max" text but reserve the middle
+            // for the host-drawn gauge: 行动力 [bar] 60/65.
+            let (label, value) =
+                split_action_readout(&picture.text).expect("checked action readout");
+            let mut runs =
+                crate::textpic::layout_with(&label, HUD_ACTION_LABEL_X, y, anchor, ctx, &advance);
+            runs.extend(crate::textpic::layout_with(
+                &value,
+                HUD_ACTION_VALUE_X,
+                y,
+                anchor,
+                ctx,
+                &advance,
+            ));
+            runs
+        } else if balloon {
             crate::textpic::layout_message_with(&picture.text, x, y, anchor, ctx, &advance)
         } else {
             crate::textpic::layout_with(&picture.text, x, y, anchor, ctx, &advance)
@@ -2129,7 +2369,7 @@ impl Game {
             // in the retail build than the half-leading lift alone predicts; tenths UI
             // blocks (save-slot labels) are already calibrated without this.
             let top = run.y - run.font_px * crate::textpic::TEXT_TOP_NUDGE_RATIO
-                + if ui > 1.0 {
+                + if regular_ui {
                     0.0
                 } else {
                     crate::textpic::PLAIN_TEXT_TOP_OFFSET
@@ -2139,7 +2379,7 @@ impl Game {
             // the retail half-em the layout above used; drawing the space would slide the
             // glyphs after it left by that difference. Whitespace spans are dropped, so
             // each glyph lands exactly where the layout put it.
-            let segments: Vec<(String, f32, f32)> = if ui <= 1.0 && run.text.contains(' ') {
+            let segments: Vec<(String, f32, f32)> = if !regular_ui && run.text.contains(' ') {
                 let mut out: Vec<(String, f32, f32)> = Vec::new();
                 let mut text = String::new();
                 let mut span_x = run.x;
@@ -2202,7 +2442,7 @@ impl Game {
                     // screenshots with the regular face; plain-pixel text uses the
                     // Game.dat bold face, without which cosmic-text borrows digits from
                     // Segoe UI Symbol and draws them ~12% too narrow.
-                    weight: if ui > 1.0 { 400 } else { 700 },
+                    weight: if regular_ui { 400 } else { 700 },
                 });
             }
         }
@@ -2481,12 +2721,20 @@ impl Game {
 
         // The visible handle owns the press even if the script gate is dead.
         self.mouse_consumed = true;
+        self.side_panel_retract_frames = 0;
+        self.side_panel_retract_armed = false;
         if status {
             let open = self.side_panel_is_open(320);
             if open {
                 self.start_panel_event(238, 0);
             } else {
-                self.start_panel_event(239, 0);
+                // Only start the opposite drawer's close animation when it is
+                // actually on screen. Replaying a hide event for an already
+                // parked panel made the left strip redraw every time the other
+                // handle was clicked, which looked like a one-frame flicker.
+                if self.side_panel_is_engaged(2300) {
+                    self.start_panel_event(239, 0);
+                }
                 if let Some(id) = self.runtime.action_key_event(&mut self.vm, 10) {
                     self.last_action_event = Some(id);
                 } else {
@@ -2499,7 +2747,9 @@ impl Game {
             if open {
                 self.start_panel_event(239, 0);
             } else {
-                self.start_panel_event(238, 0);
+                if self.side_panel_is_engaged(320) {
+                    self.start_panel_event(238, 0);
+                }
                 if let Some(id) = self.runtime.action_key_event(&mut self.vm, 7) {
                     self.last_action_event = Some(id);
                 } else {
@@ -2547,6 +2797,82 @@ impl Game {
             .is_some_and(|picture| !picture.hidden && picture.opacity > 0 && picture.x > -300)
     }
 
+    /// True when the panel is open, opening, or closing rather than parked at
+    /// its hidden x = -305 position. Used before starting the opposite drawer's
+    /// close animation so a parked panel is not redrawn every toggle.
+    fn side_panel_is_engaged(&self, slot: i32) -> bool {
+        self.screen
+            .get(slot)
+            .is_some_and(|picture| !picture.hidden && picture.opacity > 0 && picture.x > -305)
+    }
+
+    /// Retracts a side drawer after the pointer has stayed outside it.
+    ///
+    /// Events 8/11 still drive the retail close animation, but they only react
+    /// to `hover`; making that poll stable (see [`GameHost::hover`]) would leave
+    /// the drawer open forever. This host-side watchdog is the only close path
+    /// for a pointer that simply leaves the panel. A short delay keeps a quick
+    /// trip to the top bar or a dialogue from collapsing the drawer mid-click.
+    fn tick_side_panel_auto_retract(&mut self) {
+        let status_open = self.side_panel_is_docked(320);
+        let item_open = self.side_panel_is_docked(2300);
+        if !status_open && !item_open {
+            self.side_panel_retract_frames = 0;
+            self.side_panel_retract_armed = false;
+            return;
+        }
+        let blocked = !self.messages.is_empty()
+            || self.choices.is_some()
+            || self.save_grid_active()
+            || self
+                .vm
+                .instances()
+                .iter()
+                .any(|instance| matches!(instance.event, 14 | 95 | 131 | 132));
+        if blocked {
+            self.side_panel_retract_frames = 0;
+            return;
+        }
+        // Treat only the panel's visible ink as inside. Both 330x576 skins have
+        // fully transparent rows above y=63 and below y=512; using the whole rail
+        // kept the drawer open while the pointer sat outside any visible panel.
+        let panel = if status_open { 320 } else { 2300 };
+        let inside = self.picture_ink_rect(panel).is_some_and(|rect| {
+            let px = self.mouse[0] as f32;
+            let py = self.mouse[1] as f32;
+            px >= rect[0]
+                && px < rect[0] + rect[2]
+                && py >= rect[1]
+                && py < rect[1] + rect[3]
+        });
+        if inside {
+            self.side_panel_retract_frames = 0;
+            self.side_panel_retract_armed = false;
+            return;
+        }
+        if self.side_panel_retract_armed {
+            return;
+        }
+        self.side_panel_retract_frames = self.side_panel_retract_frames.saturating_add(1);
+        if self.side_panel_retract_frames < 8 {
+            return;
+        }
+        self.side_panel_retract_frames = 0;
+        self.side_panel_retract_armed = true;
+        if status_open {
+            self.start_panel_event(238, 0);
+        } else if item_open {
+            self.start_panel_event(239, 0);
+        }
+    }
+
+    /// True once a drawer has finished its slide-in and is at the left edge.
+    fn side_panel_is_docked(&self, slot: i32) -> bool {
+        self.screen
+            .get(slot)
+            .is_some_and(|picture| !picture.hidden && picture.opacity > 0 && picture.x >= -1)
+    }
+
     /// Starts one panel transition.
     ///
     /// Showing is idempotent: a second click during the five-frame slide would
@@ -2578,14 +2904,26 @@ impl Game {
         if self.vm.vars.get(100) != 0 {
             return None;
         }
-        let event = match self.vm.vars.get(14) {
+        let pose = self.vm.vars.get(14);
+        let event = match pose {
             0 => 1,
             1 => 2,
             2 => 3,
             3 => 4,
+            5 => 12,
             6 => 25,
             _ => return None,
         };
+        if pose == 5 {
+            // The sleeping pose has no CE240 standing-art slots. Its only visible
+            // target is the 就寝妹 action rectangle; expand that rectangle by the
+            // same forgiveness used around the alpha silhouette.
+            let (left, top, width, height) = self.runtime.action_key_rect(&self.vm, event)?;
+            let radius = SISTER_HIT_RADIUS;
+            let inside = (left - radius..left + width + radius).contains(&x)
+                && (top - radius..top + height + radius).contains(&y);
+            return inside.then_some(event);
+        }
         let body = self.screen.get(900)?;
         if body.hidden || body.opacity <= 0 || !body.file.starts_with("Picture/stand_") {
             return None;
@@ -2598,7 +2936,7 @@ impl Game {
             if picture.hidden || picture.opacity <= 0 || picture.file.is_empty() {
                 continue;
             }
-            if self.picture_alpha_hit(slot, x, y) {
+            if self.picture_alpha_hit(slot, x, y, SISTER_HIT_RADIUS) {
                 return Some(event);
             }
         }
@@ -2652,33 +2990,7 @@ impl Game {
     /// through the same destination rectangle the renderer uses makes the clickable
     /// control follow the visible ink without changing any other picture hit box.
     fn picture_ink_rect(&mut self, number: i32) -> Option<[f32; 4]> {
-        let picture = self.screen.get(number)?.clone();
-        if picture.file.is_empty() {
-            return None;
-        }
-        let screen = &self.screen;
-        let assets = &mut self.assets;
-        let destination = screen.picture_rect(number, |name| assets.texture_size(name))?;
-        let (source, _) =
-            crate::picture::picture_frame(&picture, &mut |name| assets.texture_size(name))?;
-        let image = assets.load(&picture.file).ok()?;
-        let bounds = image.alpha_bounds_in(source, 16)?;
-
-        let u0 = (bounds[0] as f32 - source[0] as f32) / source[2] as f32;
-        let u1 = (bounds[0] as f32 + bounds[2] as f32 - source[0] as f32) / source[2] as f32;
-        let (u0, u1) = if picture.scale < 0 {
-            (1.0 - u1, 1.0 - u0)
-        } else {
-            (u0, u1)
-        };
-        let v0 = (bounds[1] as f32 - source[1] as f32) / source[3] as f32;
-        let v1 = (bounds[1] as f32 + bounds[3] as f32 - source[1] as f32) / source[3] as f32;
-        Some([
-            destination[0] + u0 * destination[2],
-            destination[1] + v0 * destination[3],
-            (u1 - u0) * destination[2],
-            (v1 - v0) * destination[3],
-        ])
+        picture_ink_rect_in(&self.screen, &mut self.assets, number)
     }
 
     /// Exact alpha hit test for one picture layer.
@@ -2687,7 +2999,7 @@ impl Game {
     /// their canvases are much wider than the visible pose. Sampling the decoded cell
     /// at the clicked source pixel makes the clickable area follow the actual
     /// silhouette, including transparent shoulders and gaps between layers.
-    fn picture_alpha_hit(&mut self, number: i32, x: i32, y: i32) -> bool {
+    fn picture_alpha_hit(&mut self, number: i32, x: i32, y: i32, radius: i32) -> bool {
         let picture = match self.screen.get(number) {
             Some(picture) => picture.clone(),
             None => return false,
@@ -2708,31 +3020,51 @@ impl Game {
         };
         let px = x as f32;
         let py = y as f32;
-        if px < destination[0]
-            || px >= destination[0] + destination[2]
-            || py < destination[1]
-            || py >= destination[1] + destination[3]
+        let radius = radius.max(0) as f32;
+        if px < destination[0] - radius
+            || px >= destination[0] + destination[2] + radius
+            || py < destination[1] - radius
+            || py >= destination[1] + destination[3] + radius
             || destination[2] <= 0.0
             || destination[3] <= 0.0
         {
             return false;
         }
-        let u = (px - destination[0]) / destination[2];
-        let v = (py - destination[1]) / destination[3];
-        let mut sx = (u * source[2] as f32).floor() as u32;
-        let sy = (v * source[3] as f32).floor() as u32;
-        if sx >= source[2] || sy >= source[3] {
-            return false;
-        }
-        if picture.scale < 0 {
-            sx = source[2] - 1 - sx;
-        }
         let Ok(image) = assets.load(&picture.file) else {
             return false;
         };
-        image
-            .pixel(source[0] + sx, source[1] + sy)
-            .is_some_and(|rgba| rgba[3] > 16)
+        // A pure per-pixel test made the sister's already narrow standing pose
+        // feel like a pixel hunt. Expand the silhouette by a small screen-space
+        // radius (10 px by default), mapping each sample through the same
+        // destination rectangle. This keeps transparent shoulders/background
+        // dead while giving the visible outline a forgiving edge.
+        let sx_radius = (radius / destination[2] * source[2] as f32).ceil() as i32;
+        let sy_radius = (radius / destination[3] * source[3] as f32).ceil() as i32;
+        for dy in -sy_radius..=sy_radius {
+            for dx in -sx_radius..=sx_radius {
+                let sample_x = px + dx as f32;
+                let sample_y = py + dy as f32;
+                let u = (sample_x - destination[0]) / destination[2];
+                let v = (sample_y - destination[1]) / destination[3];
+                let sx = (u * source[2] as f32).floor() as i32;
+                let sy = (v * source[3] as f32).floor() as i32;
+                if sx < 0 || sy < 0 || sx >= source[2] as i32 || sy >= source[3] as i32 {
+                    continue;
+                }
+                let sx = if picture.scale < 0 {
+                    source[2] as i32 - 1 - sx
+                } else {
+                    sx
+                };
+                if image
+                    .pixel(source[0] + sx as u32, source[1] + sy as u32)
+                    .is_some_and(|rgba| rgba[3] > 16)
+                {
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     /// Applies this frame's key state to the open choice prompt, if there is one.
@@ -2769,7 +3101,12 @@ impl Game {
             // 421 cancel marker) treat the outside click as cancel, just like a right
             // click; when it does not, leave the edge unconsumed so a parallel event
             // can still see it rather than having its input silently eaten.
-            if self.choice_cancel_allowed() {
+            //
+            // A 101 immediately followed by 102 keeps its message visible while the
+            // options are already up. In that state the same click has to advance the
+            // message first (`message_dismissed`), not cancel the prompt and throw the
+            // options away. Once the body is gone, outside-click cancellation resumes.
+            if self.messages.is_empty() && self.choice_cancel_allowed() {
                 self.mouse_consumed = true;
                 self.reply(ChoiceReply::Cancel);
                 self.choice_cursor = 0;
@@ -2825,8 +3162,9 @@ impl Game {
     /// cancel marker, i.e. the script offers a real "back" answer.
     fn choice_cancel_allowed(&self) -> bool {
         self.vm.instances().iter().any(|instance| {
-            let WaitState::Choice { block } = instance.wait else {
-                return false;
+            let block = match instance.wait {
+                WaitState::Choice { block } | WaitState::MessageWithChoices { block } => block,
+                _ => return false,
             };
             instance
                 .program
@@ -2848,16 +3186,6 @@ impl Game {
         if notches == 0 {
             return 0;
         }
-        // CE223 is the message-window script that owns the wheel itself. Injecting a
-        // direction key as well would move the selected row twice for one notch.
-        if self
-            .vm
-            .instances()
-            .iter()
-            .any(|instance| instance.event == 223)
-        {
-            return 0;
-        }
         let choice_count = self.choices.as_ref().map(|choices| choices.options.len());
         if let Some(count) = choice_count {
             if count > 0 {
@@ -2872,19 +3200,43 @@ impl Game {
             }
             return 0;
         }
-        let bit = if self.save_grid_active() {
-            if notches > 0 {
+        let save_grid = self.save_grid_active();
+        if save_grid {
+            let bit = if notches > 0 {
                 crate::key::LEFT
             } else {
                 crate::key::RIGHT
-            }
-        } else if notches > 0 {
+            };
+            self.key_bits |= bit;
+            return bit;
+        }
+        // CE223 owns the wheel only while its Picture(100000) window is actually
+        // on screen. The event starts under the new-game `v[1] == 1` condition
+        // and stays running for the whole session, but exits at pc27 when that
+        // picture is absent. Treating the bare instance as ownership swallowed
+        // every choice and save-grid wheel event in normal play.
+        if self.ce223_window_active() {
+            return 0;
+        }
+        let bit = if notches > 0 {
             crate::key::UP
         } else {
             crate::key::DOWN
         };
         self.key_bits |= bit;
         bit
+    }
+
+    /// True while CE223's own window layer is present.
+    fn ce223_window_active(&self) -> bool {
+        self.screen
+            .get(100_000)
+            .is_some_and(|picture| !picture.hidden && picture.opacity > 0)
+            && self
+                .vm
+                .instances()
+                .iter()
+                .any(|instance| instance.event == 223)
     }
 
     /// True while the save/load grid (CE131) owns the screen.
@@ -2950,9 +3302,7 @@ impl Game {
             }
         }
         if let Some(slot) = slot {
-            if let Some(instance) = self.vm.instance_mut(id) {
-                instance.self_vars.set(610, slot);
-            }
+            self.vm.set_instance_self_var(id, 610, slot);
         }
     }
 
@@ -3097,11 +3447,19 @@ impl Game {
         // confirms the slot under the cursor instead of the keyboard-highlighted one.
         self.sync_save_grid_cursor();
         self.handle_action_key_input();
+        self.tick_side_panel_auto_retract();
         // A message that was already visible at the start of this frame owns the
         // mouse. Script key polls may run before the message coroutine's wait is
         // answered; without this snapshot the parallel night pollers consume the
         // click and `message_dismissed` never sees it.
         self.frame_mouse_blocked = !self.messages.is_empty();
+        // Sys28 is WOLF's global elapsed-frame clock (10,000,000-frame wrap).
+        // CE270 snapshots it when a balloon opens and advances its close timer
+        // only when the value moves; leaving it at zero kept the last balloon on
+        // screen forever after the 101 waiter was dismissed.
+        self.vm
+            .vars
+            .set_sys(28, (self.playtime_frames % 10_000_000) as i32);
         let default_font_px = self.font_px();
         let base_font_px = self.text_base_font_px;
         let mut report = self.vm.step_frame(&mut GameHost {
@@ -3345,9 +3703,15 @@ impl Game {
         // (CE270) watches Sys12 and copies this string into its own CSelf6 before
         // drawing the balloon; without it the interface events run but the balloon
         // never opens (BUG-02's visible half). Publish it alongside Sys12.
-        if let Some(message) = self.messages.first() {
-            self.vm.vars.set_sys_str(900_025, &message.text);
-        }
+        // Clear the buffer when the live message ends. CE270 reads SysStr25 to
+        // detect a new line; leaving the last string in place made the closed
+        // balloon look like a still-current message and kept System 12/CE270's
+        // body visible after the final click.
+        let current_message = self
+            .messages
+            .first()
+            .map_or("", |message| message.text.as_str());
+        self.vm.vars.set_sys_str(900_025, current_message);
         // Drop the one-frame wheel key so it is not seen as held next frame. The
         // host's next `set_input` overwrites the field anyway; this also keeps the
         // pure `Game::frame` loops (tests, wolf-cli) honest.
@@ -3799,21 +4163,25 @@ impl GameHost<'_> {
     /// The test is a plain axis-aligned box that includes transparent pixels, as the
     /// engine documentation says: a picture hit area is its rectangle, not its alpha.
     fn hover(&mut self, number: i32) -> i32 {
-        if self.screen.get(number).is_none() {
+        let Some(picture) = self.screen.get(number) else {
             return -1;
+        };
+        if picture.hidden || picture.opacity <= 0 {
+            return 0;
         }
         // A side panel is a click-to-toggle drawer, not a hover-triggered one.
-        // Events 8/11 poll this field every frame while the panel is open and used
-        // to close it whenever the pointer crossed a transparent edge, producing a
-        // visible open/park flicker. Once open, the panel deliberately reports a
-        // stable hover; the handle click in `try_side_panel_handle` closes it.
-        if matches!(number, 320 | 2300)
-            && self
-                .screen
-                .get(number)
-                .is_some_and(|picture| !picture.hidden && picture.opacity > 0 && picture.x > -300)
-        {
-            return 1;
+        // Map events 8/11 poll this field every frame while the panel is parked
+        // and call CE238/CE239's hide page whenever it answers 0. That re-runs
+        // the whole erase animation every frame, which is both the visible handle
+        // flicker and a measurable per-frame script load. Report a stable hover
+        // for as long as the panel picture exists; opening and closing both go
+        // through `try_side_panel_handle` and the host auto-retract watchdog.
+        if matches!(number, 320 | 2300) {
+            return match self.screen.get(number) {
+                Some(picture) if !picture.hidden && picture.opacity > 0 => 1,
+                Some(_) => 0,
+                None => -1,
+            };
         }
         // The hit box is the same rectangle the renderer draws: text metrics, window
         // box / native texture size, anchor, independent X/Y scale, the running 290
@@ -3848,33 +4216,7 @@ impl GameHost<'_> {
 
     /// [`Game::picture_ink_rect`] for the VM poll path.
     fn picture_ink_rect(&mut self, number: i32) -> Option<[f32; 4]> {
-        let picture = self.screen.get(number)?.clone();
-        if picture.file.is_empty() {
-            return None;
-        }
-        let destination = self
-            .screen
-            .picture_rect(number, |name| self.assets.texture_size(name))?;
-        let (source, _) =
-            crate::picture::picture_frame(&picture, &mut |name| self.assets.texture_size(name))?;
-        let image = self.assets.load(&picture.file).ok()?;
-        let bounds = image.alpha_bounds_in(source, 16)?;
-
-        let u0 = (bounds[0] as f32 - source[0] as f32) / source[2] as f32;
-        let u1 = (bounds[0] as f32 + bounds[2] as f32 - source[0] as f32) / source[2] as f32;
-        let (u0, u1) = if picture.scale < 0 {
-            (1.0 - u1, 1.0 - u0)
-        } else {
-            (u0, u1)
-        };
-        let v0 = (bounds[1] as f32 - source[1] as f32) / source[3] as f32;
-        let v1 = (bounds[1] as f32 + bounds[3] as f32 - source[1] as f32) / source[3] as f32;
-        Some([
-            destination[0] + u0 * destination[2],
-            destination[1] + v0 * destination[3],
-            (u1 - u0) * destination[2],
-            (v1 - v0) * destination[3],
-        ])
+        picture_ink_rect_in(&self.screen, &mut self.assets, number)
     }
 
     /// Mouse buttons as fresh key bits for this frame.
@@ -3882,7 +4224,7 @@ impl GameHost<'_> {
     /// Only a press edge counts (see crate::key::mouse_bits); a held button looks
     /// like nothing so a menu polled every frame fires exactly once.
     fn mouse_key_bits(&mut self) -> u32 {
-        if self.frame_mouse_blocked || !self.messages.is_empty() {
+        if self.frame_mouse_blocked || !self.messages.is_empty() || self.choices.is_some() {
             return 0;
         }
         // The poll consumes the click, so a carried-over edge is delivered exactly once
@@ -3906,6 +4248,12 @@ fn mouse_state(held: bool, held_before: bool) -> i32 {
 
 impl Host for GameHost<'_> {
     fn show_message(&mut self, text: &str, face: Option<i32>) {
+        // A message shown by this same VM step must immediately stop later
+        // parallel key polls from spending the click that belongs to the
+        // message window. Without this, the night UI's permanent pollers could
+        // consume the first click on a freshly opened system prompt and the
+        // player had to interact with the sister to get rid of it.
+        self.frame_mouse_blocked = true;
         // The engine keeps at most one message window: a new 101 replaces the old
         // text rather than stacking behind it.
         let text = self
@@ -3951,6 +4299,9 @@ impl Host for GameHost<'_> {
     }
 
     fn show_choices(&mut self, options: &[String]) {
+        // Choices are handled by `Game::handle_choice_input` before the VM
+        // step. Parallel polls in the same step must not also spend the click.
+        self.frame_mouse_blocked = true;
         // Opcode 102 hands over the script's raw strings. An empty string is an
         // optional action whose label the current branch never wrote; WOLF paints no
         // row for it (the measured five-row night menu has six raw strings, the last
@@ -4627,9 +4978,14 @@ impl Host for GameHost<'_> {
             return Some(i32::from(self.screen.get(number).is_some()));
         }
         let picture = self.screen.get(number)?;
+        let (shift_x, shift_y) = picture.effect_offset();
         match field {
-            0 => Some(picture.x),
-            1 => Some(picture.y),
+            // `290` keeps its displacement outside the script-owned x/y fields.
+            // Opcode 124 is a query of where the picture is now drawn, so expose
+            // the shifted coordinate. CE223 combines fields 0 and 2 to size the
+            // BGM/SE slider hit box and otherwise checks the unshifted panel.
+            0 => Some(picture.x.saturating_add(shift_x.round() as i32)),
+            1 => Some(picture.y.saturating_add(shift_y.round() as i32)),
             2 | 3 => {
                 let kind = picture.kind;
                 let file = picture.file.clone();
@@ -5620,6 +5976,45 @@ mod tests {
         assert_eq!(game.choice_cursor(), 0);
     }
 
+    /// A 101 immediately followed by 102 keeps the message and the options up
+    /// together. Clicking empty space there must advance the message, not send
+    /// CANCEL and discard the prompt the player is about to answer.
+    #[test]
+    fn a_click_outside_a_message_with_choices_advances_only_the_message() {
+        let Some(root) = have_data() else { return };
+        let mut game = Game::new(&root).expect("game");
+        {
+            let mut host = host(&mut game);
+            host.show_message("first", None);
+            host.show_choices(&["one".to_owned(), "two".to_owned()]);
+        }
+        game.mouse = [4, 4];
+        game.previous_mouse = [-1, -1];
+        game.mouse_buttons = 1;
+        game.previous_mouse_buttons = 0;
+        game.mouse_consumed = false;
+
+        game.handle_choice_input();
+        assert!(
+            game.choices.is_some(),
+            "an outside click cancelled the options before the message advanced"
+        );
+        assert!(
+            game.replies.is_empty(),
+            "the click must be left for the message waiter"
+        );
+
+        let dismissed = {
+            let mut host = host(&mut game);
+            host.message_dismissed()
+        };
+        assert!(dismissed, "the same click did not advance the message");
+        assert!(
+            game.mouse_consumed,
+            "the message waiter must spend the click"
+        );
+    }
+
     /// Hovering the pointer over a row moves the highlight there, but a parked cursor must
     /// not override the keyboard up/down navigation.
     #[test]
@@ -6042,12 +6437,50 @@ mod tests {
     }
 
     #[test]
-    fn ce223_owns_the_wheel_without_injected_direction_keys() {
+    fn ce223_owns_the_wheel_only_while_its_window_picture_is_visible() {
         let Some(root) = have_data() else { return };
         let mut game = Game::new(&root).expect("game");
         assert!(game.vm.start_event(223).is_some(), "CE223 must exist");
         game.wheel = 2;
         game.key_bits = 0;
+        let injected = game.apply_wheel();
+        assert_eq!(
+            injected,
+            key::UP,
+            "a dormant CE223 must not swallow the wheel"
+        );
+        assert_eq!(game.key_bits, key::UP);
+        assert_eq!(game.frame_wheel_delta, 2, "the query still sees the notch");
+
+        let mut picture = crate::picture::Picture::new(100_000);
+        picture.opacity = 0;
+        game.screen.insert(picture);
+        game.key_bits = 0;
+        game.wheel = 2;
+        let injected = game.apply_wheel();
+        assert_eq!(
+            injected,
+            key::UP,
+            "a fully transparent CE223 window must not swallow the wheel"
+        );
+        assert_eq!(game.key_bits, key::UP);
+
+        game.screen.get_mut(100_000).expect("CE223 window").hidden = true;
+        game.key_bits = 0;
+        game.wheel = 2;
+        let injected = game.apply_wheel();
+        assert_eq!(
+            injected,
+            key::UP,
+            "a hidden CE223 window must not swallow the wheel"
+        );
+        assert_eq!(game.key_bits, key::UP);
+
+        let picture = game.screen.get_mut(100_000).expect("CE223 window");
+        picture.hidden = false;
+        picture.opacity = 255;
+        game.key_bits = 0;
+        game.wheel = 2;
         let injected = game.apply_wheel();
         assert_eq!(injected, 0);
         assert_eq!(game.key_bits, 0, "no UP/DOWN may be injected for CE223");
@@ -6252,5 +6685,20 @@ mod tests {
             game.screen.get(27000).expect("picture").text_size,
             Some((width, height))
         );
+    }
+
+    #[test]
+    fn picture_state_reports_the_shifted_draw_coordinate() {
+        let Some(root) = have_data() else { return };
+        let mut game = Game::new(&root).expect("game");
+        let mut picture = crate::picture::Picture::new(12053);
+        picture.x = 100;
+        picture.y = 40;
+        picture.shift = (320, -7);
+        game.screen.insert(picture);
+
+        let mut host = host(&mut game);
+        assert_eq!(host.picture_state(12053, 0), Some(420));
+        assert_eq!(host.picture_state(12053, 1), Some(33));
     }
 }

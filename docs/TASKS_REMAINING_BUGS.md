@@ -12,11 +12,21 @@
 
 ## 0. 完成状态（2026-11-12，T13 复核）
 
-- **编译/测试**：`cargo fmt --all -- --check`、`git diff --check` 通过；
-  `cargo check -q --workspace` 0 error；默认 `cargo test -q --workspace` exit 0。
-- **真实数据**：`WOLF_DATA_ROOT=<abs>/work/Data cargo test -q --workspace --no-fail-fast`
-  仅 2 项既有姊妹作 `db` 期望差异（`clearing_a_row...` / `sysdatabase...face_graphic_type`），
-  其余 target 全绿；标题三项与 AutoEvents 历史差异已由本轮生产修复消除。
+- **编译/测试（2026-11-12 封板快照）**：`cargo fmt --all -- --check`、`git diff --check`
+  通过；`cargo check -q --workspace` 0 error；默认 `cargo test -q --workspace` exit 0。
+- **当前工作区测试状态（2026-11-13 复核）**：`cargo check -q --workspace` 0 error，
+  `cargo fmt --all -- --check` / `git diff --check` 通过；默认
+  `cargo test -q --workspace --no-fail-fast` 仅剩 1 个既有失败 target：
+  `m3_manual_rules`（`late_night_bedtime_skips_to_next_evening`，实得 17:00）。
+  `m3_menu_screens` 已按实际 `Save` 目录判断槽位状态；隔离只含 `SaveData01/02`
+  的数据根时，空槽文本分支 4/4 通过。`wolf-vm` 并行子协程测试已修正为保留子实例到
+  断言时点，130 / 130 通过。
+- **真实数据（2026-11-13 复核）**：
+  `WOLF_DATA_ROOT=<abs>/work/Data cargo test -q --workspace --no-fail-fast`
+  只剩 3 个既有测试失败、分布在 2 个 target：两项姊妹作 `db` 期望差异
+  （`clearing_a_row...` / `sysdatabase...face_graphic_type`）与
+  `m3_manual_rules::late_night_bedtime_skips_to_next_evening`；其余 target 全绿。
+  标题三项与 AutoEvents 历史差异已由本轮生产修复消除。
 - **CLI**：`verify` PASS 64 / 1 SKIP；`precompile` PASS 19 / 0
   （blocks 5416 / loops 881 / implicit_closes 0 / dynamic_labels 3）。
 - **视觉基线**：`m14_visual_regression` 当前 **5 passed（saveui 因 fixture 漂移按设计跳过）**。
@@ -78,10 +88,11 @@
 - **T13 视觉/交互回归**：黑色阴影人头（CE63 tone 填充零）、黄绿斑点/黄色地图背景
   （玩法前端不再发 tile）、夜间首次提示点击消失、保存/相册/数据/结束按图片矩形命中、
   夜间数据图标被结束按钮覆盖时隐藏、BAD 条负缩放不塌、卧室内妹妹 900..903 可见矩形
-  并集命中、身份-CG 分支（学生不画社畜办公室）均已落地。侧栏“拉出”入口也已
-  扩展：关闭状态 `status01.png` 在 x=-305 时，整条 25px 可见竖向滑条（物品栏
-  y 288..384 除外）都可点击打开，且保存图标等可见图片按钮优先，不会抢走
-  (10,510) 80x60 的保存按钮；仍不提供拖拽手势。相关回归
+  并集命中、身份-CG 分支（学生不画社畜办公室）均已落地。侧栏“拉出”入口当前
+  由 `try_side_panel_handle` 处理：关闭状态 `status01.png` / `itemlist.png` 只在
+  右侧两个三角把手区（状态 y≈118..157、物品 y≈260..297，屏内仅右侧 25px）
+  响应，空白滑条（例如 y=192）不会打开侧栏；两个抽屉互斥，且保存图标等可见
+  图片按钮优先，不会抢走 (10,510) 80x60 的保存按钮；仍不提供拖拽手势。相关回归
   `m17_ui_regressions` / `m17_t13_ui_audit` / `m17_render_regressions` / `m17_text_layer`
   以及 `m3_hud_buttons` 9 项在真实数据下通过（详见
   `docs/reviews/T13_UI_REGRESSION_AUDIT.md`）。
@@ -93,15 +104,17 @@
   `message` 字面量在原版参考图中也出现，
   在确认不同说话人的名牌规则前不按占位符擅自隐藏。
 - **T13 未完成/待验证**：
-  - 侧栏现在已支持整条可见滑条点击打开，但**没有按住拖拽拉出手势**；若原版要求
+  - 侧栏当前只支持两个三角把手点击开合，**没有按住拖拽拉出手势**；若原版要求
     拖拽而非点击，仍需原版操作录像确认。
   - 哥哥体力条只有 `精力 3/3` 与 `行动力60/65` 文本证据（CE214），数据中
     没有独立体力槽位/图形引用；保存按钮没有独立 hover 资源，hover 高亮未实现。
     两项都需原版截图/槽位证据，不能凭猜测补 UI。
-  - BAD 外框几何已由负缩放回归证明存在；CE237 中右侧端点会被中央
-    `sleeping_staus.png`（112x70，中心 512,60）覆盖，这是数据层序，不应为
-    “外框消失”改渲染顺序。若原版确有不同层序，需原版同场景截图。
-  - `36014` 名牌字面量 `message`、BAD 外框厚度和人物 alpha 轮廓命中仍属证据不足项。
+  - BAD 外框几何已由负缩放回归证明存在；原版特写
+    `ptr_sc/恶作剧_BAD&GOOD条特写.png` 确认中央 `sleeping_staus.png`
+    （六格睡眠状态圆标，素材 300x50，绘制中心 512,60；脚本特效框 112x70）
+    覆盖两根外框的内侧端点。`wolf-gdext` 已恢复 WOLF 槽位顺序
+    （`1994 < 1998 < 2000`），不再把 `1994/1998` 抬到 `2001`。
+  - `36014` 名牌字面量 `message` 与人物 alpha 轮廓命中仍属证据不足项。
 - **剩余**：2 项 `db` 差异是姊妹作数据与文本期望，不是本作运行时缺陷；人工
   Godot 窗口视觉复核（地图背景/混合/CE234）仍建议在交付前看一眼。
 
@@ -117,8 +130,9 @@
 - **交互修复**：
   - 相册 `-7 / ev35` 已加入 `PICTURE_ACTION_CONTROLS`，保存/相册/数据/结束
     统一按可见图片墨迹矩形命中，旧地图 tile 大盒不再复活。
-  - 关闭态侧栏命中从屏幕 `x=5` 扩到 `x=0`：`SIDE_PANEL_HANDLE_RIGHT=25`，
-    覆盖整条可见三角；状态栏/物品栏仍互斥，测试覆盖 `x=0/4/24` 与上下边界。
+  - 关闭态侧栏命中从屏幕 `x=5` 扩到 `x=0`：`SIDE_PANEL_HANDLE_RIGHT=25`；
+    但只在状态/物品两个三角把手带内生效，空白滑条不响应。状态栏/物品栏仍互斥，
+    测试覆盖 `x=0/4/24`、三角上下边界以及 y=192 空白滑条。
   - 恶作剧动作子菜单把 `v100` 改为 `10`，而 ev21 的原页条件仍要求 `v100==1`。
     新增仅限图片结束按钮的 `action_key_event_ignoring_conditions()`；点击结束箭头
     可直接启动 ev21 的确认/收尾脚本，不必先手动退回主页。普通地图热点仍走条件门。
@@ -140,13 +154,15 @@
 - **仍需实机确认/已知边界**：
   - 侧栏仍为点击开合，不做按住拖拽；原版若要求拖拽需再拿操作录像确认。
   - 保存按钮原版本身没有独立高亮素材；本项目保证可点击，不伪造 hover 高亮。
-  - BAD 外框已锁定 `1994/1998 z=2001` 的绘制顺序和负缩放几何，但最终端点仍受
-    CE237 的 `sleeping_staus.png` 层级影响；未凭猜测改全局渲染顺序。
+  - BAD 外框已按原版特写恢复 CE237 的自然槽序：`1994/1998` 在
+    `sleeping_staus.png`（槽 2000）下方，中央睡眠圆标覆盖两条框线的内侧端点。
   - 36002 当前证据是“底边锚定，不随气泡增高上移”；没有零售反证前不改。
-- **全量测试噪声**：当前工作区默认 `cargo test -q --workspace` 仍有既有
-  `m3_manual_rules::late_night_bedtime_skips_to_next_evening` 失败
-  （实得 17:00，期望 19:00）；真实数据下 `wolf-game` 两个 `db` 单元测试仍假设
-  姊妹作占位串。两项均与本轮 UI/性能改动无关，未在本轮擅自改期望。
+- **全量测试噪声（2026-11-13 复核）**：当前工作区默认
+  `cargo test -q --workspace --no-fail-fast` **exit 1**，唯一失败为
+  `m3_manual_rules::late_night_bedtime_skips_to_next_evening`（实得 17:00，期望
+  19:00）。这项作息差异与真实数据下两个 `db` 姊妹作占位串差异都是既有噪声。
+  `m3_menu_screens` 的空槽失败来自测试遗留 `SaveData03.sav`，已通过按实际槽位状态
+  断言并隔离数据根复验；`wolf-vm` 新测试已修正。
 
 ---
 
@@ -607,7 +623,10 @@ bash tools/parity-godot.sh 600 --pixel-check=0
 - 覆盖测试（历史）：`m4_tile_cache` 仍验证核心瓦片缓存；`t12_tile_bake` /
   `t12_tile_bake_render` 已随 T13 前端移除而删除。
 
-**旧 BUG-20..24 复核（历史台账）**
+**历史台账 BUG-20..24 复核**
+
+> 本节所有 `BUG-20..24` 都指 `HANDOFF_PROGRESS.md` 2026-11-11 历史台账；
+> 不要与 `reviews/CODE_REVIEW_4ROUND.md` §六的同号条目混用。
 
 - 新增 `crates/wolf-game/tests/m16_old_bug_review.rs`。
 - BUG-20：`character_state` 字段 2/3/6/7 返回真实地图事件坐标，正向测试通过。
@@ -646,7 +665,8 @@ A/C 代码 → D 测试。A 的 T5 依赖 B 的 `text_size` 字段，不能反�
 ## 5. 交付标准（Definition of Done）
 
 - [x] `cargo check -q --workspace` 0 error。
-- [x] 默认 workspace `cargo test -q --workspace` exit 0。
+- [x] 默认 workspace `cargo test -q --workspace` exit 0（2026-11-12 封板快照；
+      2026-11-13 当前工作区仅剩既有 `late_night_bedtime` 失败，见 §0/§0.1）。
 - [x] 数据 workspace 无新增失败（本作实际仅剩 2 项既有 `db` 姊妹作差异）。
 - [x] `verify` PASS 64 / 1 SKIP；`precompile` PASS 19 / 0。
 - [x] `m14_visual_regression` 当前 **5 passed**：`saveui` 的 101 像素差异已归因为

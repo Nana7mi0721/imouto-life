@@ -5,7 +5,7 @@
 //!
 //! | event | title (JP) | what it paints / does |
 //! |---|---|---|
-//! | 237 | Hステータス | window frame + GOOD/BAD gauge labels + sleeping_staus.png backdrop (slots 1992..2000) |
+//! | 237 | Hステータス | window frame + GOOD/BAD gauge labels + sleeping_staus.png status badge (slots 1992..2000) |
 //! | 238 | ステータス | status01.png backdrop + rank text (slots 320..325) |
 //! | 239 | アイテムリスト | itemlist.png frame + 19 empty item slots (slots 2300..2319) |
 //! | 240 | 立ち絵表示 | layered standing art 900..903 (body / eye / mouth / eyebrow) |

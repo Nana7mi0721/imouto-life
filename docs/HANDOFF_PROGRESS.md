@@ -155,8 +155,9 @@ M0–M7 与 C 任务每一步的改动、验证数字与踩过的坑。它只记
   * **CE132/CE95 设置界面已可视**（详见 `docs/M4_SETTINGS_UI.md`）：
     修复 `\f[0]` 字号（`crates/wolf-game/src/textpic.rs`）、文本 `290` 位移
     （`crates/wolf-game/src/game.rs` `text_quads` + `picture.rs` `effect_offset`）、
-    1/10 字符格 UI 块缩放（`crates/wolf-game/src/picture.rs` `Screen::ui_scale_for`，
-    块内任一非内置窗口宽或高超两倍屏即 10x；CE264 `10240x720` 也正确命中）、
+    1/10 字符格 UI 块缩放（历史实现，现已撤销：`crates/wolf-game/src/picture.rs`
+    `Screen::ui_scale_for`，块内任一非内置窗口宽或高超两倍屏即 10x；CE264
+    `10240x720` 也正确命中）、
     无 window 的 CursorBase 窗口图元、head `0x400000` 保留 290 位移
     （`crates/wolf-vm/src/exec.rs` `PictureCmd.keep_shift`）。
   * 新增 `crates/wolf-game/tests/m4_settings_ui.rs` 2 条；`m3_visual_text` 的
@@ -600,7 +601,8 @@ M0–M7 与 C 任务每一步的改动、验证数字与踩过的坑。它只记
       `with_inner_size(PhysicalSize::new(1920,1080))` + 默认 `ScaleMode::Integer`，1080p 对
       1024x576 只能 1x → 画面居中、四周巨大黑边。新增 `fn window_size_for(monitor)` 按主显示器
       取能容纳 1024x576 的最大整数倍（宽留 6%/高留 10%），非全屏时用它作初始窗口；无 monitor→1x。
-    * **(3) 场景暗块** `crates/wolf-game/src/picture.rs` 的 `Screen::ui_scale_for`：`oversized`
+    * **(3) 场景暗块（历史 tenths 实现，现已撤销）** `crates/wolf-game/src/picture.rs`
+      的 `Screen::ui_scale_for`：`oversized`
       （十分之一 UI）判定误把停靠在屏外（block 160 消息窗 picture 16000，window 7680x1200 @(512,3840)）
       的窗口按 /10 缩放并拉回屏内，形成约 768x120 的中心暗块。修法：`oversized` 谓词增加 `parked`
       排除（`x.abs()>SCREEN_W*2 || y.abs()>SCREEN_H*2` 的停靠项不参与判定）。
@@ -732,10 +734,12 @@ M0–M7 与 C 任务每一步的改动、验证数字与踩过的坑。它只记
     * play --event 245 --until 600：600 帧 / 24,016 指令 / 32 picture op。
     * play --menu-only --until 600（标题菜单）：600 帧 / 40 指令 / 5 picture op。
   * **同渲染器的离屏 capture**（work/out/play_gpu/{boot,title,choice,load,load2}.png）：title.png 标题画面完整正确（logo + 3 个菜单项）。
-  * **发现的既有缺口（不影响核心循环）**：存档/读档界面（事件 5）是「十分之一单位」UI block，crates/wolf-game/src/picture.rs:1046 Screen::ui_scale_for 能识别（返回 10）且 atlas.rs:532 / picture.rs:1409,1419 把 dst 除以 10，但行文字字号未同比例缩放，四个槽窗口画成不透明黑块、文字小而错位（pic 12052 "\f[0]1"、12075 "<R>\space[0]\f[0]\-[1]\E\A- ..."），只有顶栏 pic 12001 WindowBase_amania.png + 标题「选择要保存的数据。」正确。用 capture --map SampleMapA --event 5 现场构建同样复现，说明与 --load-save 入口无关。另外玩家存档 SaveData01.sav 是在存档界面按保存写下的，Part5 含整套存档界面图（12000..12113），裸读档会把这些图一并还原。
+  * **当时发现的既有缺口（不影响核心循环）**：存档/读档界面（事件 5）是「十分之一单位」UI block，crates/wolf-game/src/picture.rs:1046 Screen::ui_scale_for 能识别（返回 10）且 atlas.rs:532 / picture.rs:1409,1419 把 dst 除以 10，但行文字字号未同比例缩放，四个槽窗口画成不透明黑块、文字小而错位（pic 12052 "\f[0]1"、12075 "<R>\space[0]\f[0]\-[1]\E\A- ..."），只有顶栏 pic 12001 WindowBase_amania.png + 标题「选择要保存的数据。」正确。用 capture --map SampleMapA --event 5 现场构建同样复现，说明与 --load-save 入口无关。另外玩家存档 SaveData01.sav 是在存档界面按保存写下的，Part5 含整套存档界面图（12000..12113），裸读档会把这些图一并还原。
   * **试过又回退**：在 game.rs resume_loaded_map 里 screen.clear()（HUD 全丢）或新增 Screen::clear_transient_ui() 按 ui_scale>1 删窗口图（误删顶栏 12001，顶部像素由 (52,56,57) 变 (196,196,196)）；两者都 revert，git status 干净、cargo build -q --workspace exit 0。教训：12001 既是存档界面顶栏又是读档后的 HUD 顶栏，不能按 ui_scale 粗删。
 
-* 2026-11-02（修存档/读档界面十分之一单位几何）——用户 m02239「我继续修bug」：
+* 2026-11-02（历史：修存档/读档界面十分之一单位几何；该 tenths 渲染补偿现已撤销）——用户 m02239「我继续修bug」：
+  * **当前状态（2026-11-13）**：本条的 `Screen::ui_scale_for`、`TENTHS_UI`/`tenths_block`
+    与渲染二次 `/10` 已从当前工作区移除；下面的 tenths 细节只作历史依据，不代表现行实现。
   * **根因**：tenths UI block 的 `Screen::ui_scale_for` 分组键用了 `number/100`（应 `/1000`），且渲染时把 **x 也除了 10**——但 VM 的 op121（flags=0x10400）早已把 x 侧除回像素，只有 y/w/h 仍是十分之一。结果面板落到 x=4.8、整片黑；同时 `CursorBase.png` 被当实心九宫格铺满槽 → 黑块；空槽标签里的 DB 句柄（1_100_000_000+row*100+col）被直接打印成九位数字。
   * **修复**（工作树，`cargo test -q --workspace` exit 0，96 套件全绿、0 warning）：
     * `crates/wolf-game/src/picture.rs` `ui_scale_for`：分组 `div_euclid(100)`→`div_euclid(1000)`；`quads()` text/sprite 分支 ui>1 时 dst 的 **x 不除**、y/w/h 除 10。
@@ -758,7 +762,7 @@ M0–M7 与 C 任务每一步的改动、验证数字与踩过的坑。它只记
 
 * 2026-11-03（HUD/全屏文本字重与垂直基线）——用户 m05098 / m02832 / m02834：
   * **根因**：`Game.dat` 主字体为 `Microsoft YaHei UI Bold`（msyhbd.ttc 只有 weight 700 face），但 `Attrs::new()` 默认请求 weight 400；fontdb 匹配不到主 face 就退到 `C:\Windows\Fonts\seguisym.ttf`，该 fallback 的 digit advance=0.5391em，使 `19:30` 在 24px 只有 56.95px（参考 66.06/墨迹63），所有 ASCII 数字窄约 16%。
-  * **修复**：`crates/wolf-render/src/text.rs` 的 `TextQuad/TextItem` 新增 `weight: u16`，所有 `Attrs::new()` 链改用该 weight；`crates/wolf-game/src/game.rs::build_text_picture` 对 tenths UI 块（`ui>1`，存档槽 data/time/name 行）置 400，普通像素文本（HUD/message/top bar）置 700；`crates/wolf-game/src/atlas.rs` 与 `choice.rs` 的 TextQuad 构造补 weight。
+  * **修复**：`crates/wolf-render/src/text.rs` 的 `TextQuad/TextItem` 新增 `weight: u16`，所有 `Attrs::new()` 链改用该 weight；`crates/wolf-game/src/game.rs::build_text_picture` 对当时的 tenths UI 块（`ui>1`，存档槽 data/time/name 行）置 400，普通像素文本（HUD/message/top bar）置 700；`crates/wolf-game/src/atlas.rs` 与 `choice.rs` 的 TextQuad 构造补 weight。当前代码已改为按 `12xxx` 图元号选择 regular 字重，不再依赖 `ui_scale_for`。
   * **垂直**：`crates/wolf-game/src/textpic.rs` 新增 `PLAIN_TEXT_TOP_OFFSET=4.0`，`build_text_picture` 仅对 `ui<=1` 的普通文本把 quad 下移 4px；tenths UI 标签不加。实测 `19:30` 墨迹 x36..98/y11..28（参考 x37..99/y11..28），`周一` y13..29（参考13..28），`持有金钱` 宽159（参考158）；存档 data 仍 x71..121/宽51、time 宽34~35，不回归。
   * **验证**：`cargo fmt --all && cargo build -q --workspace` exit 0；`cargo test -q --workspace` exit 0；`cargo test -q -p wolf-cli --test m14_visual_regression` 5 passed（day_command nonblack 532756→533165、hud 554374→554868 已按字号重录）；`WOLF_DATA_ROOT=$PWD/work/Data ./target/debug/wolf-cli.exe verify` PASS 64/1 SKIP。截图 `work/out/play_gpu/{hud_final.png,hud_final_sbs.png,saveui_final.png,saveui_final_sbs.png,newgame_final.png}`。
 * 2026-11-03（HUD ASCII 空格按 0.5 em 度量）——用户 m05098 / m02832 / m02834：
@@ -883,7 +887,7 @@ M0–M7 与 C 任务每一步的改动、验证数字与踩过的坑。它只记
 
 * 2026-11-11（独立复核收尾：BUG-05 真实命中盒 / 回归补强 / precompile 基线）：
   * **BUG-05 未闭环的根因**：`Screen::picture_rect` 对 window 图仍取 18x18 皮肤贴图尺寸，CE131 的可见槽位面板是 928x115.2；点击槽位中心仍落到第 1 槽，只有 1.8x1.8 的皮肤左上角碰巧命中。复核探针已验证该行为。
-  * **修复**：`picture_rect` 现在对非系统图形的 window 图先走 `Picture::window` 盒，再按 `Atlas::sprites` 同样的 tenths 规则缩放；过小（Atlas 不绘制）的窗口返回 None。新增 `m3_menu_screens::ce131_slot_hit_boxes_are_the_visible_panels_not_the_skin_texture`：断言 12090 命中盒宽高 > 900/100，鼠标移到可见中心后 CE131 self610=2，且不写任何存档。
+  * **修复（历史 tenths 快照）**：`picture_rect` 当时对非系统图形的 window 图先走 `Picture::window` 盒，再按 `Atlas::sprites` 同样的 tenths 规则缩放；过小（Atlas 不绘制）的窗口返回 None。新增 `m3_menu_screens::ce131_slot_hit_boxes_are_the_visible_panels_not_the_skin_texture`：断言 12090 命中盒宽高 > 900/100，鼠标移到可见中心后 CE131 self610=2，且不写任何存档。
   * **回归补强**：`m3_hud_buttons::repeated_save_menu_cycles_do_not_lock_the_hud_icons`（连续 3 次开关 CE131 后数据图标仍响应，BUG-08）；`m3_event_page_switch::blocked_event_cleans_up_before_a_page_switch`（CE245 打开时改变 var70 选择另一页面，Event 1 不被杀，取消后 `-9` 空房间层被清除，BUG-09/16）；`m3_mouse_menu::a_left_click_outside_the_panel_cancels_the_prompt`（BUG-18）。
   * **precompile 基线**：`dynamic_labels` 由错误的 51 修正为 3（代码注释与实测数据均为 3；仅有 CE31/63/86 三条 `213` 标签含 `\cself`）。`wolf-cli precompile` 现在 **PASS 19 / 0**。
   * **最终验证**：默认 workspace **exit 0**；数据 workspace 105 个 target ok，仅 7 个既有姊妹作差异（auto_events 3、db 2、game title 2）；`verify` **PASS 64 / 1 SKIP**；`precompile` **PASS 19 / 0**；`m14_visual_regression` **5 passed**（title peak=8）；`cargo fmt --all -- --check` 与 `git diff --check` 通过；`smoke-godot.sh` exit 0（smoke 4/4、load_save 50/14、roundtrip 38/38）；`parity-godot.sh 600 --pixel-check=0` **PASS**（15,549 指令 / 4,418 picture / 15 message / 3 choice / 0 warning / 3 sound）。
@@ -921,9 +925,9 @@ M0–M7 与 C 任务每一步的改动、验证数字与踩过的坑。它只记
 
 * 2026-11-12（深度审查 BUG-25~48 最终收口，T0–T11 完成）：
   * **执行方式**：主代理按写作用域拆分，两个 `auto/deepseek-v4.1-flash` 子代理并行处理；主线修复 `auto_events/game/picture/exec`，Lead 负责冲突整合、基线与验收。未 commit、未 reset。
-  * **编译与运行时**：补齐 `SpriteQuad.blend`、`retail_rng_seed` 的 `(u32,u32,Vec<u8>)`、`PictureVars.owner_event`；文本/DB 字符串槽、读档 BGM 同帧 flush、滚轮/鼠标帧差、174/211、picture_state/Op124、character_state/Op160/1000、Erase 淡出、Godot 瓦片层、blend、退出设置持久化均已接通。
+  * **编译与运行时**：补齐 `SpriteQuad.blend`、`retail_rng_seed` 的 `(u32,u32,Vec<u8>)`、`PictureVars.owner_event`；文本/DB 字符串槽、读档 BGM 同帧 flush、滚轮/鼠标帧差、174/211、picture_state/Op124、character_state/Op160/1000、Erase 淡出、Godot 动态渲染、blend、退出设置持久化均已接通。T13 后续已移除前端瓦片桥接。
   * **CE43 one-shot**：`AutoEvents::sync` 只按标题菜单 false→true 沿启动 CE43；菜单仍打开时实例结束不再按电平立即重放，光标变化继续由 `Game::restart(43)` 重绘。真实数据标题三项测试（park / confirm advance / booting）全过，`advances` 的 248 指令恢复 `<200`。测试期望同步改为本作资产 `SystemFile/TitleGraphic2.png` 与 `Picture/menu*_*.png`。
-  * **CE94 tenths 几何**：根因是 Op121 的 range 位把 `121 [self22,10,0,0x10400,3]` 当成 self22..25 连续写入，提前把 y/w/h 从 `864/9280/1152` 除成 `86/928/115`，导致 `ui_scale_for` 失效。VM 现在对 self range 只更新命名槽，普通变量 batch 不变；内置 system graphic 在 tenths block 中只缩 x/y、保留真实图形尺寸。saveui 恢复 **9280x1152** 槽盒、13 text pictures / 54 glyphs / 27728 textured / atlas 21，`<TRI-RIGHT>` quad 与命中盒均为 `[985,300,25,24]`，`<GRADY>` 仍为 `[0,0,1024,576]`。
+  * **CE94 tenths 几何（历史；该渲染补偿已在当前工作区撤销）**：当时根因是 Op121 的 range 位把 `121 [self22,10,0,0x10400,3]` 当成 self22..25 连续写入，提前把 y/w/h 从 `864/9280/1152` 除成 `86/928/115`，导致 `ui_scale_for` 失效。VM 对 self range 只更新命名槽，普通变量 batch 不变；内置 system graphic 在 tenths block 中只缩 x/y、保留真实图形尺寸。saveui 当时恢复 **9280x1152** 槽盒、13 text pictures / 54 glyphs / 27728 textured / atlas 21，`<TRI-RIGHT>` quad 与命中盒均为 `[985,300,25,24]`，`<GRADY>` 仍为 `[0,0,1024,576]`。当前实现不再保留 `ui_scale_for` 或 tenths 渲染层。
   * **回归测试**：新增 `m16_vm_scheduler` 4、`m16_runtime_state` 8、`m16_parallel_input` 5；另补 Op121 self range、CE43 one-shot、tenths arrow/hitbox 单测。真实数据下全过。
   * **最终验证**：
     * `cargo fmt --all -- --check` / `git diff --check` 通过；`cargo check -q --workspace` 0 error。
@@ -943,8 +947,9 @@ M0–M7 与 C 任务每一步的改动、验证数字与踩过的坑。它只记
   * **旧编号复核**：新增 `m16_old_bug_review`（2 passed / 2 ignored）。历史台账 BUG-20 确认闭环；历史台账 BUG-24 确认不是缺陷（默认档 2→Sys15/16=14/8，设置档 4→9/4）。被忽略的 `bug21` 是**报告 §六 BUG-21**（独立 map-self 合成场景，真实零售影响未证实）；被忽略的 `old_bug23` 是**历史台账 BUG-23 的空范围合成探针**，不是零售演出丢失。旧 BUG-21（滚轮）与旧 BUG-22（鼠标帧差）不在此文件，分别有生产测试和手册语义证据。
   * **剩余（已由下方 20:09 最终验收取代）**：当时 `m14_visual_regression` 记 4/5，
     saveui 的 101 像素差后在最终验收归因为 `SaveData03.sav` fixture 漂移；人工
-    Godot 窗口复核已在新 DLL 上执行。侧栏当时只有 48x96 strip 点击，最终已扩展为
-    整条可见滑条；哥哥体力条、保存 hover、BAD 外框厚度仍缺原版素材/槽位证据。
+    Godot 窗口复核已在新 DLL 上执行。侧栏当时记录的是 48x96 strip 点击，T13 中间态
+    曾扩展为整条可见滑条；T14 最终改为两个三角把手，见下条。哥哥体力条、保存 hover、
+    BAD 外框厚度仍缺原版素材/槽位证据。
 
 * 2026-11-12（T13 文档封板复核）：
   * 复核 `docs/reviews/T13_UI_REGRESSION_AUDIT.md`、`work/out/T13_OLD_BUG_DOC_AUDIT.md` 与当前代码/回归，确认：
@@ -974,10 +979,11 @@ M0–M7 与 C 任务每一步的改动、验证数字与踩过的坑。它只记
     只读隔离数据根仅保留 01/02 时为 25 live / 13 text、576227，与基线 576221
     差 6 像素（光标/栅格相位）。`m14_visual_regression` 已加
     `depends_on_save_grid` 守卫，不改基线。
-  * **侧栏**：`try_status_panel_strip` 从原版 48x96 热点扩展为整条 25px 可见滑条，
-    仅排除物品栏 y 288..384；可见图片按钮先解析，保存图标 (10,510) 80x60 不会被抢。
-    新增 `status_sliver_opens_above_and_below_the_original_hotspot_band` 与
-    `status_sliver_does_not_steal_the_save_icon`，`m3_hud_buttons` 9/9。
+  * **侧栏（T13 中间态，已被 T14 取代）**：当时 `try_status_panel_strip` 曾扩展为
+    整条 25px 可见滑条。当前实现是 `try_side_panel_handle`：只响应状态
+    `STATUS_HANDLE_Y=(118,157)` 与物品 `ITEM_HANDLE_Y=(260,297)` 两个三角把手区，
+    空白滑条（例如 y=192）不触发；两个抽屉互斥，仍无按住拖拽手势。可见图片按钮
+    先解析，保存图标 (10,510) 80x60 不会被抢。
   * **Godot 窗口复核**：读档 180 帧 `wolf_avg_ms=0.565` / `draw_avg_ms=0.287` /
     `sync_uploads=1` / `sync_MiB=4.1`，截图中 yellowish=0、greenish=0；新游戏
     300 帧 `wolf_avg_ms=0.342` / `draw_avg_ms=0.058`，三行正文在 493/516/539，
@@ -985,15 +991,15 @@ M0–M7 与 C 任务每一步的改动、验证数字与踩过的坑。它只记
   * **并行优化**：`wolf-gdext::frame()` 只计算一次 `rendered_message_layout()`，
     光标与原生文本运行共用；原生 101 文章模式不再每帧重复布局。
   * **仍证据不足/未做**：保存 hover 高亮（无独立素材）、哥哥图形体力条
-    （CE214 只有 `行动力/精力` 文本，v74/v75 无绘图引用）、BAD 外框厚度
-    （几何存在，CE237 右端被中央 `sleeping_staus.png` 覆盖，数据层序不应臆改）、
+    （CE214 只有 `行动力/精力` 文本，v74/v75 无绘图引用）、
     `36014` 的 `message` 字面量语义、侧栏按住拖拽手势。以上需原版截图/操作录像。
 
 * 2026-11-12（T14 实机 UI/性能回归收口）：
   * **用户实机现象复核**：先用最新冷构建抓新游戏/读档 `1/2/3/6/10` 帧，10 张截图
     `yellowish=0 / greenish=0`；读档第 1 帧起即可见 `(760,34)` 的 100x8 白框体力条。
     旧 Godot 进程未退出时 Windows 会继续持有旧 DLL，是“修了仍复现”的首要排查项。
-  * **交互**：相册 `-7/ev35` 加入图片命中表；侧栏关闭态命中由 x=5 扩到 x=0；
+  * **交互**：相册 `-7/ev35` 加入图片命中表；侧栏关闭态只在两个三角把手区内响应，
+    横向覆盖到可见右缘（`SIDE_PANEL_HANDLE_RIGHT=25`，x=0 起）；
     ev21 结束按钮在动作子菜单 `v100=10` 时走窄范围 page-condition bypass，
     仍保留确认/收尾脚本；混合批处理给体力条/overlay 固定 normal-blend 末尾批层。
   * **性能**：`GameView` 的 161 冻结帧改为一次 `get_image()` 捕获，整个
@@ -1007,6 +1013,35 @@ M0–M7 与 C 任务每一步的改动、验证数字与踩过的坑。它只记
     `smoke-godot.sh` 全绿；`parity-godot.sh 600 --pixel-check=600` PASS
     （MAE 1.3852，within8 98.41%）。
   * **未改/未证实**：保存 hover 高亮（原版截图纠正为“可点击但不亮”，故不伪造）；
-    侧栏拖拽手势、BAD 外框最终端点、36002 锚定仍需原版实机证据。默认 workspace
+    侧栏拖拽手势与 36002 锚定仍需原版实机证据。默认 workspace
     仍有一项既有 `m3_manual_rules::late_night_bedtime...`（17:00 vs 19:00）失败，
     真实数据下两项 `db` 姊妹作占位串差异也仍在；均未在本轮改期望。
+
+* 2026-11-13（第二轮静态审查回归修复）：
+  * **审查报告闭环**：处理 `docs/code_review_cb5ecb4_141c524.md` 的 P1/P2/P3：
+    Op121 恢复通用 SelfVar 批量语义并撤销 tenths 渲染二次缩放；CE223 仅在
+    `Picture(100000)` 存在时接管滚轮；气球框改为仅渲染层扩高，不再修改逻辑
+    Picture 36000；瞬时 Move 清空残留 Erase transition；存档网格光标写穿
+    `common_self`；自动按键只在查询接受注入键时消费；并行公共事件子协程继承
+    `is_parallel`；Opcode 124 的 field 0/1 返回叠加 `290` 位移后的绘制坐标。
+  * **Godot 缓存**：混合批切回快路径清空 batch 引用；每次 161 都刷新冻结帧；
+    同尺寸冻结帧复用 `ImageTexture.update()`；无 batch 时同步释放冻结纹理引用。
+  * **空槽 fixture**：`work/Data/Save/SaveData03.sav` 确认为中断测试遗留存档，
+    不是 VM 回归。未改动玩家存档；`m3_menu_screens` 改为按实际槽位存在性断言，
+    并在只含 `SaveData01/02` 的隔离数据根复验空槽分支 4/4。
+  * **测试**：新增/修正 picture_state 位移、CE95 光标高度、CE223 休眠滚轮、
+    Op121 全槽批量、自动按键交叉查询、子协程并行标记、气球渲染幂等等回归。
+    `m17_ui_regressions` 17、`m17_text_layer` 3、`m17_t13_ui_audit` 5、
+    `m17_render_regressions` 5、`m4_settings_ui` 3、`m3_menu_screens` 4、
+    `m6_title_wheel` 4、`m3_hud_buttons` 10 等定向套件通过。
+  * **全量状态**：`cargo check -q --workspace` 0 error；`cargo fmt --all -- --check`
+    与 `git diff --check` 通过。默认 `cargo test -q --workspace --no-fail-fast` 只剩
+    既有 `m3_manual_rules::late_night_bedtime_skips_to_next_evening`（17:00 vs 19:00）；
+    带 `WOLF_DATA_ROOT=work/Data` 时另有 2 项既有姊妹作 `db` 占位串差异。
+  * **Godot**：`build-godot.sh` 通过；`smoke-godot.sh` 全绿，`ready_ms=89.3`；
+    `parity-godot.sh 600 --pixel-check=0` PASS（60194 instructions / 7508 pictures /
+    15 messages / 3 choices / 0 warnings / 3 sounds）。未 commit，未改动
+    `work/Data/Save` 与 `ptr_sc/`。
+  * **BAD/GOOD 层级**：原版特写确认中央睡眠圆标应覆盖两根框线的内侧端点；
+    已移除 `1994/1998 -> z=2001` 的折中，恢复 WOLF 自然槽位顺序，
+    `wolf-gdext` 单测同步改为断言 `1994/1998 < 2000`。

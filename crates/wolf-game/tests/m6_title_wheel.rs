@@ -147,6 +147,28 @@ fn a_fresh_wheel_notch_is_not_left_held_for_the_next_frame() {
     );
 }
 
+#[test]
+fn a_new_game_background_ce223_does_not_eat_choice_wheel_input() {
+    let Some(mut game) = boot_to_title() else {
+        return;
+    };
+    game.vm.vars.set(1, 1);
+    game.frame();
+    assert!(
+        game.auto_events.running_ids().contains(&223),
+        "the new-game v[1] condition must have the scheduler own CE223"
+    );
+
+    let before = game.choice_cursor();
+    game.wheel = -1;
+    game.frame();
+    assert_ne!(
+        game.choice_cursor(),
+        before,
+        "a dormant CE223 instance must not swallow the choice wheel"
+    );
+}
+
 /// CE131 is a `123`-poll screen. Its up/down keys move the slot cursor and its
 /// left/right keys move the page (`self[610..613]` hold the visible grid state).
 /// Wheel-down must be byte-for-byte the same key path as RIGHT, and wheel-up the
@@ -168,10 +190,15 @@ fn the_wheel_drives_the_save_grid_like_the_page_keys() {
         wolf_game::savegame::load_into(&mut game, &save).expect("load SaveData01");
         game.auto_advance = true;
         game.auto_choice = false;
+        game.vm.vars.set(1, 1);
         assert!(game.start_event(131), "CE131 save/load grid did not start");
         for _ in 0..30 {
             game.frame();
         }
+        assert!(
+            game.auto_events.running_ids().contains(&223),
+            "the new-game v[1] path must have the scheduler own CE223"
+        );
         game
     };
     let grid_state = |game: &Game| {

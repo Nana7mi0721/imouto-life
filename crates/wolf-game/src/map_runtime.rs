@@ -383,6 +383,22 @@ impl MapRuntime {
         self.start_action_page(vm, index, page_index)
     }
 
+    /// Pixel rectangle of an event's active action-key page, if it has one.
+    ///
+    /// Used by the bedroom click bridge for poses that have no standing-art
+    /// silhouette to hit-test. The page conditions are evaluated against the
+    /// same VM state that [`Self::action_key_at`] uses.
+    #[must_use]
+    pub fn action_key_rect(&self, vm: &Vm, event: u32) -> Option<(i32, i32, i32, i32)> {
+        let state = self.events.iter().find(|state| state.id == event)?;
+        let page_index = select_page(state, vm)?;
+        let page = state.pages.get(page_index)?;
+        if page.trigger != Trigger::ActionKey || page.program.is_none() {
+            return None;
+        }
+        Some(hit_rect(state, page))
+    }
+
     /// Start the currently active action-key page of one event by id.
     ///
     /// Picture buttons are not placed on the event's tile rectangle: ev21's end

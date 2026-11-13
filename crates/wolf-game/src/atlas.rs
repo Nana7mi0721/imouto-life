@@ -322,17 +322,36 @@ impl Atlas {
         if width == 0 || height == 0 {
             return Vec::new();
         }
-        let source_stride = self.width as usize * 4;
+        let mut out = vec![0; width as usize * height as usize * 4];
+        self.copy_content_pixels(&mut out);
+        out
+    }
+
+    /// Copies the cropped content into an existing RGBA8 buffer.
+    ///
+    /// The front-end already owns a `PackedByteArray`; filling it directly avoids
+    /// the `content_pixels()` `Vec` allocation and the second full-block copy.
+    /// Returns `false` when `out` is too small; the caller can then resize and retry.
+    pub fn copy_content_pixels(&self, out: &mut [u8]) -> bool {
+        let [width, height] = self.content_size();
+        if width == 0 || height == 0 {
+            return true;
+        }
         let row_bytes = width as usize * 4;
-        let mut out = Vec::with_capacity(row_bytes * height as usize);
-        for row in self
+        let needed = row_bytes * height as usize;
+        if out.len() < needed {
+            return false;
+        }
+        let source_stride = self.width as usize * 4;
+        for (row, dest) in self
             .pixels
             .chunks_exact(source_stride)
             .take(height as usize)
+            .zip(out.chunks_exact_mut(row_bytes))
         {
-            out.extend_from_slice(&row[..row_bytes]);
+            dest.copy_from_slice(&row[..row_bytes]);
         }
-        out
+        true
     }
 
     /// How many distinct images are packed.
@@ -592,6 +611,37 @@ impl Atlas {
     }
 
     pub fn sprites(&mut self, screen: &Screen, assets: &mut Assets) -> Vec<SpriteQuad> {
+        self.sprites_with_panel_rect_excluding(screen, assets, None, &[])
+    }
+
+    /// [`Self::sprites`] with an optional final destination rectangle for one panel.
+    ///
+    /// The balloon frame grows upward for multi-line bodies without changing the
+    /// script-owned Picture. The renderer supplies the adjusted panel rectangle
+    /// here, so drawing never mutates the logical screen or a save snapshot.
+    pub fn sprites_with_panel_rect(
+        &mut self,
+        screen: &Screen,
+        assets: &mut Assets,
+        panel_rect: Option<(i32, [f32; 4])>,
+    ) -> Vec<SpriteQuad> {
+        self.sprites_with_panel_rect_excluding(screen, assets, panel_rect, &[])
+    }
+
+    /// [`Self::sprites_with_panel_rect`] with pictures excluded before packing.
+    ///
+    /// The balloon renderer owns the whole message presentation, but the native
+    /// `19500..19503` slots can still be live for input. Filtering them after
+    /// packing used to enlarge the atlas content rectangle and upload their
+    /// pixels even though they were never drawn. Excluding the slots here keeps
+    /// both the panel pass and the sprite pass from decoding or packing them.
+    pub fn sprites_with_panel_rect_excluding(
+        &mut self,
+        screen: &Screen,
+        assets: &mut Assets,
+        panel_rect: Option<(i32, [f32; 4])>,
+        excluded: &[i32],
+    ) -> Vec<SpriteQuad> {
         let mut out = Vec::new();
         // Window pictures (types 3 and 4) own a UI panel drawn from the 18x18 skin, with
         // their content painted on top. Panels are queued before the content loop and the
@@ -600,6 +650,9 @@ impl Atlas {
         let panels: Vec<Panel> = screen
             .iter()
             .filter_map(|picture| {
+                if excluded.contains(&picture.number) {
+                    return None;
+                }
                 if !picture.kind.is_window() {
                     return None;
                 }
@@ -618,13 +671,10 @@ impl Atlas {
                 }
                 // The anchor and the scale live in Picture::destination, the same law the
                 // sprite pass and the message metrics use, so a centred panel lands centred.
-                let mut dst = picture.destination(w as f32, h as f32);
-                let ui = screen.ui_scale_for(picture.number);
-                if ui > 1.0 {
-                    // In a tenths UI block the VM already divides x back to pixels (op121
-                    // with the extra /10 operand); only y, w and h stay in tenths.
-                    dst = [dst[0], dst[1] / ui, dst[2] / ui, dst[3] / ui];
-                }
+                let dst = match panel_rect {
+                    Some((number, rect)) if number == picture.number => rect,
+                    _ => picture.destination(w as f32, h as f32),
+                };
                 // The balloon library parks its panels off screen between bubbles; a panel
                 // that cannot touch the screen would still cost nine quads and a skin pack.
                 if !crate::picture::on_screen(dst) {
@@ -649,6 +699,22 @@ impl Atlas {
             // it is used as a panel body (it never is in this game).
             let pieces = if skin_name.ends_with("CursorBase.png") {
                 window::nine_slice_frame(dst, tex[0], tex[1], 4)
+            } else if skin_name.contains("BalloonBase_CafeLatte") {
+                if let Some(piece) = balloon_name_strip_piece(dst, tex[0], tex[1], skin_name) {
+                    vec![piece]
+                } else {
+                    // The balloon library ships complete rounded skins, not the 18x18
+                    // 3 px border used by WindowBase. Keeping the generic 3 px corner
+                    // turned the 72x72 base_Round art into the wide rectangular strip
+                    // seen in the Godot capture. Cutting at half the short side
+                    // leaves no middle texel in the skin, so the centre and edges
+                    // vanish and only four corner patches are drawn. One third keeps
+                    // the rounded corners while preserving a stretchable middle:
+                    // 24 for the 72px base_Round, 16 for the 48px base_Square, and
+                    // 1 for the 3px-wide name strips.
+                    let corner = balloon_corner(tex[0], tex[1]);
+                    window::nine_slice_cornered(dst, tex[0], tex[1], corner)
+                }
             } else {
                 window::nine_slice(dst, tex[0], tex[1])
             };
@@ -664,6 +730,9 @@ impl Atlas {
             }
         }
         for quad in screen.quads(|name| assets.texture_size(name)) {
+            if excluded.contains(&quad.number) {
+                continue;
+            }
             if quad.kind.is_text() || quad.src[2] == 0 || quad.src[3] == 0 {
                 continue;
             }
@@ -756,6 +825,58 @@ fn snap(rect: [f32; 4]) -> [f32; 4] {
 /// The logical screen size, re-exported so callers need not know where it lives.
 pub const LOGICAL: [u32; 2] = [SCREEN_W, SCREEN_H];
 
+/// Corner cut for the CafeLatte balloon skins.
+///
+/// Their source art is a complete rounded panel rather than a thin border. A
+/// half-side cut makes `split()` produce a zero-width middle column, which
+/// silently drops the centre and edge pieces. A third retains the rounded
+/// corners and leaves a real middle texel for the nine-slice stretch.
+fn balloon_corner(width: u32, height: u32) -> u32 {
+    (width.min(height) / 3).max(1)
+}
+
+/// The stretchable centre of a CafeLatte name-plate strip.
+///
+/// `nameL(Green)_Base.png` is 3x72 and `nameS(Green)_Base.png` is 3x48. They are
+/// not nine-slice skins: the top two thirds are fully transparent padding and only
+/// the bottom third is the grey body of the plate. Stretching the whole strip into
+/// the window box painted that transparent white padding as a pale rectangle over
+/// the speaker name. The four corner pictures (`nameL(Green)_Corner.png`) place
+/// their 16x24 caps at the bottom of their 32x48 cells, so the body has to keep
+/// its natural height and sit on the bottom edge of its window box as well.
+///
+/// Returns `None` for every other CafeLatte skin, which keeps `base_Round`,
+/// `base_Square`, `pauseL` and the corner pieces on the existing nine-slice path.
+fn balloon_name_strip_piece(
+    dst: [f32; 4],
+    width: u32,
+    height: u32,
+    skin_name: &str,
+) -> Option<window::WindowPiece> {
+    let is_name_strip = width <= 4
+        && height > 2
+        && (skin_name.ends_with("nameL(Green)_Base.png")
+            || skin_name.ends_with("nameS(Green)_Base.png"));
+    if !is_name_strip {
+        return None;
+    }
+    let body_height = (height / 3).max(1);
+    let dst_height = dst[3].max(0.0);
+    if dst_height <= 0.0 {
+        return None;
+    }
+    let draw_height = dst_height.min(body_height as f32);
+    Some(window::WindowPiece {
+        rect: [
+            dst[0],
+            dst[1] + dst_height - draw_height,
+            dst[2],
+            draw_height,
+        ],
+        src: [0, height - body_height, width, body_height],
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -797,6 +918,17 @@ mod tests {
         assert_eq!(pixel(0, 2), [0, 255, 0, 255]);
         assert_eq!(pixel(0, 5), [0, 255, 0, 255]);
         assert_eq!(pixel(2, 5), [0, 0, 0, 0]);
+
+        // The front-end can fill its PackedByteArray directly instead of
+        // allocating this Vec and then copying it a second time.
+        let mut direct = vec![0; cropped.len()];
+        assert!(atlas.copy_content_pixels(&mut direct));
+        assert_eq!(direct, cropped);
+        let mut short = vec![0; cropped.len() - 1];
+        assert!(
+            !atlas.copy_content_pixels(&mut short),
+            "a short destination must not be partially trusted"
+        );
     }
 
     #[test]
@@ -1118,6 +1250,74 @@ mod tests {
         // Type 4 is not text: it names a FILE through a string variable, so an empty name
         // falls back to the default skin and nothing goes to the glyph pass.
         assert_eq!(texts(&screen).len(), 0);
+    }
+
+    #[test]
+    fn cafe_latte_balloon_skins_keep_their_stretchable_middle() {
+        use crate::window;
+
+        assert_eq!(balloon_corner(72, 72), 24);
+        assert_eq!(balloon_corner(48, 48), 16);
+        assert_eq!(balloon_corner(3, 72), 1);
+        // The 3x72 / 3x48 name bodies are one-dimensional strips and take the
+        // dedicated bottom-band path, not the nine-slice path.
+        for (width, height) in [(72, 72), (48, 48)] {
+            let corner = balloon_corner(width, height);
+            let pieces =
+                window::nine_slice_cornered([222.0, 506.0, 580.0, 60.0], width, height, corner);
+            assert_eq!(
+                pieces.len(),
+                9,
+                "{width}x{height} balloon skin must keep all nine pieces"
+            );
+        }
+    }
+
+    #[test]
+    fn cafe_latte_name_strips_use_only_the_opaque_bottom_band() {
+        // The name strips are 3x72 / 3x48 with the top two thirds fully
+        // transparent. Only the bottom third is the grey body that has to line
+        // up with the 16x24 rounded caps. Stretching the whole strip into the
+        // 48x34 window painted the transparent white padding as a pale block.
+        let long = balloon_name_strip_piece(
+            [222.0, 476.0, 48.0, 34.0],
+            3,
+            72,
+            "BalloonBase_CafeLatte/[CafeLatte]nameL(Green)_Base.png",
+        )
+        .expect("nameL base is a name strip");
+        assert_eq!(long.src, [0, 48, 3, 24], "only the opaque bottom third");
+        assert_eq!(
+            long.rect,
+            [222.0, 486.0, 48.0, 24.0],
+            "the body sits on the window's bottom edge, level with the caps"
+        );
+
+        let short = balloon_name_strip_piece(
+            [0.0, 10.0, 40.0, 24.0],
+            3,
+            48,
+            "BalloonBase_CafeLatte/[CafeLatte]nameS(Green)_Base.png",
+        )
+        .expect("nameS base is a name strip");
+        assert_eq!(short.src, [0, 32, 3, 16]);
+        assert_eq!(short.rect, [0.0, 18.0, 40.0, 16.0]);
+
+        // The rounded panel skins keep the generic nine-slice path.
+        assert!(balloon_name_strip_piece(
+            [0.0, 0.0, 580.0, 60.0],
+            72,
+            72,
+            "BalloonBase_CafeLatte/[CafeLatte]base_Round.png"
+        )
+        .is_none());
+        assert!(balloon_name_strip_piece(
+            [0.0, 0.0, 48.0, 34.0],
+            3,
+            72,
+            "SystemFile/WindowBase.png"
+        )
+        .is_none());
     }
 
     /// A `150` command for a built-in drawing, in the shape the interpreter emits it.

@@ -199,7 +199,7 @@ fn picture_mode_balloon_suppresses_the_native_message_layer() {
     assert!(
         early_quads
             .iter()
-            .all(|quad| !matches!(quad.number, 19_500 | 19_501)),
+            .all(|quad| !(19_500..=19_503).contains(&quad.number)),
         "the native frame and face must stay hidden on the message's first frame"
     );
 
@@ -227,7 +227,7 @@ fn picture_mode_balloon_suppresses_the_native_message_layer() {
         assert!(
             quads
                 .iter()
-                .all(|quad| !matches!(quad.number, 19_500 | 19_501)),
+                .all(|quad| !(19_500..=19_503).contains(&quad.number)),
             "picture mode must suppress the native 19500 frame and 19501 face"
         );
         assert!(
@@ -246,6 +246,24 @@ fn picture_mode_balloon_suppresses_the_native_message_layer() {
         observed_balloon,
         "CE270 never exposed its body text picture 36013"
     );
+
+    // A save may carry CE269's article-mode bit while 36013 is still visibly
+    // painted. The body picture is the stronger signal; otherwise the native
+    // 19500 window and the oversized 19502 face re-appear under the balloon.
+    game.vm.vars.common_self.entry(269).or_default().set(11, 1);
+    assert!(
+        game.rendered_message_layout().is_none(),
+        "a visible 36013 body must own the message even with a stale article-mode bit"
+    );
+    let mut stale_mode_atlas = Atlas::new();
+    let stale_mode_quads = game.picture_quads(&mut stale_mode_atlas);
+    assert!(
+        stale_mode_quads
+            .iter()
+            .all(|quad| !(19_500..=19_503).contains(&quad.number)),
+        "a visible 36013 body must suppress the native 19500..19503 layers"
+    );
+    game.vm.vars.common_self.entry(269).or_default().set(11, 0);
 
     game.screen
         .get_mut(36013)
@@ -270,6 +288,122 @@ fn picture_mode_balloon_suppresses_the_native_message_layer() {
         game.rendered_message_layout().is_some(),
         "article mode must return the native layer"
     );
+}
+
+#[test]
+fn empty_balloon_nameplate_is_not_drawn() {
+    let root = data_root();
+    if !root.join("BasicData").join("CommonEvent.dat").is_file() {
+        eprintln!("skipping: no WOLF data at {root:?}");
+        return;
+    }
+    let mut game = Game::new(&root).expect("game");
+    game.screen.clear();
+    for number in 36_008..=36_012 {
+        let mut picture = Picture::new(number);
+        picture.kind = PictureKind::FileString;
+        picture.file = "Picture/icon05.png".to_owned();
+        picture.x = 206;
+        picture.y = 452;
+        picture.opacity = 255;
+        game.screen.insert(picture);
+    }
+
+    let mut atlas = Atlas::with_size(2048, 4096);
+    let hidden = game.picture_quads(&mut atlas);
+    assert!(
+        hidden
+            .iter()
+            .all(|quad| !(36_008..=36_012).contains(&quad.number)),
+        "an empty name slot must suppress every nameplate piece: {hidden:?}"
+    );
+
+    let mut name = Picture::new(36_014);
+    name.kind = PictureKind::Text;
+    name.text = "\\>妹妹".to_owned();
+    name.x = 222;
+    name.y = 476;
+    name.opacity = 255;
+    game.screen.insert(name);
+    let named = game.picture_quads(&mut atlas);
+    assert!(
+        named
+            .iter()
+            .any(|quad| (36_008..=36_012).contains(&quad.number)),
+        "a visible speaker name must keep the nameplate"
+    );
+}
+
+/// Once the final message is gone, CE270 has to erase the whole balloon group,
+/// not only the body text. A one-frame disappearance is not enough: the close
+/// timer keeps the frame/name/face slots alive for a while, so verify a stable
+/// run of clean frames before the next scene action takes over.
+#[test]
+fn the_last_balloon_line_does_not_linger_after_the_message_closes() {
+    let root = data_root();
+    if !root.join("BasicData").join("CommonEvent.dat").is_file() {
+        eprintln!("skipping: no WOLF data at {root:?}");
+        return;
+    }
+    let mut game = Game::new(&root).expect("game");
+    game.prime_engine();
+    game.auto_advance = false;
+    game.messages.clear();
+    game.messages.push(Message {
+        text: "\\E最后一句。".to_owned(),
+        face: None,
+        frames: 0,
+    });
+
+    let mut body_seen = false;
+    for _ in 0..120 {
+        game.frame();
+        if game
+            .screen
+            .get(36013)
+            .is_some_and(|body| !body.hidden && !body.text.is_empty())
+        {
+            body_seen = true;
+            break;
+        }
+    }
+    assert!(
+        body_seen,
+        "CE270 never laid out the synthetic final balloon"
+    );
+
+    // This is exactly what the last click does to the live window before the VM
+    // advances to the following scene action.
+    game.messages.clear();
+    for _ in 0..180 {
+        game.frame();
+    }
+
+    for frame in 0..60 {
+        game.frame();
+        let visible: Vec<i32> = (36_000..=36_014)
+            .filter(|number| {
+                game.screen.get(*number).is_some_and(|picture| {
+                    !picture.hidden && picture.opacity > 0 && !picture.text.is_empty()
+                })
+            })
+            .collect();
+        assert!(
+            visible.is_empty(),
+            "frame {frame}: balloon slots still visible after close: {visible:?}"
+        );
+        let mut atlas = Atlas::new();
+        let lingering: Vec<i32> = game
+            .picture_quads(&mut atlas)
+            .into_iter()
+            .map(|quad| quad.number)
+            .filter(|number| (36_000..=36_014).contains(number))
+            .collect();
+        assert!(
+            lingering.is_empty(),
+            "frame {frame}: balloon quads still submitted after close: {lingering:?}"
+        );
+    }
 }
 
 /// A three-line balloon must grow upward and keep all three rows inside 576 px.
@@ -309,7 +443,7 @@ fn three_line_balloon_keeps_every_row_on_screen() {
         assert!(
             quads
                 .iter()
-                .all(|quad| !matches!(quad.number, 19_500 | 19_501)),
+                .all(|quad| !(19_500..=19_503).contains(&quad.number)),
             "balloon mode must keep the native frame/face out of picture_quads"
         );
         let runs: Vec<_> = game
@@ -331,11 +465,29 @@ fn three_line_balloon_keeps_every_row_on_screen() {
                 "balloon row clipped by the screen: {run:?}"
             );
         }
-        let frame = game.screen.get(36000).expect("balloon frame");
+        let frame_quads: Vec<_> = quads.iter().filter(|quad| quad.number == 36000).collect();
+        assert!(!frame_quads.is_empty(), "balloon frame quads");
+        let top = frame_quads
+            .iter()
+            .map(|quad| quad.rect[1])
+            .fold(f32::INFINITY, f32::min);
+        let bottom = frame_quads
+            .iter()
+            .map(|quad| quad.rect[1] + quad.rect[3])
+            .fold(f32::NEG_INFINITY, f32::max);
         assert!(
-            frame.window.is_some_and(|(_, height)| height >= 79),
-            "the three-line balloon frame must grow above the 60 px one-line size: {:?}",
-            frame.window
+            bottom - top >= 79.0,
+            "the three-line balloon must render above the 60 px one-line size: {}..{}",
+            top,
+            bottom
+        );
+        assert_eq!(
+            game.screen
+                .get(36000)
+                .expect("script-owned balloon frame")
+                .window,
+            Some((580, 60)),
+            "drawing must not mutate the balloon frame's logical geometry"
         );
         checked = true;
         break;

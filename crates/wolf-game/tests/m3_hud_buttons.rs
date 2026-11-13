@@ -13,9 +13,9 @@
 //! 2300 (itemlist.png) and 320 (status01.png), both parked at x=-305.
 //!
 //! The panels are interactive because map events 8 and 11 poll opcode 124
-//! picture field 8 (hover): while the pointer is inside the opened panel the
-//! panel stays at x=0; moving away one frame later calls CE239/CE238 with
-//! argument 0 and parks it at x=-305 again. (The open x is 0, not 305, because
+//! picture field 8 (hover). The host keeps that poll stable while the panel is
+//! visible, and a watchdog retracts a docked drawer after the pointer stays
+//! outside its 330 px rail for eight frames. (The open x is 0, not 305, because
 //! op150 head bit 0x10000 makes the slide-in relative: -305 + 305 = 0.) That exercises the engine mouse
 //! state path (engine_state fields 7/20/21 and picture_state field 8), so a
 //! missing mouse-to-opcode124 bridge is not a source gap.
@@ -363,7 +363,7 @@ fn data_icon_left_click_opens_the_play_tendency_panel() {
 }
 
 #[test]
-fn item_strip_left_click_opens_item_list_and_hover_keeps_it_open() {
+fn item_strip_left_click_opens_item_list_and_auto_retracts() {
     let Some(mut game) = load_bedroom() else {
         return;
     };
@@ -402,18 +402,24 @@ fn item_strip_left_click_opens_item_list_and_hover_keeps_it_open() {
     }
     assert_eq!(game.stats.warnings, 0);
 
-    // The panel stays open until its own handle is clicked again.
+    // Leaving the rail triggers the host auto-retract after a short debounce.
     game.mouse = [800, 336];
+    for _ in 0..7 {
+        game.frame();
+    }
+    assert_eq!(
+        slot_x(&game, 2300),
+        Some(0),
+        "the panel must stay open during the debounce"
+    );
     for _ in 0..30 {
         game.frame();
     }
-    assert_eq!(slot_x(&game, 2300), Some(0));
-    settle_pointer(&mut game, 320, 279);
-    hold_and_release(&mut game);
-    for _ in 0..30 {
-        game.frame();
-    }
-    assert_eq!(slot_x(&game, 2300), Some(-305));
+    assert_eq!(
+        slot_x(&game, 2300),
+        Some(-305),
+        "the panel must retract after the pointer leaves"
+    );
     game.mouse_buttons = 0;
     for _ in 0..5 {
         game.frame();
@@ -563,19 +569,25 @@ fn status_panel_opens_and_tracks_hover_once_the_gate_is_forced() {
     );
     assert_eq!(game.stats.warnings, 0);
 
-    // Event 11's hover poll must not fight the open state after the pointer moves
-    // away. The handle is the only close path.
+    // Event 11's hover poll must not fight the open state; the host watchdog
+    // retracts the panel once the pointer stays outside the rail.
     game.mouse = [600, 192];
+    for _ in 0..7 {
+        game.frame();
+    }
+    assert_eq!(
+        slot_x(&game, 320),
+        Some(0),
+        "the panel must stay open during the debounce"
+    );
     for _ in 0..30 {
         game.frame();
     }
-    assert_eq!(slot_x(&game, 320), Some(0));
-    settle_pointer(&mut game, 320, 137);
-    hold_and_release(&mut game);
-    for _ in 0..30 {
-        game.frame();
-    }
-    assert_eq!(slot_x(&game, 320), Some(-305));
+    assert_eq!(
+        slot_x(&game, 320),
+        Some(-305),
+        "the panel must retract after the pointer leaves"
+    );
     game.mouse_buttons = 0;
     for _ in 0..5 {
         game.frame();

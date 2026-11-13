@@ -52,7 +52,7 @@ fn visible(raw: &str) -> String {
     out
 }
 
-fn settings_quads() -> Option<Vec<(String, [f32; 4])>> {
+fn settings_game() -> Option<Game> {
     let root = data_root();
     if !root.join("BasicData/CommonEvent.dat").exists() {
         eprintln!("skipping: no data at {}", root.display());
@@ -64,6 +64,11 @@ fn settings_quads() -> Option<Vec<(String, [f32; 4])>> {
     for _ in 0..180 {
         let _ = game.frame();
     }
+    Some(game)
+}
+
+fn settings_quads() -> Option<Vec<(String, [f32; 4])>> {
+    let game = settings_game()?;
     Some(
         game.text_quads()
             .into_iter()
@@ -111,6 +116,28 @@ fn every_settings_row_is_laid_out_at_its_own_shifted_position() {
             "{text:?} is off the logical screen: {rect:?}"
         );
     }
+}
+
+#[test]
+fn the_cursor_keeps_its_pixel_height_and_the_labels_keep_their_shift() {
+    let Some(game) = settings_game() else {
+        return;
+    };
+    let cursor = game
+        .screen
+        .get(12015)
+        .expect("the CE95 settings cursor picture");
+    let (_, height) = cursor.window.expect("cursor window size");
+    assert_eq!(
+        height, 24,
+        "CE95 divides its tenths block once in the VM; the renderer must not scale it again"
+    );
+
+    let (_, shift_y) = game.screen.get(12053).expect("the BGM volume label").shift;
+    assert!(
+        shift_y > 0,
+        "CE95 separates settings rows with Opcode 290 shifts, got {shift_y}"
+    );
 }
 
 #[test]

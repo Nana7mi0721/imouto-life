@@ -60,18 +60,36 @@ fn loading_a_save_keeps_action_and_stamina() {
     assert_eq!(cell(8), Some(60), "action current");
     assert_eq!(cell(9), Some(65), "action maximum");
 
-    let texts: Vec<String> = game.text_quads().into_iter().map(|q| q.text).collect();
-    assert!(
-        texts.iter().any(|text| text == "行动力60/65"),
-        "HUD action text: {texts:?}"
-    );
-    // The HUD layout splits at ASCII spaces, so the two spans are separate quads.
+    let quads = game.text_quads();
+    let texts: Vec<&str> = quads.iter().map(|quad| quad.text.as_str()).collect();
     let compact: String = texts
         .concat()
         .chars()
         .filter(|c| !c.is_whitespace())
         .collect();
+    assert!(
+        compact.contains("行动力60/65"),
+        "HUD action text: {texts:?}"
+    );
     assert!(compact.contains("精力3/3"), "HUD stamina text: {texts:?}");
+    let action: Vec<_> = quads.iter().filter(|quad| quad.number == 230).collect();
+    assert_eq!(
+        action
+            .iter()
+            .map(|quad| quad.text.as_str())
+            .collect::<Vec<_>>(),
+        ["行动力", "60/65"],
+        "the optional gauge must split the label from the value"
+    );
+    assert!(
+        action[1].rect[0] >= action[0].rect[0] + action[0].rect[2],
+        "the value must not overlap the action label: {action:?}"
+    );
+    assert_eq!(
+        game.hud_action_points(),
+        Some((60, 65)),
+        "the front-end gauge must read action points, not stamina"
+    );
     assert_eq!(
         game.hud_energy(),
         Some((3, 3)),

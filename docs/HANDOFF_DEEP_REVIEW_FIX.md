@@ -5,6 +5,10 @@
 > **最终状态**：BUG-25..BUG-48 的实施与验收均已完成（T0–T11，2026-11-12）。
 > 下文 §2/§5/§6 保留实施细节与语义证据；§1/§3/§4/§7/§8 是任务生成/中断时的
 > 历史快照，当前状态以 §0 与 `HANDOFF_M0.md` §11.1 为准。
+> **当前工作区补充（2026-11-13）**：默认全量测试仅剩 1 个既有失败
+> `m3_manual_rules::late_night_bedtime_skips_to_next_evening`；带真实数据时另有两项
+> 既有姊妹作 `db` 期望差异，见 `TASKS_REMAINING_BUGS.md` §0/§0.1。本文件 §0 的
+> “exit 0”是 2026-11-12 封板快照。
 
 ---
 
@@ -17,14 +21,17 @@
 - `wolf-cli verify` PASS 64 / 1 SKIP；`precompile` PASS 19 / 0
   （blocks 5416 / loops 881 / implicit_closes 0 / dynamic_labels 3）。
 - `m14_visual_regression` 5 passed：title/map_idle/day_command/hud/saveui。
-  saveui 恢复 tenths 几何、13 text pictures / 54 glyphs、真实右箭头；
+  saveui 当时恢复 tenths 几何、13 text pictures / 54 glyphs、真实右箭头
+  （tenths 渲染补偿已在当前工作区撤销）；
   CE43 不再按电平条件无限重放；CE216 的常驻协程峰值按实际调度计入。
 - Godot `build-godot.sh`、`smoke-godot.sh` 通过；`parity-godot.sh 600 --pixel-check=0` PASS。
 - 新增 `m16_vm_scheduler` 4 / `m16_runtime_state` 8 / `m16_parallel_input` 5，
   真实数据下全过。
 - 新增/更新回归覆盖：Op121/176/121 批量、AutoEvents 电平与 CE43 one-shot、Field18、
   读档 BGM flush、DB 字符串槽、`\cself`、滚轮/鼠标帧差、174/211、picture_state/Op124、
-  character_state/Op160/1000、Erase 淡出、Godot 瓦片层/blend/退出设置、并行鼠标输入。
+  character_state/Op160/1000、Erase 淡出、Godot 动态 picture/text/HUD 渲染与
+  blend/退出设置、并行鼠标输入；T13 后玩法前端已移除地图瓦片桥接，瓦片只保留在
+  核心 `Game::tile_quads()` 与 CLI 取证路径。
 
 ---
 
@@ -108,7 +115,9 @@ Wave 2 的代码大多已落地，但工作区当前 `cargo check` 失败（7 �
 3. **`GameHost::engine_state`**：确认 `10 => frame_wheel_delta`、`11 => mouse.x-prev.x`、
    `12 => mouse.y-prev.y`（原版手册：11/12 是**帧间位移增量 dx/dy**，不是绝对坐标）。
 4. **`apply_wheel`**：确认 `frame_wheel_delta` 记录 + CE223 活跃时不再自行注入 LEFT/RIGHT（避免双重翻页）。
-5. **`sync_save_grid_cursor`**：确认改用 `Vm::set_instance_self_var(id, 610, slot)`。
+5. **`sync_save_grid_cursor`**：当前工作区已使用
+   `Vm::set_instance_self_var(id, 610, slot)`（2026-11-13 复核）；审查报告 §4 所述
+   “仍直接修改 `instance.self_vars`”是审查快照，已不代表当前实现。
 6. **`Host::return_to_title` / `reserve_with_args`**：确认 `GameHost` 已实现；
    `174` → `pending_return_to_title`；`211` → `reserved_events` 队列，前台空闲时弹出启动。
 7. **`reset_to_title`**：确认重载 `Vm::new(programs)`、重置 `retail_rng_seed`、`seed_live_settings`、

@@ -286,8 +286,8 @@ WOLF_DATA_ROOT="$PWD/work/Data" ./target/debug/wolf-cli.exe verify | tail -20
     该日志早于最后一轮气球对话补丁，只作性能路径证据。
   - 已修并有回归：黑色阴影人头（CE63 tone 填充零）、黄绿斑点/黄色地图背景
     （前端不再发 tile）、夜间首次提示点击消失、保存/相册/数据/结束图片矩形命中、
-    夜间数据图标被结束按钮覆盖时隐藏、BAD 条负缩放、侧栏整条可见滑条点击
-    （物品栏 y 288..384 除外，保存图标优先）、
+    夜间数据图标被结束按钮覆盖时隐藏、BAD 条负缩放、侧栏两个三角把手
+    （状态 y≈118..157、物品 y≈260..297；关闭面板仅右侧 25px 在屏内，保存图标优先）、
     卧室内妹妹 900..903 可见矩形并集命中、身份-CG 分支。中央对话也已修：
     `36013` 使用消息正文行距并清理 `\ax/\ay` 前导，气球向上增长，三行落在
     493/516/539，气球可见时过滤原生 `19500/19501`；`m17_text_layer` 3 passed。
@@ -295,8 +295,10 @@ WOLF_DATA_ROOT="$PWD/work/Data" ./target/debug/wolf-cli.exe verify | tail -20
     遗留的 `SaveData03.sav` 第四存档格。隔离只保留出货 `SaveData01/02` 时恢复
     25 live / 13 text pictures、non-black 576227；与基线 576221 只差 6 像素
     （光标/栅格相位）。已加 `depends_on_save_grid` fixture 守卫，未改基线。
-    侧栏现在整条 25px 可见滑条（物品栏 y 288..384 除外）可点击打开，保存图标
-    等图片按钮优先；仍无按住拖拽手势。哥哥体力条只有 `精力 3/3` 与
+    侧栏现在只响应 `try_side_panel_handle` 的两个三角把手区：状态
+    `STATUS_HANDLE_Y=(118,157)`、物品 `ITEM_HANDLE_Y=(260,297)`；关闭面板仅右侧
+    25px 在屏内，空白滑条（例如 y=192）不触发，保存图标等图片按钮优先；仍无
+    按住拖拽手势。哥哥体力条只有 `精力 3/3` 与
     `行动力60/65` 文本证据（CE214），数据中无独立图形槽位；保存按钮没有独立
     hover 资源；BAD 外框厚度与人物 alpha 轮廓仍缺原版证据。`36014` 的
     `message` 字面量在原版参考图出现，未确认说话人规则前不要擅自隐藏。
@@ -312,7 +314,7 @@ WOLF_DATA_ROOT="$PWD/work/Data" ./target/debug/wolf-cli.exe verify | tail -20
     `wolf_avg_ms=0.565` / `draw_avg_ms=0.287`、黄/绿像素均为 0；新游戏
     300 帧三行正文 493/516/539 且无原生 `19500/19501`。若用户仍看到旧现象，
     必须先完全退出 Godot 编辑器/游戏进程再重开，Windows 不会热替换已加载 DLL。
-* **深度审查 BUG-25..BUG-48 修复完成（2026-11-12）**：现行审查报告为 `docs/reviews/CODE_REVIEW_4ROUND.md`（第一至四轮），T0–T11 已全部落地。`cargo fmt --all -- --check` / `git diff --check` 通过，`cargo check -q --workspace` 0 error，默认 `cargo test -q --workspace` exit 0；真实数据 workspace 仅剩 2 项既有 `db` 姊妹作期望差异，AutoEvents 与标题历史差异已消除。`verify` PASS 64 / 1 SKIP，`precompile` PASS 19 / 0（blocks 5416 / loops 881 / implicit_closes 0）；`m14_visual_regression` 最终 **5 passed**：saveui 的 101 像素差已归因为 `SaveData03.sav` 第四格 fixture 漂移，隔离 01/02 两格后 25/13、576227（差 6 像素光标/栅格相位），已加 `depends_on_save_grid` 守卫且未改基线。CE43 改为标题菜单进入沿一次性触发，CE94 恢复 9280x1152 tenths 几何与真实 `<TRI-RIGHT>`，saveui 回到 13 text pictures / 54 glyphs / 27728 textured / atlas 21。Godot build/smoke 通过，parity 600 帧 PASS；m16 三组回归共 17 项真实数据全过。清理后 `du -sh .` = **8.1 GB**（work 796 M / target 7.3 G）。实施细节见 `docs/HANDOFF_DEEP_REVIEW_FIX.md`，任务收口见 `docs/TASKS_REMAINING_BUGS.md` §0。
+* **深度审查 BUG-25..BUG-48 修复完成（2026-11-12 封板快照）**：现行审查报告为 `docs/reviews/CODE_REVIEW_4ROUND.md`（第一至四轮），T0–T11 已全部落地。`cargo fmt --all -- --check` / `git diff --check` 通过，`cargo check -q --workspace` 0 error，默认 `cargo test -q --workspace` exit 0；真实数据 workspace 仅剩 2 项既有 `db` 姊妹作期望差异，AutoEvents 与标题历史差异已消除。`verify` PASS 64 / 1 SKIP，`precompile` PASS 19 / 0（blocks 5416 / loops 881 / implicit_closes 0）；`m14_visual_regression` 最终 **5 passed**：saveui 的 101 像素差已归因为 `SaveData03.sav` 第四格 fixture 漂移，隔离 01/02 两格后 25/13、576227（差 6 像素光标/栅格相位），已加 `depends_on_save_grid` 守卫且未改基线。CE43 改为标题菜单进入沿一次性触发，CE94 曾恢复 9280x1152 tenths 几何与真实 `<TRI-RIGHT>`，saveui 回到 13 text pictures / 54 glyphs / 27728 textured / atlas 21。Godot build/smoke 通过，parity 600 帧 PASS；m16 三组回归共 17 项真实数据全过。清理后 `du -sh .` = **8.1 GB**（work 796 M / target 7.3 G）。实施细节见 `docs/HANDOFF_DEEP_REVIEW_FIX.md`，任务收口见 `docs/TASKS_REMAINING_BUGS.md` §0。**当前工作区已撤销 tenths 渲染补偿；2026-11-13 复核后默认全量测试仅剩既有的 `m3_manual_rules::late_night_bedtime_skips_to_next_evening`，真实数据下另有两项既有 `db` 文本差异，以 §0.1 的最新实况为准。**
 
 * **全量静态字节码深度审计沉淀与 5 项深水区系统缺陷归档（2026-11-11）**：编写并沉淀 `tools/audit_bytecode.py`，全量静态扫描 350 个 Common Event 与 8 张地图 102 个地图页面的 **63,506 条指令**，生成 `work/out/BYTECODE_AUDIT_REPORT.md`。审计引擎涵盖全量操作码覆盖、虚拟硬件状态差集、Picture 槽位主/并行协程竞争碰撞（定位 15 组交叉槽位）、循环无让步死循环风险、视口级演出特效等 5 大维度。新排查出 **BUG-20**（地图动态实体跟随气泡/图标坐标锚定缺失，`character_state` 字段 6/7 恒返回 None）、**BUG-21**（鼠标滚轮系统彻底瘫痪，`engine_state(10)` 滚轮移动量硬编码 0）、**BUG-22**（鼠标移出窗口检测失效，字段 11/12 走 `_ => None` 导致指针残留）、**BUG-23**（全屏闪烁与震动因无挂载 Picture 被抛弃）、**BUG-24**（按键连发延迟误绑定到 `sys(15/16)`）。已同步更新 `work/out/review/POST_DEEPSEEK_BUGS_INVESTIGATION_REPORT.md`，总缺陷台账扩充至 24 项，升级为五批次修复路线。消解各文档历史冲突：纠正 `docs/M3_EVENT_GRAPH.md` 的 `raw - 600_000` 错误公式为 `caller + (raw - 600_100)`；统一 BUG-02（人名牌）闭环口径（固定模式由 290 视口平移固定在 276,456 屏内，已由 op112 掩码剥离闭环并经 `m15` 验证，不依赖 `character_state`；消解与 BUG-20 的概念重叠）；统一 BUG-04 为 NOT-A-BUG。
 * **POST_DEEPSEEK 审查 19 项修复完成（2026-11-11）**：18 项修复、BUG-04 判为原版设计。VM 补 `250` 字符串写库、`210/211` 600_100 相对事件、跨事件公共 Self（15M+100*ev+slot）、`121/122` 间接代入、`213` 未命中不再杀协程、`125` 单帧清零、`123` 鼠标边沿广播；存档网格鼠标槽位与同帧刷新、负槽命中盒、地图换页不强杀父事件、UI 按槽位排序、BGS 独立总线 + 同曲跳过、EndGame 退出、op102 外部点击。**BUG-02 已闭环**：根因是 `CE270 pc92` 的 `112` 操作数 `0x11186A05` 把字符串变量类型标志放在 bit 24，低 24 位 `0x00186A05 = 1_600_005` 才是 CSelf5；旧解码保留 bit 24 后每帧误判“消息变化”，反复清 `self56` 并隐藏名字牌。`eval_string_condition` 左右操作数统一 `raw & 0x00FF_FFFF` 后，图 `36014` 在消息期间持续可见。`tests/m15_balloon_name.rs` 要求连续 60 帧可见、文本含“妹妹”、矩形非空且完全在 1024×576 内、`warnings == 0`。固定模式 `2002` 的屏幕位置由 `290` kind 2 对 `36000..36015` 的 `(512,536)` 平移得到，`36014` 约在 `(276,456)`，不需要 `character_state`；**不要伪造角色坐标**。验证：默认 workspace exit 0；数据套件仅 7 个既有姊妹作差异；verify PASS 64/1 SKIP；precompile PASS 19/0；m14 5/5（title peak=8）；smoke-godot exit 0；parity 600 帧 PASS。**复核收尾补充**：`Screen::picture_rect` 对 CE131 等 window 图改为使用窗口盒而不是 18x18 皮肤，修复真实鼠标点击可见槽位仍落到第 1 槽的问题；新增 `m3_menu_screens` 槽位中心命中、`m3_hud_buttons` 连续开关菜单、`m3_event_page_switch` 阻塞事件清理三组回归。`dynamic_labels` 基线由 51 修正为实测 3。工作区清理后 `du -sh .` = 7.5 GB。
@@ -353,4 +355,4 @@ WOLF_DATA_ROOT="$PWD/work/Data" ./target/debug/wolf-cli.exe verify | tail -20
 * 打字机速度（原版约 2× 当前实现）——`Sys9→p+0x80` 写入点未定位，本作 CE48 速度 500 ≈ 瞬显，暂不改。
 * 选择面板宽度加数属 **B 级**：89EF 实测 156.3 = 140+16 精确吻合，EE37 多 5.3 px 未解释。
 * `kind≥0` 掩膜过渡、`window.rs` 极小盒角折半——本作不触发，明确不实现。
-* 存档/读档界面（CE94/CE131）十分之一单位几何已修（2026-11-02），见 docs/re/SCREENSHOT_METRICS.md §6；**注意**：`work/Data/Save/SaveData01.sav` 曾被玩家在存档界面覆盖为含 94 张存档界面图的版本，依赖它精确像素数的测试已改为自洽断言或按「非干净 HUD 存档」跳过。设置界面（CE95）走同一缩放规则但尚未离屏验证。
+* 存档/读档界面（CE94/CE131）的十分之一单位几何是 2026-11-02 的历史修复记录；当前工作区已删除 `Screen::ui_scale_for`、`TENTHS_UI`/`tenths_block` 与渲染二次 `/10`，不应再把该补偿当作现行实现。历史测量见 docs/re/SCREENSHOT_METRICS.md §6；**注意**：`work/Data/Save/SaveData01.sav` 曾被玩家在存档界面覆盖为含 94 张存档界面图的版本，依赖它精确像素数的测试已改为自洽断言或按「非干净 HUD 存档」跳过。设置界面（CE95）的 tenths 描述同样是历史依据，当前文本样式由 `Game::uses_regular_ui_text` 处理。

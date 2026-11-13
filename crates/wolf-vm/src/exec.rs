@@ -93,6 +93,10 @@ pub enum WaitState {
     Frames(u32),
     /// `101 Message`: until the player dismisses it.
     Message,
+    /// `101 Message` immediately followed by `102 ShowChoices`: the text keeps
+    /// streaming while the option rows are already interactive. Dismissing the
+    /// message alone leaves the choices open; choosing an option closes both.
+    MessageWithChoices { block: usize },
     /// `102 ShowChoices`: until a choice arrives; the block names the case table.
     Choice { block: usize },
     /// `210`/`300`: until the child coroutine ends.
@@ -922,6 +926,35 @@ impl KeyQuery {
     pub const fn is_device_poll(self) -> bool {
         self.device != 0
     }
+
+    /// True when this poll accepts at least one key in a WOLF-layout mask.
+    ///
+    /// Opcode 125 stores its keys in WOLF's own layout (decide 0x01, cancel 0x02,
+    /// sub 0x04, down 0x10, left 0x20, right 0x40, up 0x80), while this query
+    /// describes the accepted keys through separate direction/action fields.
+    /// Automatic input is single-delivery per coroutine, so a poll that accepts
+    /// none of the injected keys must not consume them before a later poll asks
+    /// for a key that does intersect.
+    #[must_use]
+    pub const fn accepts_wolf_bits(self, bits: u32) -> bool {
+        if self.device != 0 {
+            return false;
+        }
+        let directions = match self.directions {
+            1 | 2 => 0x10 | 0x20 | 0x40 | 0x80,
+            3 => 0x80,
+            4 => 0x10,
+            5 => 0x20,
+            6 => 0x40,
+            7 => 0x10 | 0x80,
+            8 => 0x20 | 0x40,
+            _ => 0,
+        };
+        let actions = if self.ok { 0x01 } else { 0 }
+            | if self.cancel { 0x02 } else { 0 }
+            | if self.sub { 0x04 } else { 0 };
+        bits & (directions | actions) != 0
+    }
 }
 
 /// Input policy set by the two input-control opcodes.
@@ -1430,29 +1463,24 @@ impl Vm {
                         self.instances[i].wait = WaitState::None;
                     }
                 }
+                WaitState::MessageWithChoices { block } => {
+                    if let Some(reply) = host.choice_made() {
+                        let target = choice_target(&self.instances[i], block, reply);
+                        if let Some(target) = target {
+                            self.instances[i].pc = target;
+                        }
+                        host.close_message();
+                        self.instances[i].wait = WaitState::None;
+                    } else if host.message_dismissed() {
+                        // A click on empty space only advances the text. The option
+                        // window stays up and becomes the sole owner of the next click.
+                        host.close_message();
+                        self.instances[i].wait = WaitState::Choice { block };
+                    }
+                }
                 WaitState::Choice { block } => {
                     if let Some(reply) = host.choice_made() {
-                        let inst = &mut self.instances[i];
-                        let len = inst.program.len();
-                        let target = match reply {
-                            // 102's case ids are option index + 2 (docs/OPCODE_SPEC.md §4.2).
-                            ChoiceReply::Index(index) => inst
-                                .program
-                                .blocks
-                                .get(block)
-                                .and_then(|b| b.case_target(index as i32 + 2))
-                                .or_else(|| {
-                                    inst.program.blocks.get(block).map(|b| b.end_target(len))
-                                }),
-                            ChoiceReply::Cancel => inst
-                                .program
-                                .blocks
-                                .get(block)
-                                .and_then(|b| b.cancel_pc)
-                                .or_else(|| {
-                                    inst.program.blocks.get(block).map(|b| b.end_target(len))
-                                }),
-                        };
+                        let target = choice_target(&self.instances[i], block, reply);
                         if let Some(target) = target {
                             self.instances[i].pc = target;
                         }
@@ -1604,6 +1632,7 @@ impl Vm {
         let id = self.next_id;
         self.next_id += 1;
         let mut child = Instance::new(id, Some(self.instances[caller].id), program);
+        child.is_parallel = self.instances[caller].is_parallel;
         self.seed_common_self(&mut child);
         self.bind_call_arguments(target, &mut child, &args, &strings);
         child.return_to = return_to;
@@ -2430,8 +2459,25 @@ fn execute(
                     vars.set_sys(0, face);
                 }
                 host.show_message(text, face);
-                inst.wait = WaitState::Message;
-                inst.pc += 1;
+                if let Some((choice_pc, choice_cmd)) =
+                    next_choice_instruction(program.as_ref(), pc + 1)
+                {
+                    let options: Vec<String> = choice_cmd
+                        .strings
+                        .iter()
+                        .map(|option| expand_choice(option, inst, vars, host))
+                        .collect();
+                    let block = match program.control.get(choice_pc) {
+                        Some(Control::Block(index)) => *index,
+                        _ => 0,
+                    };
+                    host.show_choices(&options);
+                    inst.wait = WaitState::MessageWithChoices { block };
+                    inst.pc = choice_pc + 1;
+                } else {
+                    inst.wait = WaitState::Message;
+                    inst.pc += 1;
+                }
                 Some(Signal::Blocked)
             }
             102 => {
@@ -2502,13 +2548,6 @@ fn execute(
                 let assign_op = (word & 0x0F00) as i32;
                 let bin = ((word >> 12) & 0x0F) as u8;
                 let batch_mode = (word & 0x10000) != 0;
-                // The range form of a self-variable operation updates the named
-                // slot only. CE94 relies on this when it scales its save-slot
-                // tenths grid: pc87 divides self22, but self23..25 (y/w/h) must
-                // stay in tenths for the renderer (9280x1152, not 928x115).
-                // Ordinary variables keep the full contiguous range below.
-                let self_range = batch_mode && Magic::decode(raw_lhs).kind() == MagicKind::SelfVar;
-
                 let v1 = if (flags & 0x04) != 0 {
                     raw_rhs1
                 } else {
@@ -2562,7 +2601,7 @@ fn execute(
                     inst.pc += 1;
                     None
                 } else {
-                    let batch_count = if batch_mode && !self_range {
+                    let batch_count = if batch_mode {
                         arg(cmd, 4).max(0) as i32
                     } else {
                         0
@@ -2774,14 +2813,12 @@ fn execute(
                 // which keys count, whether the poll waits, and which device it reads.
                 let target = arg(cmd, 0);
                 let query = KeyQuery::decode(arg(cmd, 1) as u32);
-                let effective_auto =
-                    if input.auto_keys != 0 && !input.auto_keys_delivered.contains(&inst.id) {
-                        input.auto_keys
-                    } else {
-                        0
-                    };
+                let auto_available =
+                    input.auto_keys != 0 && !input.auto_keys_delivered.contains(&inst.id);
+                let auto_consumed = auto_available && query.accepts_wolf_bits(input.auto_keys);
+                let effective_auto = if auto_available { input.auto_keys } else { 0 };
                 let code = host.key_code_auto(query, effective_auto, input.ban_keys);
-                if input.auto_keys != 0 && !input.auto_keys_delivered.contains(&inst.id) {
+                if auto_consumed {
                     input.auto_keys_delivered.push(inst.id);
                 }
                 store_num(inst, vars, target, code, cross_writes);
@@ -3506,6 +3543,49 @@ fn enter_block(
             })
         }
     }
+}
+
+/// Resolve a `102` answer to the case body it selects.
+fn choice_target(inst: &Instance, block: usize, reply: ChoiceReply) -> Option<usize> {
+    let len = inst.program.len();
+    match reply {
+        // 102's case ids are option index + 2 (docs/OPCODE_SPEC.md §4.2).
+        ChoiceReply::Index(index) => inst
+            .program
+            .blocks
+            .get(block)
+            .and_then(|b| b.case_target(index as i32 + 2))
+            .or_else(|| inst.program.blocks.get(block).map(|b| b.end_target(len))),
+        ChoiceReply::Cancel => inst
+            .program
+            .blocks
+            .get(block)
+            .and_then(|b| b.cancel_pc)
+            .or_else(|| inst.program.blocks.get(block).map(|b| b.end_target(len))),
+    }
+}
+
+/// Find the `102` that immediately follows a `101`, ignoring inert markers.
+///
+/// The balloon library and the night menus put a prompt directly after a
+/// message. Treating the two as independent waits forces the player to click
+/// once before the options even appear. Only opcodes with no observable effect
+/// are skipped: a real command between `101` and `102` still ends the sequence.
+fn next_choice_instruction<'a>(
+    program: &'a Program,
+    mut pc: usize,
+) -> Option<(usize, &'a Command)> {
+    while pc < program.len() {
+        let Slot::Command(cmd) = &program.slots[pc] else {
+            return None;
+        };
+        match cmd.opcode {
+            0 | 99 | 103 => pc += 1,
+            102 => return Some((pc, cmd)),
+            _ => return None,
+        }
+    }
+    None
 }
 
 /// Rebuild the loop stack around a `213 JumpLabel` target.
@@ -4645,6 +4725,82 @@ two"],
     }
 
     #[test]
+    fn a_message_followed_by_choices_shows_both_on_the_first_frame() {
+        let e = event(
+            1,
+            "message with choices",
+            vec![
+                cmd(101, &[], &["hello"]),
+                cmd(102, &[2], &["first", "second"]),
+                cmd(401, &[2], &[]),
+                cmd(121, &[2_000_000, 10, 0, 0], &[]),
+                cmd(401, &[3], &[]),
+                cmd(121, &[2_000_000, 11, 0, 0], &[]),
+                cmd(421, &[0], &[]),
+                cmd(499, &[], &[]),
+            ],
+        );
+        let mut vm = vm_with(vec![e]);
+        let mut host = Recorder::default();
+        vm.start_event(1).unwrap();
+
+        vm.step_frame(&mut host);
+        assert_eq!(host.messages, vec!["hello".to_owned()]);
+        assert_eq!(
+            host.choices,
+            vec![vec!["first".to_owned(), "second".to_owned()]],
+            "102 must publish its options without waiting for 101 to close"
+        );
+        assert_eq!(host.closed, 0);
+        assert_eq!(vm.vars.get(0), 0);
+
+        // Empty-space click: only the message closes; the options stay up.
+        host.dismiss = true;
+        vm.step_frame(&mut host);
+        assert_eq!(host.closed, 1);
+        assert_eq!(vm.vars.get(0), 0, "the message click must not choose a row");
+        assert_eq!(vm.instances().len(), 1, "the prompt is still waiting");
+
+        // The next click is a real answer.
+        host.dismiss = false;
+        host.reply = Some(ChoiceReply::Index(1));
+        vm.step_frame(&mut host);
+        assert_eq!(vm.vars.get(0), 11);
+        assert_eq!(
+            host.closed, 1,
+            "the message was already closed by the first click"
+        );
+    }
+
+    #[test]
+    fn choosing_an_option_closes_the_message_opened_with_it() {
+        let e = event(
+            1,
+            "choose while visible",
+            vec![
+                cmd(101, &[], &["hello"]),
+                cmd(102, &[2], &["first", "second"]),
+                cmd(401, &[2], &[]),
+                cmd(121, &[2_000_000, 10, 0, 0], &[]),
+                cmd(401, &[3], &[]),
+                cmd(121, &[2_000_000, 11, 0, 0], &[]),
+                cmd(499, &[], &[]),
+            ],
+        );
+        let mut vm = vm_with(vec![e]);
+        let mut host = Recorder::default();
+        vm.start_event(1).unwrap();
+        vm.step_frame(&mut host);
+        assert_eq!(host.messages, vec!["hello".to_owned()]);
+        assert_eq!(host.choices.len(), 1);
+
+        host.reply = Some(ChoiceReply::Index(1));
+        vm.step_frame(&mut host);
+        assert_eq!(host.closed, 1, "answer must close the visible message");
+        assert_eq!(vm.vars.get(0), 11);
+    }
+
+    #[test]
     fn a_case_body_does_not_fall_through_into_the_next_case() {
         // Choosing option 0 must run only the first body. The old interpreter
         // executed the next 401 marker and jumped straight into the sibling
@@ -4735,6 +4891,29 @@ two"],
         // Parent resumed after the child ended.
         assert_eq!(vm.vars.get(1), 1);
         assert_eq!(vm.instances().len(), 0);
+    }
+
+    #[test]
+    fn a_common_event_child_inherits_the_callers_parallel_flag() {
+        // Keep the child resident for the assertion. A single `return` would be
+        // executed and reaped in the same frame that `210` created it.
+        let callee = event(2, "callee", vec![cmd(180, &[2], &[]), cmd(172, &[], &[])]);
+        let caller = event(1, "caller", vec![cmd(210, &[500_002, 0, 0, 0], &[])]);
+        let mut vm = vm_with(vec![callee, caller]);
+        let mut host = Recorder::default();
+        let parent = vm.start_event(1).unwrap();
+        vm.set_instance_parallel(parent, true);
+        vm.step_frame(&mut host);
+
+        let child = vm
+            .instances()
+            .iter()
+            .find(|instance| instance.event == 2)
+            .expect("callee instance");
+        assert!(
+            child.is_parallel,
+            "a background child must not become the Sys110 foreground event"
+        );
     }
 
     #[test]
@@ -5877,6 +6056,35 @@ two"],
     }
 
     #[test]
+    fn a_nonintersecting_poll_does_not_consume_automatic_input() {
+        let e = event(
+            1,
+            "auto_key_intersection",
+            vec![
+                cmd(125, &[16], &[]),
+                // Accepts only the decide key, so the injected down key stays live.
+                cmd(123, &[2_000_000, 0x10], &[]),
+                // Accepts directions and receives the injected down key.
+                cmd(123, &[2_000_001, 0x77], &[]),
+                // The first intersecting poll consumes the one-shot injection.
+                cmd(123, &[2_000_002, 0x77], &[]),
+            ],
+        );
+        let mut vm = vm_with(vec![e]);
+        let mut host = Recorder::default();
+        vm.start_event(1).unwrap();
+        vm.step_frame(&mut host);
+
+        assert_eq!(host.key_polls.len(), 3);
+        assert_eq!(host.key_polls[0].1, 16, "the first poll sees auto input");
+        assert_eq!(
+            host.key_polls[1].1, 16,
+            "a non-intersecting poll must not consume it"
+        );
+        assert_eq!(host.key_polls[2].1, 0, "the intersecting poll consumes it");
+    }
+
+    #[test]
     fn bug_31_and_38_cself_string_slots_in_250_and_save() {
         let e = event(
             1,
@@ -6118,7 +6326,7 @@ two"],
     }
 
     #[test]
-    fn op121_self_range_divides_only_the_named_slot() {
+    fn op121_self_range_updates_every_slot_in_the_range() {
         let e = event(
             1,
             "tenths_grid",
@@ -6127,8 +6335,8 @@ two"],
                 cmd(121, &[1_600_023, 864, 0, 0], &[]),
                 cmd(121, &[1_600_024, 9_280, 0, 0], &[]),
                 cmd(121, &[1_600_025, 1_152, 0, 0], &[]),
-                // The save-slot geometry idiom: range=3 but a self target only
-                // divides x. y/w/h stay in tenths for the renderer.
+                // The original interpreter applies the operation to every
+                // contiguous target, including self variables.
                 cmd(121, &[1_600_022, 10, 0, 0x1_0400, 3], &[]),
                 // Ordinary variables still take the full contiguous range.
                 cmd(121, &[2_000_030, 42, 0, 0x1_0000, 2], &[]),
@@ -6143,9 +6351,9 @@ two"],
         let self_vars = &vm.instance(instance).expect("instance").self_vars;
         let slot = |raw| crate::magic::self_slot(raw) as usize;
         assert_eq!(self_vars.get(slot(1_600_022)), 48);
-        assert_eq!(self_vars.get(slot(1_600_023)), 864);
-        assert_eq!(self_vars.get(slot(1_600_024)), 9_280);
-        assert_eq!(self_vars.get(slot(1_600_025)), 1_152);
+        assert_eq!(self_vars.get(slot(1_600_023)), 86);
+        assert_eq!(self_vars.get(slot(1_600_024)), 928);
+        assert_eq!(self_vars.get(slot(1_600_025)), 115);
         assert_eq!(vm.vars.get(30), 42);
         assert_eq!(vm.vars.get(31), 42);
         assert_eq!(vm.vars.get(32), 42);

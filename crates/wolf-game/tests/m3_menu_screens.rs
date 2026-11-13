@@ -7,8 +7,8 @@
 //!
 //! What is pinned (all measured against WOLF_DATA_ROOT=work/Data):
 //! * CE131 セーブ欄実行 draws the save-slot grid: backdrop <GRADY...>, WindowBase_amania
-//!   frame, the header 选择要保存的数据。, four numbered slot windows 1..4 with slot 3/4
-//!   reading 没有数据, warnings 0. A held CANCEL closes it and clears every 12xxx slot.
+//!   frame, the header 选择要保存的数据。, four numbered slot windows 1..4, with empty
+//!   slots reading 没有数据, warnings 0. A held CANCEL closes it and clears every 12xxx slot.
 //! * CE132 システム欄実行 draws - システム設定 - with the settings rows (ＢＧＭ音量,
 //!   ＳＥ音量, キーリピート速度, 決定キー, キャンセル …) and 設定完了/リセット; DOWN moves
 //!   the highlight (the help line under the list changes); CANCEL closes it, warnings 0.
@@ -186,17 +186,33 @@ fn ce131_save_slot_grid_draws_and_cancels() {
         file_of(&game, 12001)
     );
 
-    // Four numbered slots; slots 3 and 4 are empty.
-    for (slot, label) in [
-        (12052, "数据 1"),
-        (12072, "数据 2"),
-        (12092, "数据 3"),
-        (12112, "数据 4"),
+    // Four numbered slots. Slots 1 and 2 ship with saves; 3 and 4 depend on the
+    // player's Save directory, so assert whichever state is actually present.
+    for (slot, label_slot, content_slot) in [
+        (1, 12052, 12053),
+        (2, 12072, 12073),
+        (3, 12092, 12093),
+        (4, 12112, 12113),
     ] {
-        assert_eq!(text_of(&game, slot), label, "CE131 slot label at {slot}");
+        assert_eq!(
+            text_of(&game, label_slot),
+            format!("数据 {slot}"),
+            "CE131 slot label at {label_slot}"
+        );
+        if save_file(slot).is_file() {
+            assert_ne!(
+                text_of(&game, content_slot),
+                "没有数据",
+                "CE131 occupied slot {slot} rendered as empty"
+            );
+        } else {
+            assert_eq!(
+                text_of(&game, content_slot),
+                "没有数据",
+                "CE131 empty slot {slot}"
+            );
+        }
     }
-    assert_eq!(text_of(&game, 12093), "没有数据", "CE131 empty slot 3");
-    assert_eq!(text_of(&game, 12113), "没有数据", "CE131 empty slot 4");
 
     // Each slot window plus its cursor layer is actually on screen.
     for slot in [12050, 12051, 12070, 12071, 12090, 12091, 12110, 12111] {

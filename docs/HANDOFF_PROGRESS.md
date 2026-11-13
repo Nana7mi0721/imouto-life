@@ -1076,4 +1076,6 @@ M0–M7 与 C 任务每一步的改动、验证数字与踩过的坑。它只记
   * **Godot 性能**：`audio_cache` 增至 64 上限并按插入序淘汰（BGM/BGS/SE 正在引用的流不淘汰）；`wolf-gdext` 新增 `key_config_revision`（FNV-1a），`GameView._key_bits` 仅在 revision 变化时重建数组；`WolfText.gd` 新增 256 项 `TextParagraph` 缓存（临时 headless 重绘探针通过后删除）。
   * **验证**：`cargo fmt --all -- --check` 0；m14 5/5（day_command 533187/24/23/76/23，hud 554890/15/14/44/14）、m16 4、m17 21、m18 6、m1_title_load 4、m3_mouse_menu 14 全过；`cargo test -q --workspace -- --skip font_lookup_prefers...` 只余既有 `m3_manual_rules::late_night_bedtime_skips_to_next_evening`（04:30→实测 17:00 vs 期望 19:00）。Godot 重建 DLL 后 smoke/mouse_title/key_map(98)/mouse_latch/title_wheel/gameview_title_wheel/load_save/load_menu/save_roundtrip 全绿（save→load 38/38）。
   * **环境**：Godot console stub 报 error 193，仍用主 exe；误写到 `work/Data/godot_roundtrip.sav` 的文件已删除；本机 agent shell 无 git/bash，冒烟步骤按脚本逐条 PowerShell 复现。
-  * **报告**：两轮目标/逐项修复/验证/未处理项见 `docs/AUDIT_REBUILD_FIX_REPORT.md`。未 commit。  * **清理**：删除 `work/out/audit_round_notes.md`、`work/out/bar_measure.py` 与 `target/debug/incremental`；仓库合计 **7.99 GiB**（work 1.07 / target 6.64 / work/out 0.90，其中 `m14_visual` 与 `m14_ab` 作为证据保留）。
+  * **报告**：两轮目标/逐项修复/验证/未处理项见 `docs/AUDIT_REBUILD_FIX_REPORT.md`。
+  * **提交**：`b2b6998` 已 push `origin/master`（2026-11-13）。
+  * **清理**：删除 `work/out/audit_round_notes.md`、`work/out/bar_measure.py` 与 `target/debug/incremental`；仓库合计 **7.99 GiB**（work 1.07 / target 6.64 / work/out 0.90，其中 `m14_visual` 与 `m14_ab` 作为证据保留）。

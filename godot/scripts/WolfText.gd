@@ -98,6 +98,14 @@ const OUTLINE_PX := 2
 const WIDTH_SLACK_PX := 2.0
 ## Fallback font size for an item without `font_px`, matching GameView.
 const DEFAULT_FONT_PX := 20.0
+## Shaped paragraphs are reusable across frames. Every text item used to run
+## `TextParagraph.new()` + `add_string()` per frame, re-shaping the same strings
+## through HarfBuzz even when only a counter changed (report II.P1). The cache is
+## keyed by face, size, width and text; 256 entries covers a full scene plus the
+## message history without pinning every typewriter prefix ever drawn.
+const PARAGRAPH_CACHE_LIMIT := 256
+static var _paragraph_cache: Dictionary = {}
+static var _paragraph_order: Array[String] = []
 
 ## Measured shift `round(size * RUST_BASELINE_RATIO) - Font.get_ascent(size)`
 ## for every size this game uses.  Kept as data so the formula can be audited
@@ -136,6 +144,29 @@ static func line_spacing(font: Font, size: float) -> float:
 	return line_pitch(size) - font.get_height(px)
 
 
+## Shape one run, reusing the cached paragraph when the key is unchanged.
+##
+## The key assumes the caller's two faces are the ones GameView loads (bold for
+## weight >= 600, regular otherwise); that is the only pair any caller passes.
+static func _shape(
+	text: String, font: Font, px: int, width: float, spacing: float, bold: bool
+) -> TextParagraph:
+	var key := ("b|" if bold else "r|") + str(px) + "|" + str(width) + "|" + text
+	if _paragraph_cache.has(key):
+		return _paragraph_cache[key]
+	var paragraph := TextParagraph.new()
+	paragraph.width = width
+	paragraph.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	paragraph.line_spacing = spacing
+	paragraph.add_string(text, font, px)
+	_paragraph_cache[key] = paragraph
+	_paragraph_order.append(key)
+	while _paragraph_cache.size() > PARAGRAPH_CACHE_LIMIT:
+		var oldest: String = _paragraph_order.pop_front()
+		_paragraph_cache.erase(oldest)
+	return paragraph
+
+
 ## Draw one packet text item.  Mirrors the item semantics of
 ## `GameView._draw_text` (text / rect / alpha / colour / outline / weight) and
 ## returns false when the item cannot produce pixels.
@@ -162,16 +193,20 @@ static func draw_text(
 		return false
 
 	var px := maxi(1, int(round(size)))
-	var paragraph := TextParagraph.new()
-	paragraph.width = rect.size.x + WIDTH_SLACK_PX
-	paragraph.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	paragraph.line_spacing = line_spacing(font, size)
+	var bold := int(item.get("weight", 700)) >= 600
 	# TextParagraph hands the font's whole RID chain (including `Font.fallbacks`)
 	# to the shaper, so a character the primary face lacks -- U+266A in Microsoft
 	# YaHei -- is shaped from the symbol fallback without splitting the string.
 	# Glyph advances therefore stay one run, while the baseline still comes from
 	# the primary face's ascent above.
-	paragraph.add_string(text, font, px)
+	var paragraph := _shape(
+		text,
+		font,
+		px,
+		rect.size.x + WIDTH_SLACK_PX,
+		line_spacing(font, size),
+		bold
+	)
 
 	# Rust rounds the item origin; Godot truncates it, so round explicitly.
 	var origin := Vector2(

@@ -301,12 +301,15 @@ WOLF_DATA_ROOT="$PWD/work/Data" ./target/debug/wolf-cli.exe verify | tail -20
     按住拖拽手势。哥哥体力条只有 `精力 3/3` 与
     `行动力60/65` 文本证据（CE214），数据中无独立图形槽位；保存按钮没有独立
     hover 资源；BAD 外框厚度与人物 alpha 轮廓仍缺原版证据。`36014` 的
-    `message` 字面量在原版参考图出现，未确认说话人规则前不要擅自隐藏。
+    `message` 字面量在原版实机图 `work/out/shot_metrics/full_89EF.png`（由 `prt sc/`
+    的 1532×862 窗口截图缩放而来）中同样出现在名牌上，属零售行为；在确认不同说话人
+    的名牌规则前**不按占位符隐藏**。连续同人翻页的瞬态闪烁仍需原版逐帧证据，未加 latch。
   - 旧编号必须分源：**历史台账 BUG-20/21 已闭环，22/23/24 非缺陷**；**报告 §六
-    BUG-20/22/23/24 已闭环，§六 BUG-21（map-self 协程）仍是合成 ignored 复现，
-    真实零售影响未证实**。`m16_old_bug_review` 当前 2 passed / 2 ignored，其中
-    ignored 的 `bug21` 是报告 §六 BUG-21，`old_bug23` 是历史台账 BUG-23 的误导性
-    空范围合成探针；旧 BUG-23 不应再写成“用户可见仍未修复”。
+    BUG-20/21/22/23/24 已全部闭环**。§六 BUG-21 于 2026-11-13 在 `install_map`
+    中按 `MAP_SELF_BASE` 清扫无主地图协程（`COMMON_SELF_BASE` 不受影响），
+    `m16_old_bug_review` 由此变为 4 passed / 0 ignored（`hist_bug20` / `hist_bug23`
+    空范围 no-op / `hist_bug24` / `report_s6_bug21`）；旧台账 BUG-23 不应再写成
+    “用户可见仍未修复”。
   - **最终 DLL 已重建并验收**：`godot/bin/wolf_gdext.dll` 为 20:09:05，
     7,651,840 字节，SHA-256 `fee3e727f7ad964a8ccd2b57aaf600d743c1405a2eb702eed5d41ea794efadd1`，
     与 `target/godot` 同哈希。最终 `smoke-godot.sh` 全绿，
@@ -314,6 +317,14 @@ WOLF_DATA_ROOT="$PWD/work/Data" ./target/debug/wolf-cli.exe verify | tail -20
     `wolf_avg_ms=0.565` / `draw_avg_ms=0.287`、黄/绿像素均为 0；新游戏
     300 帧三行正文 493/516/539 且无原生 `19500/19501`。若用户仍看到旧现象，
     必须先完全退出 Godot 编辑器/游戏进程再重开，Windows 不会热替换已加载 DLL。
+  - **T12 补丁 + m14 收口（2026-11-13 续查）**：`Assets::alpha_bounds_in` 二级键缓存、
+    `install_map` 的 `MAP_SELF_BASE` 清扫、`wolf-gdext` 选项双 clone 合并均已落地。
+    `m14_visual_regression` 由 2 红转 **5 passed**：T18 `1a9fafe` 的 slot 230 行动力文本
+    拆分只让两场景的 text picture/item/line 各 +1，像素基线 533187/554890 **未动**；
+    T18 的稳定 `hover` 让 CE238/CE239 hide 页不再每帧重画，停靠侧栏从零售 0.2 alpha
+    变成 1.0，已在 `game.rs` 用 `SIDE_PANEL_PARKED_ALPHA=0.2`（`x ≤ -300` 且无过渡）
+    复原。细节见 `docs/HANDOFF_T12_PATCH_AND_LEDGER.md` §4.1。
+* **审计修复轮（2026-11-13 晚，当前状态）**：`docs/imouto_life_rebuild_fixes_and_full_audit.md` 的 §一 6 项截图与 §二 P1/P2 已落地。选项 `(0,0)` 回退居中 + 控制码剥离；失活 `choices` 由 `frame`/`install_map` 自动回收（`m3_mouse_menu` 14 passed）；行动力条在黑屏开场不再误出，宿主条改 100×12 深灰槽 + 亮边（`HUD_ACTION_VALUE_X=716`）；`36002` 底边钳到 576，`m17_ui_regressions` 21 passed；`message` 名牌按原版实机图保留，连续同人翻页瞬态仍待原版逐帧证据。RNG 读档按 `playtime_frames` 定位表游标（`.sav` 无字段，同存档重放仍同）；Godot `audio_cache` 上限 64、`key_config_revision` 缓存、`WolfText` 段落缓存。m14 仍 **5 passed**（533187/554890），workspace 只余既有 `m3_manual_rules::late_night_bedtime...`；Godot 9 个 headless 脚本全绿。两轮报告见 `docs/AUDIT_REBUILD_FIX_REPORT.md`。
 * **深度审查 BUG-25..BUG-48 修复完成（2026-11-12 封板快照）**：现行审查报告为 `docs/reviews/CODE_REVIEW_4ROUND.md`（第一至四轮），T0–T11 已全部落地。`cargo fmt --all -- --check` / `git diff --check` 通过，`cargo check -q --workspace` 0 error，默认 `cargo test -q --workspace` exit 0；真实数据 workspace 仅剩 2 项既有 `db` 姊妹作期望差异，AutoEvents 与标题历史差异已消除。`verify` PASS 64 / 1 SKIP，`precompile` PASS 19 / 0（blocks 5416 / loops 881 / implicit_closes 0）；`m14_visual_regression` 最终 **5 passed**：saveui 的 101 像素差已归因为 `SaveData03.sav` 第四格 fixture 漂移，隔离 01/02 两格后 25/13、576227（差 6 像素光标/栅格相位），已加 `depends_on_save_grid` 守卫且未改基线。CE43 改为标题菜单进入沿一次性触发，CE94 曾恢复 9280x1152 tenths 几何与真实 `<TRI-RIGHT>`，saveui 回到 13 text pictures / 54 glyphs / 27728 textured / atlas 21。Godot build/smoke 通过，parity 600 帧 PASS；m16 三组回归共 17 项真实数据全过。清理后 `du -sh .` = **8.1 GB**（work 796 M / target 7.3 G）。实施细节见 `docs/HANDOFF_DEEP_REVIEW_FIX.md`，任务收口见 `docs/TASKS_REMAINING_BUGS.md` §0。**当前工作区已撤销 tenths 渲染补偿；2026-11-13 复核后默认全量测试仅剩既有的 `m3_manual_rules::late_night_bedtime_skips_to_next_evening`，真实数据下另有两项既有 `db` 文本差异，以 §0.1 的最新实况为准。**
 
 * **全量静态字节码深度审计沉淀与 5 项深水区系统缺陷归档（2026-11-11）**：编写并沉淀 `tools/audit_bytecode.py`，全量静态扫描 350 个 Common Event 与 8 张地图 102 个地图页面的 **63,506 条指令**，生成 `work/out/BYTECODE_AUDIT_REPORT.md`。审计引擎涵盖全量操作码覆盖、虚拟硬件状态差集、Picture 槽位主/并行协程竞争碰撞（定位 15 组交叉槽位）、循环无让步死循环风险、视口级演出特效等 5 大维度。新排查出 **BUG-20**（地图动态实体跟随气泡/图标坐标锚定缺失，`character_state` 字段 6/7 恒返回 None）、**BUG-21**（鼠标滚轮系统彻底瘫痪，`engine_state(10)` 滚轮移动量硬编码 0）、**BUG-22**（鼠标移出窗口检测失效，字段 11/12 走 `_ => None` 导致指针残留）、**BUG-23**（全屏闪烁与震动因无挂载 Picture 被抛弃）、**BUG-24**（按键连发延迟误绑定到 `sys(15/16)`）。已同步更新 `work/out/review/POST_DEEPSEEK_BUGS_INVESTIGATION_REPORT.md`，总缺陷台账扩充至 24 项，升级为五批次修复路线。消解各文档历史冲突：纠正 `docs/M3_EVENT_GRAPH.md` 的 `raw - 600_000` 错误公式为 `caller + (raw - 600_100)`；统一 BUG-02（人名牌）闭环口径（固定模式由 290 视口平移固定在 276,456 屏内，已由 op112 掩码剥离闭环并经 `m15` 验证，不依赖 `character_state`；消解与 BUG-20 的概念重叠）；统一 BUG-04 为 NOT-A-BUG。
@@ -356,3 +367,5 @@ WOLF_DATA_ROOT="$PWD/work/Data" ./target/debug/wolf-cli.exe verify | tail -20
 * 选择面板宽度加数属 **B 级**：89EF 实测 156.3 = 140+16 精确吻合，EE37 多 5.3 px 未解释。
 * `kind≥0` 掩膜过渡、`window.rs` 极小盒角折半——本作不触发，明确不实现。
 * 存档/读档界面（CE94/CE131）的十分之一单位几何是 2026-11-02 的历史修复记录；当前工作区已删除 `Screen::ui_scale_for`、`TENTHS_UI`/`tenths_block` 与渲染二次 `/10`，不应再把该补偿当作现行实现。历史测量见 docs/re/SCREENSHOT_METRICS.md §6；**注意**：`work/Data/Save/SaveData01.sav` 曾被玩家在存档界面覆盖为含 94 张存档界面图的版本，依赖它精确像素数的测试已改为自洽断言或按「非干净 HUD 存档」跳过。设置界面（CE95）的 tenths 描述同样是历史依据，当前文本样式由 `Game::uses_regular_ui_text` 处理。
+* `m14_visual_regression` 已于 2026-11-13 收口为 5 passed（停靠侧栏 alpha 回归已修复、
+  行动力拆分只重钉文本计数），详见 §11.1 末条与 `docs/HANDOFF_T12_PATCH_AND_LEDGER.md` §4.1。

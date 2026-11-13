@@ -74,6 +74,38 @@ fn open_loaded_bedroom() -> Option<Game> {
     Some(game)
 }
 
+#[test]
+fn a_choice_prompt_is_dropped_when_its_waiter_disappears() {
+    let Some(mut game) = open_loaded_bedroom() else {
+        return;
+    };
+    open_night_menu(&mut game);
+    assert!(game.choices.is_some(), "the night menu opens a prompt");
+    // Simulate a forced branch that retires the coroutine without answering 102:
+    // the prompt must not survive as an invisible panel that owns the mouse.
+    let waiters: Vec<_> = game
+        .vm
+        .instances()
+        .iter()
+        .filter(|instance| {
+            matches!(
+                instance.wait,
+                wolf_vm::WaitState::Choice { .. } | wolf_vm::WaitState::MessageWithChoices { .. }
+            )
+        })
+        .map(|instance| instance.id)
+        .collect();
+    assert!(!waiters.is_empty(), "a choice waiter must be live");
+    for id in waiters {
+        game.vm.stop_instance(id);
+    }
+    game.frame();
+    assert!(
+        game.choices.is_none(),
+        "a prompt without a waiter must be cleared instead of swallowing clicks"
+    );
+}
+
 /// Starts CE245 (night command) and runs until its five-row choice prompt is live.
 fn open_night_menu(game: &mut Game) {
     game.screen.clear();

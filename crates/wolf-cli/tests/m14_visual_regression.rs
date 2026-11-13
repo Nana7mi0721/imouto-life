@@ -17,6 +17,13 @@
 //! Two consecutive captures of every scene produced byte-identical PNGs and
 //! identical stdout, so the pinning is meaningful rather than flaky.
 //!
+//! 2026-11-13 (T18 follow-up): the day_command and hud text counts moved by one
+//! because the host now splits CE242's action-point picture (slot 230) into a
+//! label and a value run for the project's extra gauge. The pixel baselines did
+//! not move: the parked side drawers are still drawn at retail's 20% handle alpha
+//! (see [`SIDE_PANEL_PARKED_ALPHA`] in wolf-game), even though T18 stopped the
+//! per-frame CE238/CE239 repaint that used to produce it as a side effect.
+//!
 //! Fixtures live under work/Data (gitignored). When the data root or the save
 //! fixture is missing, the affected scene prints a skip notice and returns, matching
 //! the rest of the suite: the default cargo test run must stay green without data.
@@ -194,13 +201,18 @@ const BASELINES: [Baseline; 5] = [
         peak_coroutines: 8,
         pictures_live: 50,
         textured_quads: 23,
-        text_pictures: 23,
+        // T18 splits CE242's `行动力 current/max` picture (slot 230) into a label run
+        // at x=560 and a value run at x=668 so the host can draw the gauge between
+        // them, which adds one text picture, one item and one line versus the retail
+        // single-run layout. The non-black count is unchanged: the vacated gap sits
+        // on the lit top bar, and the same glyphs still cover the same row.
+        text_pictures: 24,
         choice_open: true,
         choice_options: 5,
         atlas_images: 7,
-        text_items: 22,
+        text_items: 23,
         text_glyphs: 76,
-        text_lines: 22,
+        text_lines: 23,
         nonblack: 533_187,
         messages: 0,
         choices: 1,
@@ -219,13 +231,15 @@ const BASELINES: [Baseline; 5] = [
         peak_coroutines: 8,
         pictures_live: 50,
         textured_quads: 5,
-        text_pictures: 14,
+        // Same slot-230 split as the day_command scene: one extra text picture,
+        // item and line for the action-point label/value runs.
+        text_pictures: 15,
         choice_open: false,
         choice_options: 0,
         atlas_images: 5,
-        text_items: 13,
+        text_items: 14,
         text_glyphs: 44,
-        text_lines: 13,
+        text_lines: 14,
         nonblack: 554_890,
         messages: 0,
         choices: 0,

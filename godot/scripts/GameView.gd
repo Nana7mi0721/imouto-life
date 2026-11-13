@@ -83,17 +83,19 @@ class _BlendBatch extends Node2D:
 			return
 		var maximum := maxi(1, int(ap.get("max", 0)))
 		var current := clampi(int(ap.get("current", 0)), 0, maximum)
-		var box: Rect2 = ap.get("bar", Rect2(Vector2(608.0, 20.0), Vector2(54.0, 8.0)))
-		draw_rect(box, Color(0.0, 0.0, 0.0, 0.35), true)
-		draw_rect(box, Color.WHITE, false, 1.0)
+		var box: Rect2 = ap.get("bar", Rect2(Vector2(608.0, 18.0), Vector2(100.0, 12.0)))
+		# Reference (`参照图仅参考行动力条.png`): a dark trough with a thin light
+		# border and a 1 px-inset soft grey fill, not the old 2 px-inset white slab.
+		draw_rect(box, Color(0.16, 0.16, 0.16, 0.92), true)
+		draw_rect(box, Color(0.78, 0.78, 0.78, 1.0), false, 1.0)
 		var ratio := float(current) / float(maximum)
 		if ratio > 0.0:
 			draw_rect(
 				Rect2(
-					box.position + Vector2(2.0, 2.0),
-					Vector2((box.size.x - 4.0) * ratio, box.size.y - 4.0)
+					box.position + Vector2(1.0, 1.0),
+					Vector2((box.size.x - 2.0) * ratio, box.size.y - 2.0)
 				),
-				Color(0.97, 0.97, 0.97, 0.95),
+				Color(0.82, 0.82, 0.82, 0.95),
 				true
 			)
 
@@ -111,6 +113,11 @@ var bgm_player: AudioStreamPlayer
 var bgs_player: AudioStreamPlayer
 var se_players: Array[AudioStreamPlayer] = []
 var audio_cache: Dictionary = {}
+## Insertion order for [member audio_cache]. The cache used to grow forever; 64
+## streams is enough for the current scene plus recent voices, and the oldest
+## entry that no player still references is dropped first (report II.P2).
+const AUDIO_CACHE_LIMIT := 64
+var audio_cache_order: Array[String] = []
 var bgm_tween: Tween
 var bgs_tween: Tween
 var master_bgm_vol: float = 1.0
@@ -149,6 +156,11 @@ var captured := false
 ## polls `raw_keys.first()`, exactly like `wolf-cli play`'s `raw_held` vector.
 var held_keys: Dictionary = {}
 var held_order: Array[int] = []
+## `key_config()` crosses the GDExtension boundary with a fresh PackedInt32Array
+## every call; the six words only move when CE132 writes Sys52..57, so keep the
+## converted array and refresh it from `key_config_revision()` (report II.P2).
+var key_config_cache: Array = []
+var key_config_revision_cache := -2
 
 ## Mouse buttons held as seen by `_input` (1 left / 2 right / 4 middle).
 var mouse_down: int = 0
@@ -679,17 +691,19 @@ func _draw_action_points(ap: Dictionary) -> void:
 		return
 	var maximum := maxi(1, int(ap.get("max", 0)))
 	var current := clampi(int(ap.get("current", 0)), 0, maximum)
-	var box: Rect2 = ap.get("bar", Rect2(Vector2(608.0, 20.0), Vector2(54.0, 8.0)))
-	draw_rect(box, Color(0.0, 0.0, 0.0, 0.35), true)
-	draw_rect(box, Color.WHITE, false, 1.0)
+	var box: Rect2 = ap.get("bar", Rect2(Vector2(608.0, 18.0), Vector2(100.0, 12.0)))
+	# Reference (`参照图仅参考行动力条.png`): a dark trough with a thin light
+	# border and a 1 px-inset soft grey fill, not the old 2 px-inset white slab.
+	draw_rect(box, Color(0.16, 0.16, 0.16, 0.92), true)
+	draw_rect(box, Color(0.78, 0.78, 0.78, 1.0), false, 1.0)
 	var ratio := float(current) / float(maximum)
 	if ratio > 0.0:
 		draw_rect(
 			Rect2(
-				box.position + Vector2(2.0, 2.0),
-				Vector2((box.size.x - 4.0) * ratio, box.size.y - 4.0)
+				box.position + Vector2(1.0, 1.0),
+				Vector2((box.size.x - 2.0) * ratio, box.size.y - 2.0)
 			),
-			Color(0.97, 0.97, 0.97, 0.95),
+			Color(0.82, 0.82, 0.82, 0.95),
 			true
 		)
 
@@ -866,7 +880,34 @@ func _load_audio(file: String) -> AudioStream:
 		push_warning("audio: cannot load " + path)
 		return null
 	audio_cache[path] = stream
+	audio_cache_order.append(path)
+	_prune_audio_cache()
 	return stream
+
+
+func _audio_in_use(stream: AudioStream) -> bool:
+	if bgm_player != null and bgm_player.stream == stream:
+		return true
+	if bgs_player != null and bgs_player.stream == stream:
+		return true
+	for player in se_players:
+		if player.stream == stream:
+			return true
+	return false
+
+
+func _prune_audio_cache() -> void:
+	if audio_cache.size() <= AUDIO_CACHE_LIMIT:
+		return
+	var index := 0
+	while audio_cache.size() > AUDIO_CACHE_LIMIT and index < audio_cache_order.size():
+		var path: String = audio_cache_order[index]
+		var stream: AudioStream = audio_cache.get(path)
+		if stream != null and _audio_in_use(stream):
+			index += 1
+			continue
+		audio_cache.erase(path)
+		audio_cache_order.remove_at(index)
 
 
 func _free_se_player() -> AudioStreamPlayer:
@@ -1092,7 +1133,11 @@ func _raw_key_codes() -> PackedInt32Array:
 func _key_bits(raw_keys: PackedInt32Array) -> int:
 	# Same rules as `App::bits()` in wolf-cli play: Sys52/54/56 are read live from
 	# the game, so rebinding in CE132 takes effect without a restart.
-	return WolfKeysLib.bits_for(Array(raw_keys), wolf.key_config())
+	var revision := wolf.key_config_revision()
+	if revision != key_config_revision_cache:
+		key_config_revision_cache = revision
+		key_config_cache = Array(wolf.key_config())
+	return WolfKeysLib.bits_for(Array(raw_keys), key_config_cache)
 
 
 func _mouse_buttons(skip_level: bool = false) -> int:

@@ -253,6 +253,12 @@ pub struct Assets {
     /// Byte-range patches declared by the mod overlays, applied to raw file bytes
     /// before decoding (see [`crate::patch`] and `docs/M7_PATCH.md`).
     patches: PatchSet,
+    /// Memoised alpha bounding boxes: asset name, then `(source rectangle,
+    /// threshold)`. The picture hit test asks for the same box every frame and
+    /// one 330x576 panel scan walks 190,080 pixels, so the answer is kept until
+    /// `clear()` drops the decoded images it was derived from. Two levels rather
+    /// than one flat key so a hit borrows the name instead of allocating it.
+    alpha_bounds_cache: HashMap<String, HashMap<([u32; 4], u8), Option<[u32; 4]>>>,
 }
 
 impl Assets {
@@ -286,6 +292,7 @@ impl Assets {
             missing: HashSet::new(),
             fallbacks: Vec::new(),
             patches,
+            alpha_bounds_cache: HashMap::new(),
         }
     }
 
@@ -316,6 +323,43 @@ impl Assets {
     /// Drops every decoded image. Called when returning to the title.
     pub fn clear(&mut self) {
         self.cache.clear();
+        self.alpha_bounds_cache.clear();
+    }
+
+    /// Non-transparent bounding box of `name` inside `region`, memoised.
+    ///
+    /// Same contract as [`ImageData::alpha_bounds_in`], but the pixel scan runs
+    /// once per `(name, region, threshold)` instead of once per call, and a hit
+    /// is a hash lookup that does not allocate. A name that cannot be loaded
+    /// caches `None` for that region instead of retrying every frame.
+    ///
+    /// The source rectangle and threshold are part of the key because the answer
+    /// differs per animated pose and per caller; a sprite sheet asked for one
+    /// cell must not answer with another cell's silhouette.
+    #[must_use]
+    pub fn alpha_bounds_in(
+        &mut self,
+        name: &str,
+        region: [u32; 4],
+        threshold: u8,
+    ) -> Option<[u32; 4]> {
+        let key = (region, threshold.min(255));
+        if let Some(cached) = self
+            .alpha_bounds_cache
+            .get(name)
+            .and_then(|regions| regions.get(&key))
+        {
+            return *cached;
+        }
+        let bounds = self
+            .load(name)
+            .ok()
+            .and_then(|image| image.alpha_bounds_in(region, key.1));
+        self.alpha_bounds_cache
+            .entry(name.to_owned())
+            .or_default()
+            .insert(key, bounds);
+        bounds
     }
 
     /// Returns an already decoded image without touching the disk.

@@ -914,7 +914,7 @@ M0–M7 与 C 任务每一步的改动、验证数字与踩过的坑。它只记
   * 详细交接（含 7 处编译错误的精确修法、剩余 10 项确认、实测修正的语义差异、验证命令）见 **docs/HANDOFF_DEEP_REVIEW_FIX.md**。
 
 * 2026-11-12（文档整理：审查报告与交接归档）：
-  * 现行审查报告统一为 **`docs/reviews/CODE_REVIEW_4ROUND.md`**（第一至四轮完整版，BUG-25~BUG-48，含历史 BUG-20~24 与第一/二轮全文）；第一、二轮单行本（`imouto_life_deep_code_review_report.md`）已归档为 `docs/archive/reviews/CODE_REVIEW_1_2ROUND_superseded.md`，仅作证据链。
+  * 现行审查报告统一为 **`docs/reviews/CODE_REVIEW_4ROUND.md`**（第一至四轮完整版，BUG-25~BUG-48，含报告 §六基线 BUG-20~24 与第一/二轮全文（该编号与本文件 2026-11-11 台账 BUG-20~24 同号不同义））；第一、二轮单行本（`imouto_life_deep_code_review_report.md`）已归档为 `docs/archive/reviews/CODE_REVIEW_1_2ROUND_superseded.md`，仅作证据链。
   * 已完成交接 `docs/HANDOFF_NEXT_AGENT.md` 移入 `docs/archive/HANDOFF_NEXT_AGENT.md`；新增 `docs/reviews/README.md`（轮次/编号对照）与 `docs/archive/README.md`（归档规则与替代文档）。
   * `docs/README.md` 索引、`docs/HANDOFF_DEEP_REVIEW_FIX.md` 的来源/范围说明同步：后者只覆盖 BUG-25..40，第三/四轮 BUG-41..48 尚未开始。本次只动文档，未改代码、未跑测试。
 
@@ -1045,3 +1045,35 @@ M0–M7 与 C 任务每一步的改动、验证数字与踩过的坑。它只记
   * **BAD/GOOD 层级**：原版特写确认中央睡眠圆标应覆盖两根框线的内侧端点；
     已移除 `1994/1998 -> z=2001` 的折中，恢复 WOLF 自然槽位顺序，
     `wolf-gdext` 单测同步改为断言 `1994/1998 < 2000`。
+
+* 2026-11-13（T12 性能补丁与两套 BUG-20..24 口径收口）：
+  * **`picture_ink_rect` 缓存**：`Assets` 新增 `alpha_bounds_cache: HashMap<String, HashMap<([u32;4], u8), Option<[u32;4]>>>`（二级键避免每帧 `String` 分配），`with_overlays()` 初始化、`clear()` 同步清空；`Assets::alpha_bounds_in()` 对 `(file, source, threshold)` 只扫一次像素，加载失败也缓存 `None`。`game.rs` 的 `picture_ink_rect_in` 改走该入口，侧栏自动收起（330x576 = 190,080 像素/帧）与 `picture_state` hover 轮询（`-7/-5/-4/1108`）由每帧全图扫描降为哈希查表；UV 映射、`scale < 0` 翻转与 destination 变换未动。
+  * **报告 §六 BUG-21 闭环（选项 A）**：`Game::install_map` 在 `runtime.stop_all` 之后增加按 `instance.program.self_base == MAP_SELF_BASE` 的收集 + `stop_instance` 清扫（先收 id 再停止，`COMMON_SELF_BASE` 不受影响，子协程按级联回收）；`m16_old_bug_review` 取消该用例的 `#[ignore]`。
+  * **测试口径统一**：`m16_old_bug_review.rs` 按来源前缀区分 `hist_*`（`HANDOFF_PROGRESS.md` 2026-11-11 台账）与 `report_s6_*`（`CODE_REVIEW_4ROUND.md` §六）。`old_bug23` 改写为 `hist_bug23_empty_range_effect_is_noop`，断言空范围 `Screen::effect` 返回 `false`（手册定义的 no-op）并取消 `#[ignore]`；当前 **4 passed / 0 ignored**。
+  * **文档口径**：`reviews/README.md` 编号表拆成「报告 §六基线」与「旧台账（2026-11-11）」两行；`CODE_REVIEW_4ROUND.md` 第六章标题改为“本报告 §六”，章首增两套编号不得互套的警示，§5.4 的 `Field 11/12` 由“窗口内坐标 / 移出窗口 -1”修正为帧间位移 `dx/dy`，§六 BUG-21 行标注已实现；`HANDOFF_DEEP_REVIEW_FIX.md`、`docs/README.md`、`HANDOFF_PROGRESS.md` 旧条目均补注同号不同义。
+  * **验证**：`cargo check -q -p wolf-game` exit 0；`WOLF_DATA_ROOT=<abs>/work/Data` 下 `m16_old_bug_review` 4/4、`m17_ui_regressions` 21/21、`m18_t18_regressions` 6/6。未 commit。
+  * **m14 既有红（非本次引入）**：HEAD `1a9fafe` 上 `day_command` nonblack 531398（基线 533187）、`hud` 552738（基线 554890）。把 `assets.rs`/`game.rs` 回退到 HEAD 后两次数值完全一致，确认与 T12 补丁无关；`work/out/m14_visual/*.log` 显示两场景各多 1 个零字形 text item/line，字形数（76/44）与图片数、四叉数、atlas 数均未变，nonblack 反降 0.34%/0.39%，指向文本栅格变薄或基线过期，待视觉确认后再决定重钉或回查。（已于同日收口，见本文件末尾 2026-11-13「T12 续查」条目。）
+  * **会话存档**：判断过程、A/B 证据、改动清单与复现命令见 `docs/HANDOFF_T12_PATCH_AND_LEDGER.md`。
+
+* 2026-11-13（T12 续查：m14 收口、停靠侧栏 alpha 复原、gdext 去双 clone）：
+  * **m14 由 2 红转 5 绿**：`day_command` 533187 / 24 text pics / 23 items / 23 lines，`hud` 554890 / 15 / 14 / 14；**像素基线一位未改**，只重钉文本计数。
+  * **归因（独立 worktree 复验 + 探针）**：旧树 `ee808fe` 用独立 `--target-dir` 重建后，同一存档 `SaveData01.sav` 跑出 533187 / 554890 与 23 / 14 text pics，证明 fixture、字体、环境均未漂移，差异全部来自 `ee808fe..HEAD` 源码。
+    1. **+1 text picture / item / line**：T18 `1a9fafe` 在 `Game::build_text_picture` 对 slot 230 的 `\f[14]行动力60/65` 调 `split_action_readout`，拆成 label@x=560 与 value@x=668 两个 run，给宿主进度条留空；glyphs 76 / 44 不变，字形挪位仍压在同一块亮色顶栏上，所以像素数不变。
+    2. **nonblack −1789 / −2152**：停靠侧栏 alpha 从 0.20 变 1.00。旧版地图 ev8/ev11 每帧调 CE238/CE239 的 hide 页，每次重画把 10 帧淡入重置、`age` 停在 2，`255 × 2/10 = 0.2` 就是零售左缘那条淡灰滑条/三角把手；T18 为消除每帧重画把 `Game::hover` 对 320/2300 恒返回 1，hide 页不再运行，面板按存档 `opacity 255 / fade 0` 画成不透明，左缘变暗。
+  * **修复**：`crates/wolf-game/src/game.rs` 新增 `SIDE_PANEL_PARKED_ALPHA = 0.2`、`SIDE_PANEL_PARKED_X = -300`，`picture_quads` 对已停靠（`x ≤ -300` 且 `transition.is_none()`）的 320/2300 乘 0.2；打开/关闭滑动仍 1.0，保留 T18 的“不每帧重画”。
+  * **重钉**：`crates/wolf-cli/tests/m14_visual_regression.rs` 只把 day_command / hud 的 `text_pictures` / `text_items` / `text_lines` 各 +1（23→24、22→23、22→23；14→15、13→14、13→14），逐处注释；`nonblack` 保持 533187 / 554890。复验 **5 passed**。
+  * **gdext**：`crates/wolf-gdext/src/lib.rs` 的 `frame()` 不再对 `choice_options` 双 clone，改为直接借用 `game.choices`（`overlay_at_sized` 传 `game.choice_cursor()`）；`cargo check -q -p wolf-gdext` exit 0。`tools/build-godot.sh` 重建 `godot/bin/wolf_gdext.dll` 后 headless `smoke-godot.sh` **exit 0**（`load_save: pictures=50 texts=15`、save→load 往返 38/38）；本机 console 包装器报 `CreateProcess failed, error 193`，把 `GODOT_BIN` 指向 `Godot_v4.7.2-stable_win64.exe` 主程序即可。
+  * **全量状态**：`cargo fmt --all -- --check` 通过；`cargo test -q --workspace` 只余既有的 `m3_manual_rules::late_night_bedtime_skips_to_next_evening`（04:30 就寝期望次日 19:00）。本机补充：`work/out` 下的 `std::fs::remove_dir_all` 会在 os error 145「目录不是空的」上无限重试，`font_lookup_prefers_the_games_face_and_scans_unexpected_names` 收尾清理因此挂死，workspace 全量用 `-- --skip` 跑过；该现象已用仓库外独立 `rustc` 小程序复现，与项目代码无关，PowerShell 手动删同一目录是瞬时的。
+  * **清理**：删除 `work/out/ee808fe_tree`（带探针的 detached worktree）、`work/out/target_ee808fe`（302.8 MB）、`C:\Users\REISEN\AppData\Local\Temp\t12_old_target`（1,324.8 MB），另按里程碑惯例清 `target/debug/incremental`、`target/release`、`target/ver6` 与 `work/out` 下的探针产物；清理后仓库合计 **7.96 GB**（target 仍占大头）。`work/out/m14_ab/` 保留作证据。
+  * **文档**：`docs/HANDOFF_T12_PATCH_AND_LEDGER.md` §1 / §4 / §4.1 / §5 / §6 / §7 / §8 重写；`docs/HANDOFF_M0.md` §11.1 增补，§11.3 的 m14 项改为已收口。未 commit。
+
+* 2026-11-13（审计修复轮：截图 6 项 + 全量审查 P1/P2）：
+  * **选项**：`choice::layout_at_sized` 把 `(0,0)` 与屏外锚点同样回退居中（新增单测，3 行面板中心 512,288）；`Game::show_choices` 翻译后走 `messagetext::strip` 剥离控制码/图标码，保留空白与 `sources` 索引。
+  * **残留选项**：`Game::frame` 在 VM 与存档/地图请求处理完后，若 `vm.instances()` 已无 `WaitState::Choice` / `MessageWithChoices`，立即清 `choices` 并归零光标；`install_map` 同步清 `choices`（只有确实打开过选项时才重置光标，避免覆盖调用方预设行）。`m3_mouse_menu` 新增 stop_instance → frame 的回归，14 passed。
+  * **行动力条**：`hud_action_points` 增加 `kind.is_text()` + `split_action_readout` 校验，黑屏开场不再孤立出条；`HUD_ACTION_VALUE_X 668→716`、`HUD_ACTION_BAR [608,20,54,8]→[608,18,100,12]`；GameView 两处 `_draw_action_points` 改为深灰槽 + 1 px 亮边 + 1 px 内缩柔和填充。m14 文本计数与像素基线未变（5 passed，533187/554890）。
+  * **头像/名牌**：`36002` 在气球激活时按 `SCREEN_H` 做底边钳位（只改渲染矩形），`m17_ui_regressions` 的 `+38 px` 正向断言反转为 576 底边，21 passed；`message` 字面量核对原版 `work/out/shot_metrics/full_89EF.png`（由 `prt sc/` 零售窗口图缩放）后确认零售同样显示，未按占位符隐藏。连续同人翻页的瞬态闪烁仍需原版逐帧证据，未加 latch。
+  * **RNG**：`WolfRng::set_cursor` + `savegame::apply` 在恢复 playtime 后按 `playtime_frames` 取模定位；同一存档重放稳定、不同存档序列不同。`.sav` 无游标字段，同存档重复读取仍相同，已在注释中写明局限。
+  * **Godot 性能**：`audio_cache` 增至 64 上限并按插入序淘汰（BGM/BGS/SE 正在引用的流不淘汰）；`wolf-gdext` 新增 `key_config_revision`（FNV-1a），`GameView._key_bits` 仅在 revision 变化时重建数组；`WolfText.gd` 新增 256 项 `TextParagraph` 缓存（临时 headless 重绘探针通过后删除）。
+  * **验证**：`cargo fmt --all -- --check` 0；m14 5/5（day_command 533187/24/23/76/23，hud 554890/15/14/44/14）、m16 4、m17 21、m18 6、m1_title_load 4、m3_mouse_menu 14 全过；`cargo test -q --workspace -- --skip font_lookup_prefers...` 只余既有 `m3_manual_rules::late_night_bedtime_skips_to_next_evening`（04:30→实测 17:00 vs 期望 19:00）。Godot 重建 DLL 后 smoke/mouse_title/key_map(98)/mouse_latch/title_wheel/gameview_title_wheel/load_save/load_menu/save_roundtrip 全绿（save→load 38/38）。
+  * **环境**：Godot console stub 报 error 193，仍用主 exe；误写到 `work/Data/godot_roundtrip.sav` 的文件已删除；本机 agent shell 无 git/bash，冒烟步骤按脚本逐条 PowerShell 复现。
+  * **报告**：两轮目标/逐项修复/验证/未处理项见 `docs/AUDIT_REBUILD_FIX_REPORT.md`。未 commit。  * **清理**：删除 `work/out/audit_round_notes.md`、`work/out/bar_measure.py` 与 `target/debug/incremental`；仓库合计 **7.99 GiB**（work 1.07 / target 6.64 / work/out 0.90，其中 `m14_visual` 与 `m14_ab` 作为证据保留）。

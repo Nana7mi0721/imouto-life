@@ -180,6 +180,25 @@ impl WolfGame {
         out
     }
 
+    /// Cheap fingerprint of [`Self::key_config`].
+    ///
+    /// The front-end used to rebuild a `PackedInt32Array` plus a GDScript `Array`
+    /// every physics tick just to turn held keys into WOLF codes, even though the
+    /// six words only change when CE132 writes Sys52..57. This FNV-1a hash lets
+    /// the caller keep the array and refresh it only when the revision moves.
+    #[func]
+    fn key_config_revision(&self) -> i64 {
+        let Some(game) = self.game.as_ref() else {
+            return -1;
+        };
+        let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+        for word in game.live_settings().key_config {
+            hash ^= u64::from(word);
+            hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        hash as i64
+    }
+
     /// Queues this frame's mouse-wheel notches: positive is up, negative down.
     ///
     /// `Game::frame` turns them into a choice-cursor step, a save-grid page key
@@ -269,10 +288,6 @@ impl WolfGame {
         // the pictures this frame needs still fit.
         atlas.begin_frame();
         let freeze = game.take_freeze_request();
-        let choice_options = game
-            .choices
-            .as_ref()
-            .map_or_else(Vec::new, |choices| choices.options.clone());
         let choice_cursor = game.choice_cursor() as i64;
         let (choice_x, choice_y) = game.choice_anchor();
 
@@ -284,20 +299,20 @@ impl WolfGame {
 
         // The engine paints the choice panel and the pause cursor itself; they are not
         // picture slots and `picture_quads` cannot reproduce them.
-        let choice_data = game.choices.as_ref().map(|choices| {
-            (
-                choices.options.clone(),
-                game.choice_cursor(),
-                game.choice_anchor(),
-                game.font_px(),
-            )
-        });
+        // The option list is borrowed in place below; cloning it here only to pass it to
+        // `overlay_at_sized` and again for the packet was two allocations per frame.
+        let choice_data = game
+            .choices
+            .as_ref()
+            .map(|_| (game.choice_cursor(), game.choice_anchor(), game.font_px()));
         let mut choice_texts: Vec<TextQuad> = Vec::new();
-        if let Some((options, cursor, (x, y), font_px)) = choice_data {
+        if let Some((cursor, (x, y), font_px)) = choice_data {
+            let choices = game.choices.as_ref().expect("choice_data implies choices");
+            let options = &choices.options;
             if let Some((panel, rows)) = wolf_game::choice::overlay_at_sized(
                 atlas,
                 &mut game.assets,
-                &options,
+                options,
                 cursor,
                 x,
                 y,
@@ -417,9 +432,11 @@ impl WolfGame {
         }
 
         let mut options: Array<GString> = Array::new();
-        for option in &choice_options {
-            let value = GString::from(option.as_str());
-            options.push(&value);
+        if let Some(choices) = &game.choices {
+            for option in &choices.options {
+                let value = GString::from(option.as_str());
+                options.push(&value);
+            }
         }
 
         packet.set("sprites", &sprites);

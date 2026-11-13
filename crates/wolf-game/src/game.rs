@@ -157,6 +157,9 @@ const BALLOON_NAME_TEXT_Y_OFFSET: f32 = 7.0;
 /// CE270's balloon frame picture (nine-slice window base).
 const BALLOON_FRAME_PICTURE: i32 = 36000;
 
+/// CE270's speaker face picture inside the balloon.
+const BALLOON_FACE_PICTURE: i32 = 36_002;
+
 /// Native `101` message frame and face slots.
 ///
 /// Picture mode keeps them resident for input/pacing but excludes them from the
@@ -177,10 +180,12 @@ const HUD_ACTION_PICTURE: i32 = 230;
 /// The retail top bar paints slot 230 as one text picture. The gauge is a
 /// project-specific addition, so the host splits that picture into a label and
 /// a value and leaves a hollow gap for the bar between them. The coordinates
-/// are logical pixels on the 1024x576 canvas.
+/// are logical pixels on the 1024x576 canvas. The bar is 100x12, matching the
+/// wider, thin-bordered bar in `参照图仅参考行动力条.png`; the value run sits
+/// immediately after it and still clears slot 240 (`精力`) at x = 760.
 const HUD_ACTION_LABEL_X: f32 = 560.0;
-const HUD_ACTION_VALUE_X: f32 = 668.0;
-const HUD_ACTION_BAR: [f32; 4] = [608.0, 20.0, 54.0, 8.0];
+const HUD_ACTION_VALUE_X: f32 = 716.0;
+const HUD_ACTION_BAR: [f32; 4] = [608.0, 18.0, 100.0, 12.0];
 
 /// Split CE242's `行动力60/65` into a label run and a value run.
 ///
@@ -232,11 +237,7 @@ fn leading_control_prefix_len(text: &str) -> usize {
 /// may still poll `hover` on a slot that a parallel page has hidden (the night
 /// data icon is the shipped case), so callers must not fall back to the raw
 /// picture rectangle in that state.
-fn picture_ink_rect_in(
-    screen: &Screen,
-    assets: &mut Assets,
-    number: i32,
-) -> Option<[f32; 4]> {
+fn picture_ink_rect_in(screen: &Screen, assets: &mut Assets, number: i32) -> Option<[f32; 4]> {
     let picture = screen.get(number)?.clone();
     if picture.hidden || picture.opacity <= 0 || picture.file.is_empty() {
         return None;
@@ -244,8 +245,7 @@ fn picture_ink_rect_in(
     let destination = screen.picture_rect(number, |name| assets.texture_size(name))?;
     let (source, _) =
         crate::picture::picture_frame(&picture, &mut |name| assets.texture_size(name))?;
-    let image = assets.load(&picture.file).ok()?;
-    let bounds = image.alpha_bounds_in(source, 16)?;
+    let bounds = assets.alpha_bounds_in(&picture.file, source, 16)?;
 
     let u0 = (bounds[0] as f32 - source[0] as f32) / source[2] as f32;
     let u1 = (bounds[0] as f32 + bounds[2] as f32 - source[0] as f32) / source[2] as f32;
@@ -275,6 +275,20 @@ const ITEM_HANDLE_Y: (f32, f32) = (260.0, 297.0);
 /// 20 px band started at screen x=5, leaving the left half of the visible
 /// triangle unclickable.
 const SIDE_PANEL_HANDLE_RIGHT: f32 = 25.0;
+
+/// Alpha the parked side panels keep on the left edge.
+///
+/// Retail re-runs CE238/CE239's hide page every frame, and each repaint restarts
+/// a ten-frame fade-in at age two, so the drawer never gets past `2/10 = 0.2`
+/// alpha. That stuck fade is what makes the parked strip a faint handle rather
+/// than a solid slab. The host now answers `hover` stably for these two slots
+/// (T18 stopped the per-frame rebuild, which was both a flicker and a script pass
+/// per frame), so nothing repaints them after a load; the renderer has to carry
+/// the retail alpha itself.
+const SIDE_PANEL_PARKED_ALPHA: f32 = 0.2;
+
+/// Left edge of the parked position: a drawer at or past this x is off screen.
+const SIDE_PANEL_PARKED_X: i32 = -300;
 
 /// Screen-space forgiveness around the sister's alpha silhouette.
 ///
@@ -1559,7 +1573,33 @@ impl Game {
         // pointer and every map icon click was ignored (BUG-08). Stopping the map
         // event also stops its descendants through `Vm::stop_instance`.
         self.runtime.stop_all(&mut self.vm);
+        // `MapRuntime` only owns the pages it collected. A map-self coroutine
+        // started directly - the boot event through `start_map_event`, a scripted
+        // `CallByName`, or a child a page spawned outside the runtime - is not in
+        // that list and would otherwise keep its whole call chain alive across the
+        // map switch (report section 6 BUG-21). Common-event coroutines share this
+        // VM and must survive a map change, so the sweep matches `MAP_SELF_BASE`
+        // only. Ids are collected first because `stop_instance` mutates the slice.
+        let stale: Vec<_> = self
+            .vm
+            .instances()
+            .iter()
+            .filter(|instance| instance.program.self_base == wolf_vm::program::MAP_SELF_BASE)
+            .map(|instance| instance.id)
+            .collect();
+        for id in stale {
+            self.vm.stop_instance(id);
+        }
         self.boot_map_active = false;
+        // A map change retires the coroutine that owned any open prompt, so a
+        // leftover `choices` would otherwise survive as a panel no script can
+        // close (report section 1.3). Clearing here also covers a teleport that
+        // happens while the choice waiter is already dead. The cursor is reset
+        // only when a prompt was actually open: callers (and tests) may set the
+        // desired row before the map installs its first menu.
+        if self.choices.take().is_some() {
+            self.choice_cursor = 0;
+        }
         self.tilemap = match &self.tilesets {
             Some(sets) => sets
                 .get(map.tileset_index)
@@ -1618,6 +1658,19 @@ impl Game {
             balloon_frame.map(|rect| (BALLOON_FRAME_PICTURE, rect)),
             excluded,
         );
+        // Both drawers (`320` status, `2300` item list) are drawn from the save at
+        // full opacity. Retail keeps them at the stuck 2/10 fade-in alpha while
+        // parked; see [`SIDE_PANEL_PARKED_ALPHA`]. Only the settled parked pose gets
+        // the dimmed alpha, so the opening and closing slides stay fully visible.
+        for quad in &mut quads {
+            if (quad.number == 320 || quad.number == 2300)
+                && self.screen.get(quad.number).is_some_and(|picture| {
+                    picture.x <= SIDE_PANEL_PARKED_X && picture.transition.is_none()
+                })
+            {
+                quad.alpha *= SIDE_PANEL_PARKED_ALPHA;
+            }
+        }
         let growth = self.balloon_frame_growth();
         if growth > 0.0 {
             // The name plate is pinned to the top of the balloon. CE270's script
@@ -1626,6 +1679,20 @@ impl Game {
             for quad in &mut quads {
                 if (36_008..=36_012).contains(&quad.number) {
                     quad.rect[1] -= growth;
+                }
+            }
+        }
+        if balloon_owns_message {
+            // CE270 anchors the speaker face to the balloon's bottom edge; with the
+            // one-line frame the script's offset puts its bottom at y = 604, 28 px
+            // below the 576 px canvas. The retail dialogue crop shows the whole face,
+            // so clamp the drawn rect instead of clipping the chin (report 1.5).
+            for quad in &mut quads {
+                if quad.number == BALLOON_FACE_PICTURE {
+                    let bottom = SCREEN_H as f32;
+                    if quad.rect[1] + quad.rect[3] > bottom {
+                        quad.rect[1] = bottom - quad.rect[3];
+                    }
                 }
             }
         }
@@ -1642,8 +1709,8 @@ impl Game {
             // CE270 fades 36014 (the speaker name) independently from the
             // decorative 36008..36012 pieces. When the name is blank or already
             // transparent, those pieces used to stay on screen as a grey empty
-            // pill. Suppress the whole plate as one unit; a literal speaker name
-            // such as "message" still keeps it because 36014 is visible.
+            // pill. Suppress the whole plate as one unit. The script's literal
+            // `"message"` placeholder is retail behaviour and stays visible.
             quads.retain(|quad| !(36_008..=36_012).contains(&quad.number));
         }
         self.apply_screen_tint(&mut quads, true);
@@ -1893,9 +1960,14 @@ impl Game {
     #[must_use]
     pub fn hud_action_points(&self) -> Option<(i32, i32)> {
         let hud = self.screen.get(HUD_ACTION_PICTURE)?;
-        if hud.hidden || hud.opacity <= 0 {
+        if hud.hidden || hud.opacity <= 0 || !hud.kind.is_text() {
             return None;
         }
+        // The picture itself has to be CE242's readout, not merely slot 230. A
+        // black-screen opening ("一个月前——") has no top bar, yet the slot can
+        // still be live with unrelated text; drawing the gauge there produced the
+        // orphan bar in `新游戏与妈妈交代阶段显示行动力条.png`.
+        split_action_readout(&hud.text)?;
         let current = self.databases.num(crate::db::Container::CData, 0, 12, 8)?;
         let maximum = self.databases.num(crate::db::Container::CData, 0, 12, 9)?;
         (maximum > 0).then_some((current.clamp(0, maximum), maximum))
@@ -2089,12 +2161,11 @@ impl Game {
         let Some(name) = self.screen.get(BALLOON_NAME_TEXT_PICTURE) else {
             return false;
         };
-        !name.hidden
-            && name.opacity > 0
-            && name.kind.is_text()
-            && !wolf_format::messagetext::strip(&name.text)
-                .trim()
-                .is_empty()
+        if name.hidden || name.opacity <= 0 || !name.kind.is_text() {
+            return false;
+        }
+        let stripped = wolf_format::messagetext::strip(&name.text);
+        !stripped.trim().is_empty()
     }
 
     fn balloon_picture_text_is_visible(&self) -> bool {
@@ -2840,10 +2911,7 @@ impl Game {
         let inside = self.picture_ink_rect(panel).is_some_and(|rect| {
             let px = self.mouse[0] as f32;
             let py = self.mouse[1] as f32;
-            px >= rect[0]
-                && px < rect[0] + rect[2]
-                && py >= rect[1]
-                && py < rect[1] + rect[3]
+            px >= rect[0] && px < rect[0] + rect[2] && py >= rect[1] && py < rect[1] + rect[3]
         });
         if inside {
             self.side_panel_retract_frames = 0;
@@ -3614,6 +3682,22 @@ impl Game {
             }
         }
         self.suppress_night_data_icon();
+        // A prompt belongs to the coroutine that ran opcode 102. A parallel page can
+        // terminate that coroutine (forced scene transition, forced release, or a
+        // scripted map change) without its `Choice`/`MessageWithChoices` waiter ever
+        // returning. `self.choices` then survives as a panel no script can close and
+        // keeps swallowing clicks (report 1.3), so drop it once the VM has no waiter.
+        if self.choices.is_some()
+            && !self.vm.instances().iter().any(|instance| {
+                matches!(
+                    instance.wait,
+                    WaitState::Choice { .. } | WaitState::MessageWithChoices { .. }
+                )
+            })
+        {
+            self.choices = None;
+            self.choice_cursor = 0;
+        }
         // The title menu is a one-shot op102 inside CE42. Cancelling CE131 unwinds
         // CE14 -> CE42 -> the TitleMap event 2 page, leaving a menu-less title
         // background with nothing running (docs/M3_TITLE_UX.md section 2.5). Re-enter
@@ -4314,10 +4398,17 @@ impl Host for GameHost<'_> {
                 .translator
                 .translate_in(TextContext::Choice, option)
                 .map_or_else(|| option.clone(), str::to_owned);
-            if translated.trim().is_empty() {
+            // Opcode 102 hands over the script's raw string, which can carry WOLF
+            // style escapes (`\c[...]`, `\f[...]`, inline icon codes). The choice
+            // renderer draws plain text, so an escape used to leak into the row as
+            // a missing-glyph diamond ("红茶 ♦ 2000" in the tea menu). Strip the
+            // markup before measuring and drawing; empty labels stay skipped so
+            // the source index still maps to the script's case table.
+            let stripped = wolf_format::messagetext::strip(&translated);
+            if stripped.trim().is_empty() {
                 continue;
             }
-            visible.push(translated);
+            visible.push(stripped);
             sources.push(index);
         }
         // A prompt with no non-empty labels would be unanswerable; fall back to the

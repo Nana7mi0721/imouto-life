@@ -159,6 +159,11 @@ pub fn apply(game: &mut Game, save: &SaveFile) -> LoadedSave {
     // Playtime is the first word of SavePart2's variable tail.
     loaded.playtime_frames = save.part2.vars3_21.first().copied().unwrap_or(0);
     game.set_playtime_frames(loaded.playtime_frames);
+    // The static-random cursor has no field in the shipped .sav. Restarting it at
+    // entry 0 on every load made every replay of a save draw the same sequence
+    // (report II.1); derive the position from playtime instead, which is stable
+    // for one save and different across saves without changing the save layout.
+    game.vm.rng.set_cursor(loaded.playtime_frames as usize);
 
     // The running BGM is part of the save. Restore it before the picture layer so the
     // first frame after a load already has the right track (and so a script that only

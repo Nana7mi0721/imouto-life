@@ -166,6 +166,18 @@ impl WolfRng {
         }
     }
 
+    /// Moves the cursor to a saved/derived stream position.
+    ///
+    /// The shipped `.sav` has no field for the cursor (the save layout is fixed),
+    /// so a load derives it from playtime instead: the same save then replays
+    /// from the same point, while a later save starts elsewhere. Out-of-range
+    /// values wrap, matching [`Self::next_raw`]'s end-of-block policy.
+    pub fn set_cursor(&mut self, cursor: usize) {
+        if !self.table.is_empty() {
+            self.cursor = cursor % self.table.len();
+        }
+    }
+
     /// Draws taken so far (counts range() calls).
     #[must_use]
     pub const fn draws(&self) -> u64 {
@@ -291,6 +303,18 @@ mod tests {
             let value = rng.range(-20_000, 20_000);
             assert!((-20_000..=20_000).contains(&value), "out of range: {value}");
         }
+    }
+
+    #[test]
+    fn a_derived_cursor_starts_the_stream_elsewhere() {
+        // Save loading has no cursor field; it derives one from playtime and wraps it
+        // into the table. The same save then replays from the same point (report II.1).
+        let mut rng = WolfRng::from_game(0, 0, vec![0, 64, 127]);
+        rng.set_cursor(4);
+        assert_eq!(rng.state(), 1);
+        assert_eq!(rng.next_raw(), 64);
+        rng.set_cursor(3);
+        assert_eq!(rng.state(), 0);
     }
 
     #[test]

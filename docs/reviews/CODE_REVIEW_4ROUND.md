@@ -11,7 +11,7 @@
    * `BUG-02`（对话框人名框）：气泡采用固定底边模式 2002，由 Opcode 290 平移至 `(512, 536)`，Picture 36014 稳定位于 `(276, 456)` 屏内；根因系 Opcode 112 字符串比较未剥离 bit 24 变量类型标志，已在 `crates/wolf-vm/src/exec.rs:3204` 修复并通过 `tests/m15_balloon_name.rs` 连续 60 帧可见验证。
    * `BUG-04`（日常卧室顶栏体力条）：经原版说明书与 `CE 242` 验证，日常卧室顶栏仅含文本和数字槽位（Picture `220..252`），无体力条素材，体力条仅在夜间互动时出现，判定为 `NOT-A-BUG`。
    * `Opcode 210/211` 相对寻址：寻址范围 `600_000..=699_999` 严格遵循 $\text{target\_id} = \text{caller\_event\_id} + (\text{raw} - 600100)$，已在 `crates/wolf-vm/src/exec.rs:1570, 2743` 落地。
-2. **历史台账中已定位但待验证/加固的基线项（`BUG-20` 至 `BUG-24`）**：已整理于本报告第六章，方便团队统一核对。
+2. **历史上同号但不同义的两套基线（`BUG-20` 至 `BUG-24`）**：本报告第六章用的是四轮审查编号；`docs/HANDOFF_PROGRESS.md` 2026-11-11 台账另有一套 BUG-20..24（滚轮、鼠标出界、`character_state`、全屏特效、按键连发），两者编号相同、主题不同，引用时必须写明来源。
 
 ### 1.2 第一至四轮新发现深水区缺陷全景统计（BUG-25 至 BUG-48，共 24 项）
 * **S1 致命级（流程阻断 / 控制流错乱 / 核心内存污染 / 地图与音频跨语言断层 / 图层几何与复合赋值错乱，共 12 项）**：
@@ -585,11 +585,11 @@ let wants_text = op.destination.is_some_and(|target| {
      ```
 * **字节码实锤**：`BYTECODE_AUDIT_REPORT.md` 第 2.2 节实锤指出：
   * `CE 223` 中有 **9 处** 读取 `Field 10`（鼠标滚轮增量）；
-  * `CE 224` 读取 `Field 11` 与 `Field 12`（窗口内鼠标坐标/移出窗口检测，移出窗口时返回 `-1`）。
+  * `CE 224` 读取 `Field 11` 与 `Field 12`（按官方手册为帧间鼠标位移 `dx/dy`，不是窗口内坐标或移出窗口标记）。
 
 #### 严格修复建议
 1. 在 `Game` 中保留 `frame_wheel: i32` 快照（在 `apply_wheel` 中将 `self.frame_wheel = self.wheel` 保存下来供本帧 `GameHost` 查询），并在 `GameHost::engine_state` 中返回 `10 => Some(self.frame_wheel)`。
-2. 对 `Field 11` 与 `Field 12`：当鼠标在 `0..1024` 与 `0..576` 窗口范围内时分别返回 `Some(self.mouse[0])` 与 `Some(self.mouse[1])`，移出窗口时返回 `Some(-1)`，使 `CE 224` 能正确感知鼠标移出窗口。
+2. 对 `Field 11` 与 `Field 12`：按官方手册 `04ev_valuenext.txt` 返回**帧间鼠标位移** `dx/dy`（当前帧坐标减上一帧坐标），与鼠标是否在窗口内无关；下文旧版“窗口内坐标 / 移出窗口时 `-1`”的判断为误读，已由 `Game::engine_state` 的 `mouse_delta` 实现取代（回归见 `wheel_and_mouse_deltas_reach_opcode_124_fields_10_to_12`）。
 
 ### 5.5 BUG-45（S2 严重）：`Atlas::sprites` 丢弃 `Picture.blend`，Godot `GameView.gd:_draw` 缺失混合模式渲染
 
@@ -707,12 +707,14 @@ let wants_text = op.destination.is_some_and(|target| {
 1. 当 `PictureAction::Erase` 的 `fade = cmd.args.first().copied().unwrap_or(0) > 0` 时，对目标槽位（或 `[lo..=hi]` 区间内的每个槽位）不立即 `remove`，而是调用 `picture.fade_out_to_erase(fade as u32)`：构造一个 `target.opacity = 0`、`remaining = fade` 的 `Transition`，并将 `picture.erase_after_slide = true`；
 2. 在 `Screen::tick`（`crates/wolf-game/src/picture.rs:1286`）中，当 `picture.tick()` 完成过渡（`picture.slide.is_none()`）且 `picture.erase_after_slide` 为 `true` 时，将其从 `self.pictures` 中正式移除（若在渐隐途中收到新的 `Draw` 指令覆盖该槽位，则新的 `Picture` 实例自然重置 `erase_after_slide = false`）。
 
-## 六、 历史待核对基线缺陷汇总（BUG-20 至 BUG-24）
+## 六、 历史待核对基线缺陷汇总（本报告 §六 BUG-20 至 BUG-24）
+
+> 编号只在本章有效：`docs/HANDOFF_PROGRESS.md` 2026-11-11 的历史台账同样使用 BUG-20..24，但主题是滚轮 / 鼠标出界 / `character_state` 坐标 / 全屏特效 / 按键连发。两套编号不得互相套用。
 
 | 编号 | 模块定位 | 当前状态与核对要点 |
 | :--- | :--- | :--- |
 | **BUG-20** | `crates/wolf-game/src/map_runtime.rs:312-383` | `action_key_at` 与 `start_pending` 已分离 `Trigger::ActionKey` 与 `Trigger::Parallel`，但需配合 `BUG-33` 修复确保 `Parallel` 页面在条件变化时及时换页。 |
-| **BUG-21** | `crates/wolf-game/src/game.rs:1298, 1438` | `install_map` 与 `switch_map` 已调用 `self.runtime.stop_all(&mut self.vm)` 及 `self.screen.clear_screen_layers()`，但对由 `start_map_event` 直接启动、未纳入 `self.runtime` 的独立地图事件实例（如 `Event 0`），应在 `install_map` 中按 `instance.program.self_base == MAP_SELF_BASE` 统一清理。 |
+| **BUG-21** | `crates/wolf-game/src/game.rs:1298, 1438` | `install_map` 与 `switch_map` 已调用 `self.runtime.stop_all(&mut self.vm)` 及 `self.screen.clear_screen_layers()`，但对由 `start_map_event` 直接启动、未纳入 `self.runtime` 的独立地图事件实例（如 `Event 0`），**已实现（2026-11-13）**：`install_map` 在 `runtime.stop_all` 之后按 `instance.program.self_base == MAP_SELF_BASE` 清扫无主地图协程（`COMMON_SELF_BASE` 不受影响），回归 `m16_old_bug_review::report_s6_bug21_install_map_retires_independent_map_event_instances` 已取消 `#[ignore]`。 |
 | **BUG-22** | `crates/wolf-game/src/game.rs:2145-2185` | `handle_choice_input` 已修复为点击选择支框外部时：若允许取消则触发 Cancel，若不允许取消则保留点击边沿不吞噬（`self.mouse_consumed` 保持 `false`）。 |
 | **BUG-23** | `crates/wolf-vm/src/vars.rs:146-210`<br>`crates/wolf-vm/src/exec.rs:1671-1695` | `EventSelfVars` 已内置 5 个字符串槽（`CSelf5..9`），但需配合 `BUG-29`（运行期实时同步）、`BUG-31`（`Opcode 250` 写识别）、`BUG-38`（`Opcode 220..222` 路径识别）与 `BUG-43`（`Opcode 250` 读识别）彻底闭环。 |
 | **BUG-24** | `crates/wolf-vm/src/exec.rs:2934-2946` | `Opcode 300`（`CallByName`）已在 `exec.rs:2934` 实现，通过 `ProgramSet::id_by_name`（含 `strip_tag`）解析事件名并生成 `Signal::CallByName`。 |

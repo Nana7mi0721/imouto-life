@@ -235,7 +235,15 @@ pub fn layout_at_sized(
         return Some(title_image_layout(cursor));
     }
     let panel = build(options, cursor, x as f32, y as f32, font_px);
-    let on_screen = panel.rect[0] < SCREEN_W as f32
+    // `(0, 0)` is not a usable anchor for this game: a save written while the tea-stall
+    // prompt was open restores Sys3/Sys4 as zero, and treating that as a real position
+    // painted the whole menu over the top-left HUD (report section 1.1). The shipped
+    // scripts never place a prompt at the exact origin; every real menu uses either an
+    // in-screen pair or an off-screen sentinel, so both fall back to the centred
+    // default below.
+    let default_anchor = x == 0 && y == 0;
+    let on_screen = !default_anchor
+        && panel.rect[0] < SCREEN_W as f32
         && panel.rect[1] < SCREEN_H as f32
         && panel.rect[0] + panel.rect[2] > 0.0
         && panel.rect[1] + panel.rect[3] > 0.0;
@@ -445,6 +453,16 @@ mod tests {
         assert_eq!(layout.cursor[1], layout.lines[0][1]);
         assert_eq!(layout.cursor[0], layout.rect[0] + ROW_TOP);
         assert_eq!(layout.cursor[3], TEXT_PX);
+    }
+
+    #[test]
+    fn a_zero_anchor_falls_back_to_the_centred_default() {
+        // A save written while a prompt was open can restore Sys3/Sys4 as zero. That
+        // used to be accepted as a real position and painted the menu over the top-left
+        // HUD (report 1.1); only a genuine in-screen, non-zero anchor may place it.
+        let panel = layout_at_sized(&options(3), 0, 0, 0, 20.0).expect("centred panel");
+        assert!((panel.rect[0] + panel.rect[2] / 2.0 - 512.0).abs() <= 1.0);
+        assert!((panel.rect[1] + panel.rect[3] / 2.0 - 288.0).abs() <= 1.0);
     }
 
     #[test]

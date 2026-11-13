@@ -18,9 +18,11 @@
 
 | 文件 | 状态 | 内容 |
 |---|---|---|
-| [reviews/CODE_REVIEW_4ROUND.md](reviews/CODE_REVIEW_4ROUND.md) | **现行 · 唯一审查事实源** | 第一至四轮完整审查（2026-11）：历史基线 BUG-20..24、第一轮 BUG-25..35、第二轮 BUG-36..40、第三轮 BUG-41..46、第四轮 BUG-47..48 + 架构建议 |
+| [reviews/CODE_REVIEW_4ROUND.md](reviews/CODE_REVIEW_4ROUND.md) | **现行 · 唯一审查事实源** | 第一至四轮完整审查（2026-11）：报告 §六基线 BUG-20..24（与 `HANDOFF_PROGRESS.md` 旧台账同号不同义）、第一轮 BUG-25..35、第二轮 BUG-36..40、第三轮 BUG-41..46、第四轮 BUG-47..48 + 架构建议 |
 | [HANDOFF_DEEP_REVIEW_FIX.md](HANDOFF_DEEP_REVIEW_FIX.md) | **现行 · 完成交接** | BUG-25..48 的 T0–T11 完成状态、实施细节、官方手册/反编译语义证据、最终验证结果；历史中断快照保留 |
 | [TASKS_REMAINING_BUGS.md](TASKS_REMAINING_BUGS.md) | **现行 · 执行完成** | 原 T0–T12 任务卡与写作用域；§0 为 2026-11-12 完成状态（含 T12 性能/旧编号复核），§1 起为历史编排快照 |
+| [HANDOFF_T12_PATCH_AND_LEDGER.md](HANDOFF_T12_PATCH_AND_LEDGER.md) | 存档 · 2026-11-13 会话 | T12 性能路径审查结论、`alpha_bounds` 记忆化与 `install_map` 清扫补丁、`m16` 双台账收口、`m14` 两场景既有红（含 A/B 归因与基线对照表） |
+| [AUDIT_REBUILD_FIX_REPORT.md](AUDIT_REBUILD_FIX_REPORT.md) | 现行 · 两轮汇总 | T12 收口 + 审计轮：截图 6 项、RNG/缓存/键位/文本塑形落地、验证数字、未处理项与环境坑 |
 | [reviews/README.md](reviews/README.md) | 现行 · 导读 | 审查轮次/缺陷编号对照、阅读注意、报告命名规则 |
 | [archive/README.md](archive/README.md) | 归档 · 索引 | 归档规则与全部归档项（旧交接、旧审查报告） |
 | [archive/HANDOFF_NEXT_AGENT.md](archive/HANDOFF_NEXT_AGENT.md) | 已归档 · 已完成 | 2026-11-11 POST_DEEPSEEK 19 项修复交接（BUG-02 闭环），仅作追溯 |

@@ -159,10 +159,14 @@ fn balloon_face_stays_anchored_when_the_frame_grows() {
     }
     let (_, one_line_frame, one_line_face) =
         one_line.expect("event 1 never exposed the balloon face");
+    // CE270's script offset puts the one-line face bottom at y = 604, below the
+    // 576 px canvas; the renderer clamps it so the whole portrait stays visible
+    // (report 1.5), instead of the old behaviour that clipped 28 px and asserted
+    // the overflow as correct.
     assert_eq!(
         one_line_face[1] + one_line_face[3],
-        one_line_frame[1] + one_line_frame[3] + 38.0,
-        "the one-line face extends 38 px below the balloon bottom"
+        wolf_game::picture::SCREEN_H as f32,
+        "the face must be clamped to the bottom edge, not overflow the canvas"
     );
 
     let message = game

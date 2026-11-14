@@ -199,24 +199,21 @@
 ## 5. 交付物
 
 * 本报告：`docs/ROUND_T12_AND_SCREENSHOT_FIX_REPORT.md`
-* 修复包：`work/out/dist/ImoutoLife_fix_bundle_beb9693.zip`（311,685 B，SHA-256 `355914559F03770EBFE0C54258840C66039BA3D34D641E3A4A1B32262D38383E`；云端 `https://aka.doubaocdn.com/s/kGtcbnyM4x`）
+* 修复包（最终版）：`work/out/dist/ImoutoLife_fix_bundle_7eb2395_final.zip`（312,832 B，SHA-256 `815D805D23D15A83EA262C734F4D6BC6043E46D300479678903C6378E0FFDBF5`；云端 `https://aka.doubaocdn.com/s/TJUzxGs6sB`）
 * 证据：`work/out/ev0_newgame.tsv`、`work/out/prologue_fixed360.png`、`work/out/all_strings.tsv`、`work/out/name360.png`、`work/out/boot_new_*.png`
 * 参考：`docs/HANDOFF_T12_PATCH_AND_LEDGER.md`、`docs/AUDIT_REBUILD_FIX_REPORT.md`、`docs/Full Code Review 1c76dcc.md`
 
 ## 6. 提交与推送状态
 
-* 本地提交：`beb9693 fix(ui): close prologue gauge, tea-stall mojibake and box meter`（7 files，+358/−10）。
-* 远端：仍为 `47dd4e0`；`git status -sb` 显示 `master...origin/master [ahead 1]`。
-* 推送尝试与结果：
-  * `git -c http.proxy= -c https.proxy= push origin master` → `schannel: failed to receive handshake, SSL/TLS connection failed`。
-  * `http.sslBackend=openssl` → `TLS connect error: error:0A000126:SSL routines::unexpected eof while reading`。
-  * 本机代理 `127.0.0.1:7890` 端口可连，但 HTTPS 到 GitHub 仍在 TLS 握手阶段被中断；TCP 到 `140.82.112.4:443` 可建立，TLS 仍失败。**这是本机网络/代理问题，不是提交或仓库问题**。
-  * 云主机已克隆仓库并导入 `beb9693` bundle，但该环境没有可用的 GitHub 写凭据，`git push` 返回 `could not read Username`。因此本轮**没有完成远端推送**。
-* 网络恢复后执行：
+* 本地提交：`beb9693 fix(ui): close prologue gauge, tea-stall mojibake and box meter`（7 files，+358/−10）；`7eb2395 docs: record beb9693 push status and bundle hash`。
+* 远端：**已推送成功**。`git push origin master` 输出 `47dd4e0..7eb2395 master -> master`，`git status -sb` 显示 `## master...origin/master`。
+* 推送曾遇到本机代理的 TLS 握手失败（`schannel: failed to receive handshake` / `unexpected eof while reading`）；网络恢复后重试成功，不是提交或仓库问题。
+* 复验命令与预期：
   ```powershell
   git -c http.proxy= -c https.proxy= push origin master
+  git log --oneline -2
   ```
-  预期远端从 `47dd4e0` 前进到 `beb9693`。
+  远端应为 `7eb2395`，其父提交为 `beb9693`。
 
 ## 7. 未完成项与下一步顺序
 

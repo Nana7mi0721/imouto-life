@@ -210,7 +210,7 @@ child.is_parallel = self.instances[caller].is_parallel;
 - `db::tests::clearing_a_row_zeroes_every_field_in_the_file_and_the_engine_layer`（「ヒーローさん」vs「勇者先生」）
 - `db::tests::sysdatabase_decodes_the_face_graphic_type`（本作 face PNG vs 姊妹作 DLC 图）
 
-这两项与 `docs/HANDOFF_M0.md` 已记录的“真实数据下另有两项既有 `db` 文本差异”一致，不是本轮引入。`wolf-game` 单测实际为 **356 passed / 2 failed**（其余 356 项通过）。
+这两项与 `docs/HANDOFF_M0.md` 已记录的“真实数据下另有两项既有 `db` 文本差异”一致，不是本轮引入。`wolf-game` 单测实际为 **356 passed / 2 failed**；去掉 `WOLF_DATA_ROOT` 的默认模式为 **358 passed / 0 failed**（数据用例按既有约定跳过）。
 
 ---
 

@@ -200,6 +200,14 @@ fn split_action_readout(text: &str) -> Option<(String, String)> {
         .find(|(_, ch)| ch.is_ascii_digit())
         .map(|(index, _)| style_end + index)?;
     let prefix = &text[..split];
+    // Slot 230 is also used for ordinary narration during the black-screen
+    // prologue ("一个月前——" / "第1天"). Merely seeing a digit accepted that text
+    // as the gauge and drew an orphan bar over the prologue. CE242's readout is
+    // the only owner that writes the literal 行动力 label before the number.
+    let plain_prefix = wolf_format::messagetext::strip(prefix);
+    if !plain_prefix.contains("行动力") && !plain_prefix.contains("行動力") {
+        return None;
+    }
     let style_prefix = &text[..style_end];
     Some((
         prefix.to_owned(),
@@ -1659,6 +1667,15 @@ impl Game {
             balloon_frame.map(|rect| (BALLOON_FRAME_PICTURE, rect)),
             excluded,
         );
+        // Slot 230 is a window picture, not just the text inside it. During the
+        // black-screen prologue CE242 has not written a valid "行动力 current/max"
+        // readout yet, but the slot can still carry a 1x1 window skin — which the
+        // sprite pass draws as the orphan empty gauge seen in the new-game
+        // screenshot. Suppress the whole picture until the readout is the real one;
+        // the host-drawn bar only appears together with `hud_action_points`.
+        if self.hud_action_points().is_none() {
+            quads.retain(|quad| quad.number != HUD_ACTION_PICTURE);
+        }
         // Both drawers (`320` status, `2300` item list) are drawn from the save at
         // full opacity. Retail keeps them at the stuck 2/10 fade-in alpha while
         // parked; see [`SIDE_PANEL_PARKED_ALPHA`]. Only the settled parked pose gets
@@ -2267,6 +2284,13 @@ impl Game {
         let mut seen: HashSet<i32> = HashSet::new();
         for picture in self.screen.iter() {
             if !picture.kind.is_text() || picture.hidden || picture.text.is_empty() {
+                continue;
+            }
+            // The same prologue slot can hold unrelated narration. Do not let it
+            // reach the ordinary text pass either; only a real CE242 readout is
+            // routed through the label/value split below.
+            if picture.number == HUD_ACTION_PICTURE && split_action_readout(&picture.text).is_none()
+            {
                 continue;
             }
             let owner_event = self.screen.get(picture.number).and_then(|p| p.owner_event);

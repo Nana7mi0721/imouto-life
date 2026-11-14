@@ -1088,3 +1088,12 @@ M0–M7 与 C 任务每一步的改动、验证数字与踩过的坑。它只记
   * **验证**：`cargo fmt --all -- --check`、`git diff --check`、`cargo check -q --workspace` 均 exit 0；m14 5、m17 21、m18 6、m15 1、m17_text_layer 5、m3_hud_numeric 5、m4_load_resume 2、m4_hud_status 2、m3_hud_layout 3 全过。`m4_load_resume` 原断言单个 `行动力60/65` quad 已改为去空白后 `compact.contains(...)`，适配 T12 的 label/value 拆分。
   * **额外发现**：`m3_status_panel::ce238_relative_panel_lands_at_the_left_edge` 失败（隐藏分支 -305 后，显示分支仍停在 -305，期望 0）；本轮未触碰 `picture.rs` 相对绘制路径，待单独排查；该套件其余 5 项通过。
   * **报告**：`docs/GEMINI_REVIEW_1c76dcc_FIX_REPORT.md`；本地提交 `112ed76`（含 `game.rs`、`m4_load_resume.rs`、`GameView.gd`、本报告与交接文档），尚未 push。
+
+* 2026-11-14（实机截图二轮复核：开场空槽、茶摊乱码、格子条）：
+  * **开场孤立行动力空槽**：根因是槽位 `230` 同时承载旁白和 `WindowString` 窗口皮肤，`split_action_readout()` 只找数字就误判为读数。`game.rs` 增加 `messagetext::strip(prefix)` 的“行动力/行動力”语义校验；`picture_quads()` 在 `hud_action_points().is_none()` 时剔除 230 的窗口皮肤；`text_quads()` 对 230 拆分失败直接跳过。新增 `m4_hud_status::prologue_text_in_slot_230_is_not_mistaken_for_the_gauge`，真实数据 3 passed；`work/out/prologue_fixed360.png` 已无孤立空槽。
+  * **茶摊选项 `U+FFFD`**：CE257 红茶价格的 7 个 `0xA1` 奇数 run 是源数据缺陷；`choice::option_label()` 改为 `Cow`，仅显示层把 `U+FFFD` 替换为空格，原始选项键/分支值不动。新增 `the_known_ce257_replacement_character_never_reaches_the_glyph_pass`。
+  * **格子进度条**：CE277 的警戒度条用 `\img[Picture\box01.png]`/`box02.png`，`message.rs` 原先把 `TextToken::Image` 全丢弃，导致整条空白。新增 `inline_box_glyph()` 映射 `□/■`，补单测；其他 `\img` 仍保持丢弃策略。
+  * **19:00 首句黑底**：`work/out/ev0_newgame.tsv` 证明 pc305/306 台词在 pc318 画 `bg_001_06` 之前，pc326 才淡出 `-1` 黑幕，pc348 才画卧室；属序章脚本顺序，不是渲染 bug，本轮不改。
+  * **仍未处理**：连续同人第二句 `message` 名牌缺零售逐帧证据；茶摊左侧物品图标列未定位；夜间身体点击/底部姿势图标需运行态日志；随机事件固定需反汇编 CE249/`9000082`；`m3_status_panel::ce238_relative_panel_lands_at_the_left_edge` 仍失败。
+  * **验证**：`cargo test -q -p wolf-game --lib message` 38 passed；`m4_hud_status` 3 passed；`m17_ui_regressions` 21 passed；`cargo test -q --workspace -- --skip font_lookup_prefers...` 只余既有 `m3_manual_rules::late_night_bedtime_skips_to_next_evening`。`target/godot/wolf_gdext.dll` 已构建为 `A93C401F...`；因 Godot 进程占用，尚未替换 `godot/bin/wolf_gdext.dll`。
+  * **报告**：`docs/ROUND_T12_AND_SCREENSHOT_FIX_REPORT.md`。本轮 4 个源文件改动待提交。

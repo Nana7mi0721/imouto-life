@@ -15,6 +15,8 @@
 //! "ウィンドウ画像 / ×選択肢ウィンドウ画像" row names (see [`crate::window`]), and the
 //! selected row sits in `SystemFile/CursorBase.png`, the engine's 12x12 cursor box.
 
+use std::borrow::Cow;
+
 use crate::assets::Assets;
 use crate::atlas::{Atlas, SpriteQuad, TextQuad};
 use crate::picture::{SCREEN_H, SCREEN_W};
@@ -146,7 +148,7 @@ fn size(options: &[String], font_px: f32) -> (f32, f32) {
     // the raw keys clipped them. `option_label` is the identity for every other prompt.
     let widest = options
         .iter()
-        .map(|option| text_width_at(option_label(option), font_px))
+        .map(|option| text_width_at(option_label(option).as_ref(), font_px))
         .fold(0.0_f32, f32::max);
     let width = widest + TEXT_INSET * 2.0;
     let rows = options.len().max(1) as f32;
@@ -315,13 +317,23 @@ pub fn skin_pieces(layout: &ChoiceLayout, skin_w: u32, skin_h: u32) -> Vec<Windo
 /// "はじめから" / "つづきから" / "おわる"). Showing the raw keys on the title menu looked
 /// broken, so map just those three keys to localised labels here. Every other prompt keeps
 /// its own text untouched, and the underlying option strings (used for branching and for
-/// tests) are never rewritten.
-fn option_label(option: &str) -> &str {
+/// tests) are never rewritten. A lone U+FFFD from the known CE257 tea-price data defect is
+/// replaced by a space here, because the font cannot draw it; see [`option_label`].
+fn option_label(option: &str) -> Cow<'_, str> {
     match option {
-        "menu1" => "开始游戏",
-        "menu2" => "读取存档",
-        "menu3" => "退出游戏",
-        other => other,
+        "menu1" => Cow::Borrowed("开始游戏"),
+        "menu2" => Cow::Borrowed("读取存档"),
+        "menu3" => Cow::Borrowed("退出游戏"),
+        other if other.contains('\u{FFFD}') => {
+            // CE257 (the tea-stall prompt) has an odd 0xA1 run in the translated
+            // data: strict GBK rejects it and the decoder deliberately keeps one
+            // U+FFFD rather than guessing (see m3_string_decode). The glyph pass
+            // cannot draw that codepoint, so it showed as a tofu box at the price.
+            // Strip it only at the display layer; choice keys and branch values
+            // stay byte-for-byte untouched.
+            Cow::Owned(other.replace('\u{FFFD}', " "))
+        }
+        other => Cow::Borrowed(other),
     }
 }
 
@@ -370,7 +382,7 @@ fn draw(
     for (index, option) in options.iter().enumerate() {
         texts.push(TextQuad {
             number: window::PANEL_PICTURE,
-            text: option_label(option).to_owned(),
+            text: option_label(option).into_owned(),
             rect: layout.lines[index],
             alpha: 1.0,
             // The panel was measured at Sys8; paint the row at that same size.
@@ -541,6 +553,23 @@ mod tests {
         assert_eq!(texts.len(), 2);
         assert_eq!(texts[0].text, "option 0");
         assert_eq!(texts[1].text, "option 1");
+    }
+
+    #[test]
+    fn the_known_ce257_replacement_character_never_reaches_the_glyph_pass() {
+        // CE257's red-tea price contains one lone 0xA1 and the decoder deliberately
+        // surfaces it as U+FFFD (m3_string_decode pins that). The font has no glyph
+        // for U+FFFD, so the retail tea prompt showed a tofu box between the name and
+        // the price. The display label must drop it without touching the key.
+        let mut atlas = Atlas::new();
+        let mut assets = Assets::new("no-such-root");
+        let raw = "红茶　　　\u{FFFD} 2000円".to_owned();
+        let (_, texts) = overlay(&mut atlas, &mut assets, std::slice::from_ref(&raw), 0);
+        assert_eq!(texts.len(), 1);
+        assert!(!texts[0].text.contains('\u{FFFD}'));
+        assert_eq!(texts[0].text, "红茶　　　  2000円");
+        // The option handed back to the VM must stay exactly as the script wrote it.
+        assert_eq!(raw, "红茶　　　\u{FFFD} 2000円");
     }
 
     #[test]

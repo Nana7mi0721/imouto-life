@@ -98,6 +98,32 @@ fn loading_a_save_keeps_action_and_stamina() {
 }
 
 #[test]
+fn prologue_text_in_slot_230_is_not_mistaken_for_the_gauge() {
+    let Some(mut game) = loaded_after_prime() else {
+        return;
+    };
+    {
+        let hud = game
+            .screen
+            .get_mut(230)
+            .expect("CE242 leaves the gauge picture live");
+        assert!(!hud.hidden && hud.opacity > 0 && hud.kind.is_text());
+        hud.text = "\\f[14]一个月前——".to_owned();
+    }
+    assert_eq!(
+        game.hud_action_points(),
+        None,
+        "narration must not draw the action bar even though CData holds 60/65"
+    );
+    assert!(
+        game.text_quads().iter().all(|quad| quad.number != 230),
+        "prologue narration in slot 230 must not reach the text pass"
+    );
+    game.screen.get_mut(230).expect("gauge picture").text = "\\f[14]行动力60/65".to_owned();
+    assert_eq!(game.hud_action_points(), Some((60, 65)));
+}
+
+#[test]
 fn prime_engine_finishes_the_initialisation_event() {
     let root = data_root();
     if !root.join("BasicData").join("CommonEvent.dat").is_file() {

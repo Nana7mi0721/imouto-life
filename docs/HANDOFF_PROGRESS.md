@@ -1087,4 +1087,4 @@ M0–M7 与 C 任务每一步的改动、验证数字与踩过的坑。它只记
   * **保留项**：`Opcode 125` 单协程同帧第二次 `123` 仍会读到 0（`auto_keys_delivered` 按 instance id 粒度），本作未触达，未改。
   * **验证**：`cargo fmt --all -- --check`、`git diff --check`、`cargo check -q --workspace` 均 exit 0；m14 5、m17 21、m18 6、m15 1、m17_text_layer 5、m3_hud_numeric 5、m4_load_resume 2、m4_hud_status 2、m3_hud_layout 3 全过。`m4_load_resume` 原断言单个 `行动力60/65` quad 已改为去空白后 `compact.contains(...)`，适配 T12 的 label/value 拆分。
   * **额外发现**：`m3_status_panel::ce238_relative_panel_lands_at_the_left_edge` 失败（隐藏分支 -305 后，显示分支仍停在 -305，期望 0）；本轮未触碰 `picture.rs` 相对绘制路径，待单独排查；该套件其余 5 项通过。
-  * **报告**：`docs/GEMINI_REVIEW_1c76dcc_FIX_REPORT.md`；工作区改动 `game.rs`、`m4_load_resume.rs`、`GameView.gd`，尚未提交。
+  * **报告**：`docs/GEMINI_REVIEW_1c76dcc_FIX_REPORT.md`；本地提交 `112ed76`（含 `game.rs`、`m4_load_resume.rs`、`GameView.gd`、本报告与交接文档），尚未 push。

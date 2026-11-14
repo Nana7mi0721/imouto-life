@@ -245,9 +245,11 @@ child.is_parallel = self.instances[caller].is_parallel;
 
 ---
 
-## 9. 提交建议
+## 9. 提交状态
 
-本轮代码与报告尚未提交。若按前两轮习惯收口，建议一个代码提交加一个文档提交：
+本轮已本地提交 `112ed76`（`fix: close Gemini review 1c76dcc balloon cache and HUD reserve`），包含：
 
-- 代码：`game.rs`、`m4_load_resume.rs`、`GameView.gd`
-- 文档：本报告、`HANDOFF_PROGRESS.md`、`HANDOFF_M0.md` §11.1；`docs/Full Code Review 1c76dcc.md` 可按需一并纳入。
+- 代码与测试：`game.rs`、`m4_load_resume.rs`、`GameView.gd`
+- 文档：本报告、`HANDOFF_PROGRESS.md`、`HANDOFF_M0.md` §11.1、`README.md`
+
+**尚未 push 到 `origin/master`。** `docs/Full Code Review 1c76dcc.md` 为 Gemini 原始输入，保持未跟踪，未纳入提交。

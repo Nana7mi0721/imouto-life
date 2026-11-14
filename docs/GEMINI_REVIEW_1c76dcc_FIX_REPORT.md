@@ -196,6 +196,8 @@ child.is_parallel = self.instances[caller].is_parallel;
 
 `m4_load_resume` 原先直接断言单个 `"行动力60/65"` quad；T12 已把该文本拆成 label/value 两个 run，本轮顺手改为去空白后 `compact.contains("行动力60/65")`，与当前 HUD 布局一致。
 
+默认无 `WOLF_DATA_ROOT` 的 `cargo test -q --workspace -- --skip font_lookup_prefers_the_games_face_and_scans_unexpected_names` 只余既有 `m3_manual_rules::late_night_bedtime_skips_to_next_evening`（04:30 就寝实测 17:00 / 期望 19:00），没有本轮新增失败；该测试对数据敏感，和本轮改动无关。`wolf-game --lib` 在该默认模式下为 358 passed。
+
 ### 6.2 额外发现
 
 `cargo test -q -p wolf-game --test m3_status_panel` 为 **5 passed / 1 failed**：

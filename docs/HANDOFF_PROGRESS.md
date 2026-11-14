@@ -1096,4 +1096,4 @@ M0–M7 与 C 任务每一步的改动、验证数字与踩过的坑。它只记
   * **19:00 首句黑底**：`work/out/ev0_newgame.tsv` 证明 pc305/306 台词在 pc318 画 `bg_001_06` 之前，pc326 才淡出 `-1` 黑幕，pc348 才画卧室；属序章脚本顺序，不是渲染 bug，本轮不改。
   * **仍未处理**：连续同人第二句 `message` 名牌缺零售逐帧证据；茶摊左侧物品图标列未定位；夜间身体点击/底部姿势图标需运行态日志；随机事件固定需反汇编 CE249/`9000082`；`m3_status_panel::ce238_relative_panel_lands_at_the_left_edge` 仍失败。
   * **验证**：`cargo test -q -p wolf-game --lib message` 38 passed；`m4_hud_status` 3 passed；`m17_ui_regressions` 21 passed；`cargo test -q --workspace -- --skip font_lookup_prefers...` 只余既有 `m3_manual_rules::late_night_bedtime_skips_to_next_evening`。`target/godot/wolf_gdext.dll` 已构建为 `A93C401F...`；因 Godot 进程占用，尚未替换 `godot/bin/wolf_gdext.dll`。
-  * **报告**：`docs/ROUND_T12_AND_SCREENSHOT_FIX_REPORT.md`。本轮 4 个源文件改动待提交。
+  * **报告**：`docs/ROUND_T12_AND_SCREENSHOT_FIX_REPORT.md`。本轮改动已提交 `beb9693`、推送状态文档 `7eb2395`、最终报告 `e5b4d61`，`origin/master` 已同步；`godot/bin/wolf_gdext.dll` 已在 Godot 关闭后替换为 `A93C...`（7,707,648 B）。

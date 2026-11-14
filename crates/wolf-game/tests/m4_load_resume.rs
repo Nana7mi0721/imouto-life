@@ -62,16 +62,17 @@ fn loading_a_save_installs_the_map_and_hud() {
     );
 
     let texts: Vec<String> = game.text_quads().into_iter().map(|q| q.text).collect();
-    assert!(
-        texts.iter().any(|text| text == "行动力60/65"),
-        "HUD action text after load: {texts:?}"
-    );
-    // The HUD layout splits at ASCII spaces, so the two spans are separate quads.
+    // The HUD layout splits "行动力60/65" into a label run and a value run, so
+    // compare the concatenated reading rather than one raw quad.
     let compact: String = texts
         .concat()
         .chars()
         .filter(|c| !c.is_whitespace())
         .collect();
+    assert!(
+        compact.contains("行动力60/65"),
+        "HUD action text after load: {texts:?}"
+    );
     assert!(
         compact.contains("精力3/3"),
         "HUD stamina text after load: {texts:?}"

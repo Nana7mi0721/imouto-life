@@ -83,7 +83,7 @@ class _BlendBatch extends Node2D:
 			return
 		var maximum := maxi(1, int(ap.get("max", 0)))
 		var current := clampi(int(ap.get("current", 0)), 0, maximum)
-		var box: Rect2 = ap.get("bar", Rect2(Vector2(608.0, 18.0), Vector2(100.0, 12.0)))
+		var box: Rect2 = ap.get("bar", Rect2(Vector2(593.0, 18.0), Vector2(100.0, 12.0)))
 		# Reference (`参照图仅参考行动力条.png`): a dark trough with a thin light
 		# border and a 1 px-inset soft grey fill, not the old 2 px-inset white slab.
 		draw_rect(box, Color(0.16, 0.16, 0.16, 0.92), true)
@@ -691,7 +691,7 @@ func _draw_action_points(ap: Dictionary) -> void:
 		return
 	var maximum := maxi(1, int(ap.get("max", 0)))
 	var current := clampi(int(ap.get("current", 0)), 0, maximum)
-	var box: Rect2 = ap.get("bar", Rect2(Vector2(608.0, 18.0), Vector2(100.0, 12.0)))
+	var box: Rect2 = ap.get("bar", Rect2(Vector2(593.0, 18.0), Vector2(100.0, 12.0)))
 	# Reference (`参照图仅参考行动力条.png`): a dark trough with a thin light
 	# border and a 1 px-inset soft grey fill, not the old 2 px-inset white slab.
 	draw_rect(box, Color(0.16, 0.16, 0.16, 0.92), true)

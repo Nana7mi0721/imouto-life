@@ -181,11 +181,12 @@ const HUD_ACTION_PICTURE: i32 = 230;
 /// project-specific addition, so the host splits that picture into a label and
 /// a value and leaves a hollow gap for the bar between them. The coordinates
 /// are logical pixels on the 1024x576 canvas. The bar is 100x12, matching the
-/// wider, thin-bordered bar in `参照图仅参考行动力条.png`; the value run sits
-/// immediately after it and still clears slot 240 (`精力`) at x = 760.
-const HUD_ACTION_LABEL_X: f32 = 560.0;
-const HUD_ACTION_VALUE_X: f32 = 716.0;
-const HUD_ACTION_BAR: [f32; 4] = [608.0, 18.0, 100.0, 12.0];
+/// wider, thin-bordered bar in `参照图仅参考行动力条.png`; the value run is
+/// right-anchored at 750 so `8/40`, `70/75` and a three-digit `100/120` all
+/// end at the same edge and still clear slot 240 (`精力`) at x = 760.
+const HUD_ACTION_LABEL_X: f32 = 545.0;
+const HUD_ACTION_VALUE_X: f32 = 750.0;
+const HUD_ACTION_BAR: [f32; 4] = [593.0, 18.0, 100.0, 12.0];
 
 /// Split CE242's `行动力60/65` into a label run and a value run.
 ///
@@ -2301,6 +2302,19 @@ impl Game {
             } else {
                 x
             };
+            // The balloon frame grows upward from a fixed bottom, and both its body
+            // text and its speaker name move up by exactly that growth. Fold the lift
+            // into the position before it reaches `TextQuadKey`: otherwise a name that
+            // first appeared beside a one-line body keeps its old y in the cache when
+            // the streaming body wraps to a second or third line.
+            let balloon_lift = if picture.number == BALLOON_BODY_TEXT_PICTURE
+                || picture.number == BALLOON_NAME_TEXT_PICTURE
+            {
+                self.balloon_frame_growth()
+            } else {
+                0.0
+            };
+            let y = y - balloon_lift;
             let alpha = picture.alpha();
             // The variable-derived text rides inside the fingerprint; the rest of the
             // shape of the quad list comes from the base position, anchor, alpha and the
@@ -2391,20 +2405,16 @@ impl Game {
         // The balloon frame grows upward from a fixed bottom. Its body text is
         // anchored to the top of that frame, so when a multi-line message makes it
         // taller the text must move up by exactly the growth; otherwise the last row
-        // sits on the bottom edge and is clipped.
+        // sits on the bottom edge and is clipped. `text_quads` has already folded that
+        // lift into `y` (and into the text-cache key), so only the nameplate's ink
+        // offset remains here.
         let balloon = picture.number == BALLOON_BODY_TEXT_PICTURE;
         let nameplate = picture.number == BALLOON_NAME_TEXT_PICTURE;
-        let balloon_lift = if balloon || nameplate {
-            self.balloon_frame_growth()
+        let y = y + if nameplate {
+            BALLOON_NAME_TEXT_Y_OFFSET
         } else {
             0.0
         };
-        let y = y - balloon_lift
-            + if nameplate {
-                BALLOON_NAME_TEXT_Y_OFFSET
-            } else {
-                0.0
-            };
         let runs = if picture.number == HUD_ACTION_PICTURE
             && split_action_readout(&picture.text).is_some()
         {
@@ -2414,11 +2424,14 @@ impl Game {
                 split_action_readout(&picture.text).expect("checked action readout");
             let mut runs =
                 crate::textpic::layout_with(&label, HUD_ACTION_LABEL_X, y, anchor, ctx, &advance);
+            // Right-anchor the value at its reserved column. The label/bar stay
+            // left-aligned, but `8/40`, `70/75` and `100/120` must all finish at the
+            // same x so a wider reading never drifts into the `精力` row at 760.
             runs.extend(crate::textpic::layout_with(
                 &value,
                 HUD_ACTION_VALUE_X,
                 y,
-                anchor,
+                3,
                 ctx,
                 &advance,
             ));
@@ -6775,6 +6788,97 @@ mod tests {
         assert_eq!(
             game.screen.get(27000).expect("picture").text_size,
             Some((width, height))
+        );
+    }
+
+    #[test]
+    fn a_streaming_balloon_lifts_the_nameplate_through_the_text_cache() {
+        let Some(root) = have_data() else { return };
+        let mut game = Game::new(&root).expect("game");
+        game.screen.clear();
+
+        let mut frame = crate::picture::Picture::new(BALLOON_FRAME_PICTURE);
+        frame.kind = PictureKind::WindowFile;
+        frame.anchor = 1;
+        frame.x = 512;
+        frame.y = 300;
+        frame.window = Some((320, BALLOON_FRAME_MIN_HEIGHT));
+        game.screen.insert(frame);
+
+        let mut body = crate::picture::Picture::new(BALLOON_BODY_TEXT_PICTURE);
+        body.kind = PictureKind::Text;
+        body.text = "一行".to_owned();
+        body.text_size = Some((160, 24));
+        body.window = Some((160, 24));
+        body.x = 512;
+        body.y = 420;
+        game.screen.insert(body);
+
+        let mut name = crate::picture::Picture::new(BALLOON_NAME_TEXT_PICTURE);
+        name.kind = PictureKind::Text;
+        name.text = "妹妹".to_owned();
+        name.text_size = Some((48, 20));
+        name.window = Some((48, 20));
+        name.x = 276;
+        name.y = 456;
+        game.screen.insert(name);
+
+        let nameplate_y = |game: &Game| {
+            game.text_quads()
+                .into_iter()
+                .find(|quad| quad.number == BALLOON_NAME_TEXT_PICTURE && quad.text.contains('妹'))
+                .expect("speaker name quad")
+                .rect[1]
+        };
+
+        let one_line_y = nameplate_y(&game);
+        // The body grows from one line to a three-line block; its frame is still at
+        // the one-line height, so `balloon_frame_growth()` becomes 19 px. The name
+        // keeps the same text, position and font, which is exactly the cache key that
+        // used to hide the lift from the nameplate.
+        game.screen
+            .get_mut(BALLOON_BODY_TEXT_PICTURE)
+            .expect("balloon body")
+            .text_size = Some((160, 69));
+        let growth = game.balloon_frame_growth();
+        assert!(growth > 0.0, "the body must have grown the frame");
+        let wrapped_y = nameplate_y(&game);
+        assert!(
+            (one_line_y - wrapped_y - growth).abs() < 0.01,
+            "nameplate must follow the balloon frame growth: one-line y={one_line_y}, \
+             wrapped y={wrapped_y}, growth={growth}"
+        );
+    }
+
+    #[test]
+    fn hud_action_points_three_digit_value_clears_stamina_column() {
+        let Some(root) = have_data() else { return };
+        let mut game = Game::new(&root).expect("game");
+        game.screen.clear();
+
+        let mut action = crate::picture::Picture::new(HUD_ACTION_PICTURE);
+        action.kind = PictureKind::Text;
+        action.text = "\\f[14]行动力100/120".to_owned();
+        game.screen.insert(action);
+
+        let quads = game.text_quads();
+        let value = quads
+            .iter()
+            .find(|quad| quad.number == HUD_ACTION_PICTURE && quad.text == "100/120")
+            .expect("action value quad");
+        // `TextQuad.rect[2]` carries one extra em of glyph-wrap slack; the ink right
+        // edge is the span without that padding.
+        let right = value.rect[0] + value.rect[2] - value.font_px;
+        assert!(
+            right < 760.0,
+            "a three-digit action value must finish before the stamina column: \
+             value={:?} right={right}",
+            value.rect
+        );
+        assert!(
+            right > HUD_ACTION_VALUE_X - 1.0,
+            "the value must stay right-anchored at its reserved column: {:?}",
+            value.rect
         );
     }
 

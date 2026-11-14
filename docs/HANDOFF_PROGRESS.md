@@ -1079,3 +1079,12 @@ M0–M7 与 C 任务每一步的改动、验证数字与踩过的坑。它只记
   * **报告**：两轮目标/逐项修复/验证/未处理项见 `docs/AUDIT_REBUILD_FIX_REPORT.md`。
   * **提交**：`b2b6998` 已 push `origin/master`（2026-11-13）。
   * **清理**：删除 `work/out/audit_round_notes.md`、`work/out/bar_measure.py` 与 `target/debug/incremental`；仓库合计 **7.99 GiB**（work 1.07 / target 6.64 / work/out 0.90，其中 `m14_visual` 与 `m14_ab` 作为证据保留）。
+
+* 2026-11-14（Gemini 全量审查 `1c76dcc`）：
+  * **新 P1 人名牌缓存错位（成立并修复）**：`game.rs` 的 `text_quads()` 原先在 `TextQuadKey` 里写 raw `y`，`build_text_picture()` 才减 `balloon_frame_growth()`；多行正文流式换行时 `36014` 名称文字命中旧缓存，停在旧 Y。现将 lift 提前到 key 计算之前，`build_text_picture()` 只保留 `BALLOON_NAME_TEXT_Y_OFFSET=7`。新增 `a_streaming_balloon_lifts_the_nameplate_through_the_text_cache`：一行→三行后名称 quad 上移 19 px。
+  * **P3 行动力右对齐**：按报告方案 2，`HUD_ACTION_LABEL_X 560→545`、`HUD_ACTION_BAR [608,18,100,12]→[593,18,100,12]`、`HUD_ACTION_VALUE_X 716→750`，value run 以 anchor=3 右对齐；`100/120` ink 右边界 750，距 `精力` x=760 留 10 px。`godot/scripts/GameView.gd` 两处 fallback 同步 593。新增 `hud_action_points_three_digit_value_clears_stamina_column`；`m14_visual_regression` 5 passed、nonblack 533187/554890、文本计数未变。
+  * **两条“待核对 `1a9fafe`”均闭环**：`exec.rs` `121` 的 `batch_count` 现直接取 arg4，`SelfVar` 连续槽位全写，单测 `op121_self_range_updates_every_slot_in_the_range` 覆盖；`picture.rs` 无时长 `Move` 已 `transition=None`，`move_cancels_an_erase_fade` 断言 `opacity==255` 并推进 10 帧复验。`Vm::spawn_child()` 也已 `child.is_parallel = caller.is_parallel`。
+  * **保留项**：`Opcode 125` 单协程同帧第二次 `123` 仍会读到 0（`auto_keys_delivered` 按 instance id 粒度），本作未触达，未改。
+  * **验证**：`cargo fmt --all -- --check`、`git diff --check`、`cargo check -q --workspace` 均 exit 0；m14 5、m17 21、m18 6、m15 1、m17_text_layer 5、m3_hud_numeric 5、m4_load_resume 2、m4_hud_status 2、m3_hud_layout 3 全过。`m4_load_resume` 原断言单个 `行动力60/65` quad 已改为去空白后 `compact.contains(...)`，适配 T12 的 label/value 拆分。
+  * **额外发现**：`m3_status_panel::ce238_relative_panel_lands_at_the_left_edge` 失败（隐藏分支 -305 后，显示分支仍停在 -305，期望 0）；本轮未触碰 `picture.rs` 相对绘制路径，待单独排查；该套件其余 5 项通过。
+  * **报告**：`docs/GEMINI_REVIEW_1c76dcc_FIX_REPORT.md`；工作区改动 `game.rs`、`m4_load_resume.rs`、`GameView.gd`，尚未提交。

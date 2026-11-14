@@ -23,6 +23,7 @@
 | [TASKS_REMAINING_BUGS.md](TASKS_REMAINING_BUGS.md) | **现行 · 执行完成** | 原 T0–T12 任务卡与写作用域；§0 为 2026-11-12 完成状态（含 T12 性能/旧编号复核），§1 起为历史编排快照 |
 | [HANDOFF_T12_PATCH_AND_LEDGER.md](HANDOFF_T12_PATCH_AND_LEDGER.md) | 存档 · 2026-11-13 会话 | T12 性能路径审查结论、`alpha_bounds` 记忆化与 `install_map` 清扫补丁、`m16` 双台账收口、`m14` 两场景既有红（含 A/B 归因与基线对照表） |
 | [AUDIT_REBUILD_FIX_REPORT.md](AUDIT_REBUILD_FIX_REPORT.md) | 现行 · 两轮汇总 | T12 收口 + 审计轮：截图 6 项、RNG/缓存/键位/文本塑形落地、验证数字、未处理项与环境坑 |
+| [GEMINI_REVIEW_1c76dcc_FIX_REPORT.md](GEMINI_REVIEW_1c76dcc_FIX_REPORT.md) | 现行 · 第三轮 | Gemini `1c76dcc` 全量审查处理：人名牌缓存 P1、行动力三位数右对齐、`1a9fafe` 两条闭环核对、测试与遗留项 |
 | [reviews/README.md](reviews/README.md) | 现行 · 导读 | 审查轮次/缺陷编号对照、阅读注意、报告命名规则 |
 | [archive/README.md](archive/README.md) | 归档 · 索引 | 归档规则与全部归档项（旧交接、旧审查报告） |
 | [archive/HANDOFF_NEXT_AGENT.md](archive/HANDOFF_NEXT_AGENT.md) | 已归档 · 已完成 | 2026-11-11 POST_DEEPSEEK 19 项修复交接（BUG-02 闭环），仅作追溯 |
